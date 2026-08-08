@@ -990,7 +990,7 @@ From: ${finalFrom}`;
                             background:
                               index % 2 === 0
                                 ? "#ffffff"
-                                : "#f8fafc",
+                                : "#f1f5f9",
                           }}
                           className="easy-do-order-row"
                         >
