@@ -983,13 +983,17 @@ From: ${finalFrom}`;
                       getRowTotal(row);
 
                     return (
-                      <div
-                        key={row.id}
-                        style={
-                          styles.orderRow
-                        }
-                        className="easy-do-order-row"
-                      >
+                     <div
+                          key={row.id}
+                          style={{
+                            ...styles.orderRow,
+                            background:
+                              index % 2 === 0
+                                ? "#ffffff"
+                                : "#f8fafc",
+                          }}
+                          className="easy-do-order-row"
+                        >
                         <div
                           style={
                             styles.rowNumber
