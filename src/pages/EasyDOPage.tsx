@@ -832,7 +832,7 @@ From: ${finalFrom}`;
   src="/easy_do_logo.png"
   alt="Easy D/O"
   style={{
-    width: "60px",
+    width: "80px",
     height: "auto",
     objectFit: "contain",
     display: "block",
