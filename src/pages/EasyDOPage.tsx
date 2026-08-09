@@ -828,17 +828,9 @@ From: ${finalFrom}`;
 
       <div style={styles.header}>
         <div>
-          <img
-  src="/easy_do_logo.png"
-  alt="Easy D/O"
-  style={{
-    width: "80px",
-    height: "auto",
-    objectFit: "contain",
-    display: "block",
-    margin: "0 auto",
-  }}
-/>
+          <h1 style={styles.title}>
+  Easy D/O
+</h1>
 
           <p style={styles.subtitle}>
             Feed order entry
