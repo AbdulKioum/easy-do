@@ -828,9 +828,16 @@ From: ${finalFrom}`;
 
       <div style={styles.header}>
         <div>
-          <h1 style={styles.title}>
-            Easy D/O
-          </h1>
+          <img
+  src="/favicon_do.png"
+  alt="Easy D/O"
+  style={{
+    width: "120px",
+    height: "auto",
+    objectFit: "contain",
+    display: "block",
+  }}
+/>
 
           <p style={styles.subtitle}>
             Feed order entry
