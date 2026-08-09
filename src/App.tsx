@@ -48,7 +48,7 @@ export default function App() {
 
         <div style={styles.topTitle}>
           <img
-  src="/favicon_do.png"
+  src="/easy_do_logo.png"
   alt="Easy D/O"
   style={{
     width: "80px",
