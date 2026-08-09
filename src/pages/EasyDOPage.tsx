@@ -829,7 +829,7 @@ From: ${finalFrom}`;
       <div style={styles.header}>
         <div>
           <h1 style={styles.title}>
-  Easy D/O
+  Create D/O
 </h1>
 
           <p style={styles.subtitle}>
