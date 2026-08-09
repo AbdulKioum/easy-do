@@ -47,7 +47,17 @@ export default function App() {
         </button>
 
         <div style={styles.topTitle}>
-          Easy D/O
+          <img
+  src="/favicon_do.png"
+  alt="Easy D/O"
+  style={{
+    width: "80px",
+    height: "auto",
+    objectFit: "contain",
+    display: "block",
+    margin: "0 auto",
+  }}
+/>
         </div>
 
         <div style={styles.topRight}>
