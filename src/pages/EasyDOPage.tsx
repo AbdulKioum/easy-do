@@ -832,7 +832,7 @@ From: ${finalFrom}`;
   src="/favicon_do.png"
   alt="Easy D/O"
   style={{
-    width: "70px",
+    width: "60px",
     height: "auto",
     objectFit: "contain",
     display: "block",
