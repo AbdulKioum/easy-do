@@ -461,7 +461,7 @@ export default function EasyDOPage() {
               maximumFractionDigits: 2,
             }
           )}`
-        : "[DO Amount]";
+        ;
 
     // =========================
     // BANK MESSAGE
@@ -2093,14 +2093,7 @@ From: ${finalFrom}`;
                     />
                   </div>
 
-                  <div>
-                    <label
-                      style={
-                        styles.formLabel
-                      }
-                    >
-                      DO Amount Tk
-                    </label>
+                  
 
                     <input
                       type="number"
