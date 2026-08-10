@@ -461,7 +461,7 @@ export default function EasyDOPage() {
               maximumFractionDigits: 2,
             }
           )}`
-        ;
+        : "[DO Amount]";
 
     // =========================
     // BANK MESSAGE
@@ -519,7 +519,7 @@ ${amount}`;
     let feedText = "";
 
     if (!validRows.length) {
-      feedText = "[Feed Details]";
+      feedT Details]";
     } else {
       feedText = validRows
         .map((row) => {
@@ -543,7 +543,6 @@ ${amount}`;
 ${bankText}
 
 ${finalDate}
-Amount: ${finalAmount}
 
 ${feedText}
 
