@@ -33,7 +33,16 @@ export default function SideMenu({
         <div style={styles.header}>
           <div>
             <div style={styles.logo}>
-              Easy D/O
+              <img
+              src="/easy_do_logo.png"
+              alt="Easy D/O"
+              style={{
+                width: "100px",
+                height: "auto",
+                objectFit: "contain",
+                display: "block",
+              }}
+            />
             </div>
 
             <div style={styles.subtitle}>
