@@ -449,19 +449,7 @@ export default function EasyDOPage() {
     const finalVehicle =
       vehicleNo.trim() || "[Vehicle No]";
 
-    const amountNumber = Number(doAmount);
-
-    const finalAmount =
-      doAmount.trim() !== "" &&
-      !Number.isNaN(amountNumber)
-        ? `৳ ${amountNumber.toLocaleString(
-            "en-BD",
-            {
-              minimumFractionDigits: 2,
-              maximumFractionDigits: 2,
-            }
-          )}`
-        : "[DO Amount]";
+    
 
     // =========================
     // BANK MESSAGE
@@ -519,7 +507,7 @@ ${amount}`;
     let feedText = "";
 
     if (!validRows.length) {
-      feedT Details]";
+      feedText = "[Feed Details]";
     } else {
       feedText = validRows
         .map((row) => {
@@ -2142,10 +2130,10 @@ From: ${finalFrom}`;
                   />
                 </div>
               </div>
+          
+                  )}
 
-              {/* =========================
-                  GENERATED MESSAGE
-              ========================= */}
+             {/* GENERATED MESSAGE*/}
 
               <div
                 style={
@@ -2206,8 +2194,7 @@ From: ${finalFrom}`;
                   ? "Saving..."
                   : "💾 Save this DO"}
               </button>
-            </div>
-          )}
+          
         </>
       )}
 
