@@ -32,6 +32,7 @@ type BankInfo = {
   id: number;
   bankName: string;
   branch: string;
+  date: string;
   amount: string;
 };
 
@@ -69,23 +70,17 @@ export default function EasyDOPage() {
   const [agentName, setAgentName] = useState("");
   const [vehicleNo, setVehicleNo] = useState("");
 
-  const [doDate, setDoDate] = useState(
-    new Date().toISOString().split("T")[0]
-  );
-
   const [banks, setBanks] = useState<BankInfo[]>([
     {
       id: Date.now(),
       bankName: "",
       branch: "",
+      date: new Date().toISOString().split("T")[0],
       amount: "",
     },
   ]);
 
   const [generatedMessage, setGeneratedMessage] = useState("");
-
-  // DO Amount is separate from Grand Total.
-  const [doAmount, setDoAmount] = useState("");
 
   useEffect(() => {
     loadData();
@@ -330,23 +325,6 @@ export default function EasyDOPage() {
   ]);
 
   // =========================
-  // AUTOMATIC DO AMOUNT
-  // =========================
-
-  useEffect(() => {
-    if (rows.length === 0) {
-      setDoAmount("");
-      return;
-    }
-
-    setDoAmount(
-      totalAmount > 0
-        ? totalAmount.toFixed(2)
-        : ""
-    );
-  }, [totalAmount]);
-
-  // =========================
   // FROM LOCATIONS
   // =========================
 
@@ -392,6 +370,7 @@ export default function EasyDOPage() {
         id: Date.now() + Math.random(),
         bankName: "",
         branch: "",
+        date: new Date().toISOString().split("T")[0],
         amount: "",
       },
     ]);
@@ -443,13 +422,8 @@ export default function EasyDOPage() {
     const finalAgentName =
       agentName.trim() || "[Agent Name]";
 
-    const finalDate =
-      doDate || "[Date]";
-
     const finalVehicle =
       vehicleNo.trim() || "[Vehicle No]";
-
-    
 
     // =========================
     // BANK MESSAGE
@@ -459,6 +433,7 @@ export default function EasyDOPage() {
       (bank) =>
         bank.bankName.trim() ||
         bank.branch.trim() ||
+        bank.date.trim() ||
         bank.amount.trim()
     );
 
@@ -477,6 +452,10 @@ export default function EasyDOPage() {
             bank.branch.trim() ||
             "[Branch]";
 
+          const date =
+            bank.date.trim() ||
+            "[Date]";
+
           const amount =
             bank.amount.trim()
               ? `৳ ${Number(
@@ -489,6 +468,7 @@ export default function EasyDOPage() {
 
           return `${bankName}
 ${branch}
+${date}
 ${amount}`;
         })
         .join("\n\n");
@@ -530,8 +510,6 @@ ${amount}`;
 
 ${bankText}
 
-${finalDate}
-
 ${feedText}
 
 Vehicle No: ${finalVehicle}
@@ -545,7 +523,6 @@ From: ${finalFrom}`;
   function openDOInformation() {
     setShowDOInformation(true);
 
-    // Generate immediately.
     setGeneratedMessage(buildDOMessage());
 
     setTimeout(() => {
@@ -580,9 +557,7 @@ From: ${finalFrom}`;
     agentCode,
     agentName,
     vehicleNo,
-    doDate,
     banks,
-    doAmount,
     rows,
     fromLocation,
     upazila,
@@ -642,6 +617,7 @@ From: ${finalFrom}`;
         (bank) =>
           bank.bankName.trim() ||
           bank.branch.trim() ||
+          bank.date.trim() ||
           bank.amount.trim()
       );
 
@@ -649,6 +625,8 @@ From: ${finalFrom}`;
         .map((bank) => {
           return `${bank.bankName || "[Bank Name]"}\n${
             bank.branch || "[Branch]"
+          }\n${
+            bank.date || "[Date]"
           }\n${
             bank.amount
               ? `৳ ${Number(bank.amount).toLocaleString(
@@ -694,9 +672,6 @@ From: ${finalFrom}`;
         buildDOMessage();
 
       const payload = {
-        do_date:
-          doDate || null,
-
         agent_info:
           `${agentCode.trim()}, ${agentName.trim()}`.replace(
             /^,\s*|\s*,\s*$/g,
@@ -708,11 +683,6 @@ From: ${finalFrom}`;
 
         bank_details:
           bankDetails || null,
-
-        do_amount:
-          doAmount !== ""
-            ? Number(doAmount)
-            : 0,
 
         from_location:
           fromLocation || null,
@@ -816,8 +786,8 @@ From: ${finalFrom}`;
       <div style={styles.header}>
         <div>
           <h1 style={styles.title}>
-  Create D/O
-</h1>
+            Create D/O
+          </h1>
 
           <p style={styles.subtitle}>
             Feed order entry
@@ -943,11 +913,38 @@ From: ${finalFrom}`;
               <div style={styles.rows}>
                 {rows.map(
                   (row, index) => {
+                    /*
+                     * IMPORTANT:
+                     * একই category-তে যেসব item
+                     * আগের row-গুলোতে already selected হয়েছে,
+                     * সেগুলো current row-এর option-এ দেখানো হবে না।
+                     *
+                     * Row delete হলে rows থেকে item চলে যাবে,
+                     * তাই automatically আবার option-এ ফিরে আসবে।
+                     */
+                    const selectedItemIdsInCategory =
+                      rows
+                        .filter(
+                          (existingRow) =>
+                            existingRow.category ===
+                              row.category &&
+                            existingRow.id !==
+                              row.id &&
+                            existingRow.item
+                        )
+                        .map(
+                          (existingRow) =>
+                            existingRow.item!.id
+                        );
+
                     const items =
                       priceList.filter(
                         (item) =>
                           item.category ===
-                          row.category
+                            row.category &&
+                          !selectedItemIdsInCategory.includes(
+                            item.id
+                          )
                       );
 
                     const rowWeight =
@@ -970,17 +967,17 @@ From: ${finalFrom}`;
                       getRowTotal(row);
 
                     return (
-                     <div
-                          key={row.id}
-                          style={{
-                            ...styles.orderRow,
-                            background:
-                              index % 2 === 0
-                                ? "#ffffff"
-                                : "#f1f5f9",
-                          }}
-                          className="easy-do-order-row"
-                        >
+                      <div
+                        key={row.id}
+                        style={{
+                          ...styles.orderRow,
+                          background:
+                            index % 2 === 0
+                              ? "#ffffff"
+                              : "#f1f5f9",
+                        }}
+                        className="easy-do-order-row"
+                      >
                         <div
                           style={
                             styles.rowNumber
@@ -1699,46 +1696,47 @@ From: ${finalFrom}`;
               </div>
             </div>
 
-
-
             {/* =========================
                 ACTION BUTTONS
             ========================= */}
 
             <div
-              style={
-                styles.actionButtons
-              }
-            >
-
-              <button
-  style={{
-    display: "block",
-    margin: "20px auto",
-    width: "min(100%, 360px)",
-    padding: "16px 24px",
-    border: "none",
-    borderRadius: "14px",
-    background:
-      "#374151",
-    color: "#ffffff",
-    fontSize: "16px",
-    fontWeight: 800,
-    letterSpacing: "0.2px",
-    cursor: "pointer",
-    boxShadow:
-      "0 7px 20px rgba(17, 24, 39, 0.25)",
-  }}
-  onClick={openDOInformation}
+                style={{
+              ...styles.actionButtons,
+              display: "flex",
+              justifyContent: "center",
+              alignItems: "center",
+            }}
 >
-  📝 Generate DO Message
-</button>
+              <button
+                style={{
+                  display: "block",
+                  margin: "20px auto",
+                  width: "min(100%, 360px)",
+                  padding: "16px 24px",
+                  border: "none",
+                  borderRadius: "14px",
+                  background:
+                    "#374151",
+                  color: "#ffffff",
+                  fontSize: "16px",
+                  fontWeight: 800,
+                  letterSpacing: "0.2px",
+                  cursor: "pointer",
+                  boxShadow:
+                    "0 7px 20px rgba(17, 24, 39, 0.25)",
+                }}
+                onClick={
+                  openDOInformation
+                }
+              >
+                📝 Generate DO Message
+              </button>
             </div>
           </div>
 
           {/* =================================================
               DO INFORMATION
-              CALCULATION SECTION-এর পরে
           ================================================= */}
 
           {showDOInformation && (
@@ -1978,16 +1976,44 @@ From: ${finalFrom}`;
                         </div>
                       </div>
 
+                      {/* BANK DATE + AMOUNT */}
+
                       <div
                         style={
-                          styles.bankAmountRow
+                          styles.formGrid
                         }
                       >
-                        <div
-                          style={{
-                            flex: 1,
-                          }}
-                        >
+                        <div>
+                          <label
+                            style={
+                              styles.formLabel
+                            }
+                          >
+                            Date
+                          </label>
+
+                          <input
+                            type="date"
+                            value={
+                              bank.date
+                            }
+                            onChange={(
+                              e
+                            ) =>
+                              updateBank(
+                                bank.id,
+                                "date",
+                                e.target
+                                  .value
+                              )
+                            }
+                            style={
+                              styles.input
+                            }
+                          />
+                        </div>
+
+                        <div>
                           <label
                             style={
                               styles.formLabel
@@ -2019,9 +2045,17 @@ From: ${finalFrom}`;
                             }
                           />
                         </div>
+                      </div>
 
-                        {banks.length >
-                          1 && (
+                      {banks.length >
+                        1 && (
+                        <div
+                          style={{
+                            marginTop: 9,
+                            textAlign:
+                              "right",
+                          }}
+                        >
                           <button
                             style={
                               styles.removeBankButton
@@ -2034,15 +2068,15 @@ From: ${finalFrom}`;
                           >
                             Remove
                           </button>
-                        )}
-                      </div>
+                        </div>
+                      )}
                     </div>
                   )
                 )}
               </div>
 
               {/* =========================
-                  DATE / AMOUNT / VEHICLE
+                  VEHICLE ONLY
               ========================= */}
 
               <div
@@ -2050,90 +2084,33 @@ From: ${finalFrom}`;
                   styles.formSection
                 }
               >
-                <div
+                <label
                   style={
-                    styles.formGrid
+                    styles.formLabel
                   }
                 >
-                  <div>
-                    <label
-                      style={
-                        styles.formLabel
-                      }
-                    >
-                      Date
-                    </label>
+                  Vehicle No
+                </label>
 
-                    <input
-                      type="date"
-                      value={
-                        doDate
-                      }
-                      onChange={(e) =>
-                        setDoDate(
-                          e.target.value
-                        )
-                      }
-                      style={
-                        styles.input
-                      }
-                    />
-                  </div>
-
-                  
-
-                    <input
-                      type="number"
-                      min="0"
-                      step="0.01"
-                      value={
-                        doAmount
-                      }
-                      onChange={(e) =>
-                        setDoAmount(
-                          e.target.value
-                        )
-                      }
-                      style={
-                        styles.input
-                      }
-                    />
-                  </div>
-                </div>
-
-                <div
-                  style={{
-                    marginTop: 10,
-                  }}
-                >
-                  <label
-                    style={
-                      styles.formLabel
-                    }
-                  >
-                    Vehicle No
-                  </label>
-
-                  <input
-                    value={
-                      vehicleNo
-                    }
-                    onChange={(e) =>
-                      setVehicleNo(
-                        e.target.value
-                      )
-                    }
-                    placeholder="Optional"
-                    style={
-                      styles.input
-                    }
-                  />
-                </div>
+                <input
+                  value={
+                    vehicleNo
+                  }
+                  onChange={(e) =>
+                    setVehicleNo(
+                      e.target.value
+                    )
+                  }
+                  placeholder="Optional"
+                  style={
+                    styles.input
+                  }
+                />
               </div>
-          
-                  )}
 
-             {/* GENERATED MESSAGE*/}
+              {/* =========================
+                  GENERATED MESSAGE
+              ========================= */}
 
               <div
                 style={
@@ -2187,14 +2164,19 @@ From: ${finalFrom}`;
                   ...styles.generateModalButton,
                   marginTop: 12,
                 }}
-                onClick={saveDO}
-                disabled={saving}
+                onClick={
+                  saveDO
+                }
+                disabled={
+                  saving
+                }
               >
                 {saving
                   ? "Saving..."
                   : "💾 Save this DO"}
               </button>
-          
+            </div>
+          )}
         </>
       )}
 

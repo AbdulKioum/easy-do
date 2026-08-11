@@ -48,16 +48,16 @@ export default function App() {
 
         <div style={styles.topTitle}>
           <img
-  src="/easy_do_logo.png"
-  alt="Easy D/O"
-  style={{
-    width: "80px",
-    height: "auto",
-    objectFit: "contain",
-    display: "block",
-    margin: "0 auto",
-  }}
-/>
+            src="/easy_do_logo.png"
+            alt="Easy D/O"
+            style={{
+              width: "100px",
+              height: "auto",
+              objectFit: "contain",
+              display: "block",
+              margin: "0 auto",
+            }}
+          />
         </div>
 
         <div style={styles.topRight}>

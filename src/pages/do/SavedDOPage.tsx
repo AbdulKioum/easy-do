@@ -2013,8 +2013,6 @@ From: ${finalFrom}`;
                 </button>
               </div>
 
-              
-
               {/* FEED ITEMS */}
 
               <div
@@ -2605,7 +2603,6 @@ From: ${finalFrom}`;
                 </div>
               </div>
 
-
               {/* AGENT */}
 
               <div
@@ -2679,38 +2676,8 @@ From: ${finalFrom}`;
               </div>
 
 
-              {/* VEHICLE */}
 
-              <div
-                style={
-                  styles.editSection
-                }
-              >
-                <label
-                  style={
-                    styles.formLabel
-                  }
-                >
-                  Vehicle No
-                </label>
-
-                <input
-                  value={
-                    editVehicleNo
-                  }
-                  onChange={(e) =>
-                    setEditVehicleNo(
-                      e.target
-                        .value
-                    )
-                  }
-                  style={
-                    styles.input
-                  }
-                />
-              </div>
-
-              {/* BANK */}
+              {/* BANK INFORMATION */}
 
               <div
                 style={
@@ -2727,7 +2694,7 @@ From: ${finalFrom}`;
                       styles.editSectionTitle
                     }
                   >
-                    Bank Details
+                    🏦 Bank Information
                   </div>
 
                   <button
@@ -2762,8 +2729,7 @@ From: ${finalFrom}`;
                         }
                       >
                         Bank{" "}
-                        {index +
-                          1}
+                        {index + 1}
                       </div>
 
                       <div
@@ -2790,11 +2756,11 @@ From: ${finalFrom}`;
                               updateEditBank(
                                 bank.id,
                                 "bankName",
-                                e
-                                  .target
+                                e.target
                                   .value
                               )
                             }
+                            placeholder="Bank Name"
                             style={
                               styles.input
                             }
@@ -2820,11 +2786,11 @@ From: ${finalFrom}`;
                               updateEditBank(
                                 bank.id,
                                 "branch",
-                                e
-                                  .target
+                                e.target
                                   .value
                               )
                             }
+                            placeholder="Branch"
                             style={
                               styles.input
                             }
@@ -2847,13 +2813,12 @@ From: ${finalFrom}`;
                               styles.formLabel
                             }
                           >
-                            Amount Tk
+                            Amount
                           </label>
 
                           <input
                             type="number"
                             min="0"
-                            step="0.01"
                             value={
                               bank.amount
                             }
@@ -2863,11 +2828,11 @@ From: ${finalFrom}`;
                               updateEditBank(
                                 bank.id,
                                 "amount",
-                                e
-                                  .target
+                                e.target
                                   .value
                               )
                             }
+                            placeholder="Amount"
                             style={
                               styles.input
                             }
@@ -2898,8 +2863,7 @@ From: ${finalFrom}`;
                               updateEditBank(
                                 bank.id,
                                 "date",
-                                e
-                                  .target
+                                e.target
                                   .value
                               )
                             }
@@ -2909,29 +2873,98 @@ From: ${finalFrom}`;
                           />
                         </div>
 
-                        {editBanks.length >
-                          1 && (
-                          <button
-                            type="button"
-                            style={
-                              styles.removeBankButton
-                            }
-                            onClick={() =>
-                              removeEditBank(
-                                bank.id
-                              )
-                            }
-                          >
-                            Remove
-                          </button>
-                        )}
+                        <button
+                          type="button"
+                          style={
+                            styles.removeBankButton
+                          }
+                          onClick={() =>
+                            removeEditBank(
+                              bank.id
+                            )
+                          }
+                        >
+                          🗑 Remove
+                        </button>
                       </div>
                     </div>
                   )
                 )}
+
+                {editBanks.length ===
+                  0 && (
+                  <div
+                    style={{
+                      marginTop: 8,
+                      padding: 10,
+                      background:
+                        "#ffffff",
+                      border:
+                        "1px dashed #cbd5e1",
+                      borderRadius: 8,
+                      textAlign:
+                        "center",
+                      fontSize: 11,
+                      color:
+                        "#6b7280",
+                    }}
+                  >
+                    No bank added.
+                    Click "+ Add Bank"
+                    to add bank
+                    information.
+                  </div>
+                )}
               </div>
 
 
+              {/* VEHICLE */}
+
+              <div
+                style={
+                  styles.editSection
+                }
+              >
+                <div
+                  style={
+                    styles.editSectionTitle
+                  }
+                >
+                  Vehicle Information
+                </div>
+
+                <div
+                  style={
+                    styles.formGrid
+                  }
+                >
+                  <div>
+                    <label
+                      style={
+                        styles.formLabel
+                      }
+                    >
+                      Vehicle No
+                    </label>
+
+                    <input
+                      value={
+                        editVehicleNo
+                      }
+                      onChange={(e) =>
+                        setEditVehicleNo(
+                          e.target
+                            .value
+                        )
+                      }
+                      placeholder="Vehicle No"
+                      style={
+                        styles.input
+                      }
+                    />
+                  </div>
+                </div>
+              </div>
 
               {/* GENERATED MESSAGE */}
 
