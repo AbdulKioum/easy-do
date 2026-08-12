@@ -1,5 +1,10 @@
 import React from "react";
 
+import {
+  useAuth,
+} from "../../context/AuthContext";
+
+
 type SideMenuProps = {
   open: boolean;
   onClose: () => void;
@@ -7,48 +12,84 @@ type SideMenuProps = {
   onNavigate: (page: string) => void;
 };
 
+
 export default function SideMenu({
   open,
   onClose,
   currentPage,
   onNavigate,
 }: SideMenuProps) {
-  if (!open) return null;
+
+  const {
+    profile,
+    role,
+    signOut,
+  } = useAuth();
+
+
+  if (!open) {
+    return null;
+  }
+
 
   function navigate(page: string) {
+
     onNavigate(page);
+
     onClose();
   }
+
+
+  async function handleLogout() {
+
+    await signOut();
+
+    onClose();
+  }
+
 
   return (
     <>
       {/* BACKDROP */}
+
       <div
         style={styles.backdrop}
         onClick={onClose}
       />
 
+
       {/* DRAWER */}
+
       <aside style={styles.drawer}>
+
+        {/* HEADER */}
+
         <div style={styles.header}>
+
           <div>
+
             <div style={styles.logo}>
+
               <img
-              src="/easy_do_logo.png"
-              alt="Easy D/O"
-              style={{
-                width: "100px",
-                height: "auto",
-                objectFit: "contain",
-                display: "block",
-              }}
-            />
+                src="/easy_do_logo.png"
+                alt="Easy D/O"
+                style={{
+                  width: "100px",
+                  height: "auto",
+                  objectFit: "contain",
+                  display: "block",
+                }}
+              />
+
             </div>
+
 
             <div style={styles.subtitle}>
               Feed Order Management
             </div>
+
           </div>
+
 
           <button
             onClick={onClose}
@@ -56,46 +97,63 @@ export default function SideMenu({
           >
             ×
           </button>
+
         </div>
 
+
+
+
+        {/* MENU */}
+
         <div style={styles.menu}>
+
           {/* CREATE D/O */}
+
           <MenuItem
             icon="📝"
             label="Create D/O"
             active={
-              currentPage === "easy-do"
+              currentPage ===
+              "easy-do"
             }
             onClick={() =>
               navigate("easy-do")
             }
           />
 
+
           {/* SAVED DO */}
+
           <MenuItem
             icon="💾"
             label="Saved DO"
             active={
-              currentPage === "saved-dos"
+              currentPage ===
+              "saved-dos"
             }
             onClick={() =>
               navigate("saved-dos")
             }
           />
 
+
           {/* PRICE LIST */}
+
           <MenuItem
             icon="💰"
             label="Price List"
             active={
-              currentPage === "price-list"
+              currentPage ===
+              "price-list"
             }
             onClick={() =>
               navigate("price-list")
             }
           />
 
+
           {/* TRANSPORTATION */}
+
           <MenuItem
             icon="🚚"
             label="Transportation"
@@ -108,30 +166,80 @@ export default function SideMenu({
             }
           />
 
+
           {/* UPAZILA */}
+
           <MenuItem
             icon="📍"
             label="Upazila"
             active={
-              currentPage === "upazila"
+              currentPage ===
+              "upazila"
             }
             onClick={() =>
               navigate("upazila")
             }
           />
+
+          {role === "super_admin" && (
+            <MenuItem
+              icon="👥"
+              label="User Management"
+              active={currentPage === "user-management"}
+              onClick={() =>
+                navigate("user-management")
+              }
+            />
+          )}
+
         </div>
+
+
+          
+        {/* USER INFO */}
+
+        <div style={styles.userBox}>
+
+          <div style={styles.userName}>
+            {profile?.full_name ||
+              profile?.email ||
+              "User"}
+          </div>
+
+
+          <div style={styles.roleBadge}>
+            {role === "super_admin"
+              ? "SUPER ADMIN"
+              : role === "admin"
+              ? "ADMIN"
+              : "USER"}
+          </div>
+
+        </div>
+        
+
+
+        {/* FOOTER */}
 
         <div style={styles.footer}>
-          Easy D/O
 
-          <span style={styles.footerSpan}>
-            Feed Order System
-          </span>
+
+          {/* LOGOUT */}
+
+          <button
+            onClick={handleLogout}
+            style={styles.logoutButton}
+          >
+            🚪 Logout
+          </button>
+
         </div>
+
       </aside>
     </>
   );
 }
+
 
 function MenuItem({
   icon,
@@ -144,6 +252,7 @@ function MenuItem({
   active: boolean;
   onClick: () => void;
 }) {
+
   return (
     <button
       onClick={onClick}
@@ -154,19 +263,26 @@ function MenuItem({
           : {}),
       }}
     >
+
       <span style={styles.icon}>
         {icon}
       </span>
 
-      <span>{label}</span>
+
+      <span>
+        {label}
+      </span>
+
     </button>
   );
 }
+
 
 const styles: Record<
   string,
   React.CSSProperties
 > = {
+
   backdrop: {
     position: "fixed",
     inset: 0,
@@ -176,19 +292,18 @@ const styles: Record<
   },
 
   drawer: {
-    position: "fixed",
-    top: 0,
-    left: 0,
-    bottom: 0,
-    width: 280,
-    maxWidth: "82vw",
-    background: "#ffffff",
-    zIndex: 1000,
-    boxShadow:
-      "4px 0 20px rgba(0,0,0,.15)",
-    display: "flex",
-    flexDirection: "column",
-  },
+  position: "fixed",
+  top: 0,
+  left: 0,
+  bottom: 0,
+  width: 280,
+  maxWidth: "82vw",
+  background: "#ffffff",
+  zIndex: 1000,
+  boxShadow: "4px 0 20px rgba(0,0,0,.15)",
+  display: "flex",
+  flexDirection: "column",
+},
 
   header: {
     padding: "22px 18px",
@@ -223,12 +338,44 @@ const styles: Record<
     cursor: "pointer",
   },
 
-  menu: {
-    padding: 12,
-    display: "flex",
-    flexDirection: "column",
-    gap: 5,
+  userBox: {
+    margin: "12px 12px 4px",
+    padding: "11px 13px",
+    borderRadius: 11,
+    background: "#f8fafc",
+    border:
+      "1px solid #e5e7eb",
   },
+
+  userName: {
+    fontSize: 13,
+    fontWeight: 700,
+    color: "#111827",
+    overflow: "hidden",
+    textOverflow: "ellipsis",
+    whiteSpace: "nowrap",
+  },
+
+  roleBadge: {
+    display: "inline-block",
+    marginTop: 3,
+    padding: "1px 5px",
+    borderRadius: 6,
+    background: "#111827",
+    color: "#ffffff",
+    fontSize: 7,
+    fontWeight: 800,
+  },
+
+  menu: {
+  padding: 12,
+  display: "flex",
+  flexDirection: "column",
+  gap: 5,
+
+  flex: 1,
+  overflowY: "auto",
+},
 
   menuItem: {
     width: "100%",
@@ -258,20 +405,35 @@ const styles: Record<
   },
 
   footer: {
-    marginTop: "auto",
-    padding: 18,
-    borderTop:
-      "1px solid #e5e7eb",
-    fontSize: 12,
-    fontWeight: 700,
-    color: "#374151",
-    display: "flex",
-    flexDirection: "column",
-    gap: 3,
-  },
+  padding: 14,
+  borderTop: "1px solid #e5e7eb",
+  fontSize: 12,
+  fontWeight: 700,
+  color: "#374151",
+  display: "flex",
+  flexDirection: "column",
+  gap: 3,
+
+  flexShrink: 0,
+  background: "#ffffff",
+},
 
   footerSpan: {
     color: "#9ca3af",
     fontWeight: 400,
+  },
+
+  logoutButton: {
+    marginTop: 14,
+    width: "100%",
+    border:
+      "1px solid #fecaca",
+    background: "#fef2f2",
+    color: "#b91c1c",
+    borderRadius: 9,
+    padding: "10px 12px",
+    fontSize: 12,
+    fontWeight: 700,
+    cursor: "pointer",
   },
 };

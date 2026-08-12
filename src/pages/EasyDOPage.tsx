@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "../lib/supabase";
+import { useAuth } from "../context/AuthContext";
 
 type FeedPrice = {
   id: number;
@@ -46,7 +47,10 @@ const categories = [
 ];
 
 export default function EasyDOPage() {
+  const { user } = useAuth();
+
   const [priceList, setPriceList] = useState<FeedPrice[]>([]);
+
   const [transportList, setTransportList] = useState<Transport[]>([]);
 
   const [loading, setLoading] = useState(true);
@@ -479,28 +483,30 @@ ${amount}`;
     // =========================
 
     const validRows = rows.filter(
-      (row) =>
-        row.item &&
-        row.bags > 0
-    );
+  (row): row is OrderRow & { item: FeedPrice } =>
+    row.item !== null &&
+    row.item !== undefined &&
+    Number(row.bags) > 0
+);
 
-    let feedText = "";
+let feedText = "";
 
-    if (!validRows.length) {
-      feedText = "[Feed Details]";
-    } else {
-      feedText = validRows
-        .map((row) => {
-          const name = getFeedShortName(
-            row.item as FeedPrice
-          );
+if (!validRows.length) {
+  feedText = "[Feed Details]";
+} else {
+  feedText = validRows
+    .map((row) => {
+      const name =
+        getFeedShortName(row.item);
 
-          return `${name} - ${row.bags} bag${
-            row.bags !== 1 ? "s" : ""
-          }`;
-        })
-        .join("\n");
-    }
+      return `${name} - ${row.bags} bag${
+        row.bags !== 1
+          ? "s"
+          : ""
+      }`;
+    })
+    .join("\n");
+}
 
     const finalFrom =
       fromLocation.trim() ||
@@ -590,29 +596,40 @@ From: ${finalFrom}`;
   // =========================
 
   async function saveDO() {
-    if (saving) {
-      return;
-    }
+  if (saving) {
+    return;
+  }
 
-    if (rows.length === 0) {
-      alert("Please add at least one feed item.");
-      return;
-    }
+  if (!user) {
+    alert("You are not logged in.");
+    return;
+  }
 
-    const validRows = rows.filter(
-      (row) =>
-        row.item &&
-        row.bags > 0
+  if (rows.length === 0) {
+    alert("Please add at least one feed item.");
+    return;
+  }
+
+  // ==========================================
+  // VALID ROWS
+  // ==========================================
+
+  const validRows: OrderRow[] = rows.filter(
+    (row: OrderRow) =>
+      row.item !== null &&
+      row.bags > 0
+  );
+
+  if (validRows.length === 0) {
+    alert(
+      "Please select feed item and enter bags."
     );
+    return;
+  }
 
-    if (validRows.length === 0) {
-      alert("Please select feed item and enter bags.");
-      return;
-    }
+  setSaving(true);
 
-    setSaving(true);
-
-    try {
+  try {
       const validBanks = banks.filter(
         (bank) =>
           bank.bankName.trim() ||
@@ -644,19 +661,30 @@ From: ${finalFrom}`;
       const orderItems = validRows.map(
         (row) => ({
           category: row.category,
+
           item_id: row.item?.id || null,
-          item_name: row.item?.item_name || "",
+
+          item_name:
+            row.item?.item_name || "",
+
           short_name:
             row.item?.short_name || "",
-          bags: Number(row.bags),
+
+          bags:
+            Number(row.bags),
+
           kg_per_bag:
             Number(row.item?.kg_per_bag || 0),
+
           tp_per_bag:
             Number(row.item?.tp_per_bag || 0),
+
           weight:
             getRowWeight(row),
+
           transport:
             getRowTransport(row),
+
           total:
             getRowTotal(row),
         })
@@ -672,6 +700,8 @@ From: ${finalFrom}`;
         buildDOMessage();
 
       const payload = {
+        user_id: user.id,
+
         agent_info:
           `${agentCode.trim()}, ${agentName.trim()}`.replace(
             /^,\s*|\s*,\s*$/g,
