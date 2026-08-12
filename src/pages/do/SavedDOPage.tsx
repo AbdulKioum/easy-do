@@ -80,6 +80,37 @@ export default function SavedDOPage() {
     useState(false);
 
   // =========================
+  // MOBILE
+  // =========================
+
+  const [isMobile, setIsMobile] =
+    useState(
+      typeof window !== "undefined"
+        ? window.innerWidth <= 640
+        : false
+    );
+
+  useEffect(() => {
+    function handleResize() {
+      setIsMobile(
+        window.innerWidth <= 640
+      );
+    }
+
+    window.addEventListener(
+      "resize",
+      handleResize
+    );
+
+    return () => {
+      window.removeEventListener(
+        "resize",
+        handleResize
+      );
+    };
+  }, []);
+
+  // =========================
   // EDIT DATA
   // =========================
 
@@ -374,6 +405,97 @@ export default function SavedDOPage() {
     }
 
     return item.item_name;
+  }
+
+  // =========================
+  // BANK NORMALIZER
+  // =========================
+
+  function getBankInfos(
+    banks: any
+  ): BankInfo[] {
+    if (!banks) {
+      return [];
+    }
+
+    let data = banks;
+
+    if (typeof data === "string") {
+      try {
+        data = JSON.parse(data);
+      } catch {
+        return [];
+      }
+    }
+
+    if (!Array.isArray(data)) {
+      return [];
+    }
+
+    return data.map(
+      (
+        bank: any,
+        index: number
+      ) => ({
+        id:
+          Number(bank?.id) ||
+          Date.now() +
+            index +
+            Math.random(),
+
+        bankName:
+          bank?.bankName ||
+          bank?.bank_name ||
+          "",
+
+        branch:
+          bank?.branch ||
+          bank?.bank_branch ||
+          "",
+
+        amount:
+          bank?.amount != null
+            ? String(bank.amount)
+            : "",
+
+        date:
+          bank?.date ||
+          bank?.do_date ||
+          "",
+      })
+    );
+  }
+
+  // =========================
+  // TOTAL BANK AMOUNT
+  // =========================
+
+  function getTotalBankAmount(
+    item: SavedDO
+  ) {
+    const banks =
+      getBankInfos(item.banks);
+
+    if (banks.length > 0) {
+      return banks.reduce(
+        (total, bank) => {
+          const amount =
+            Number(bank.amount);
+
+          return (
+            total +
+            (Number.isNaN(amount)
+              ? 0
+              : amount)
+          );
+        },
+        0
+      );
+    }
+
+    return Number(
+      item.bank_amount || 0
+    );
   }
 
   // =========================
@@ -894,33 +1016,16 @@ From: ${finalFrom}`;
     // BANK DATA
     // =========================
 
-    let savedBanks =
-      item.banks;
+    const normalizedBanks =
+      getBankInfos(item.banks);
 
     if (
-      typeof savedBanks ===
-      "string"
-    ) {
-      try {
-        savedBanks =
-          JSON.parse(
-            savedBanks
-          );
-      } catch {
-        savedBanks = [];
-      }
-    }
-
-    if (
-      Array.isArray(
-        savedBanks
-      ) &&
-      savedBanks.length > 0
+      normalizedBanks.length > 0
     ) {
       setEditBanks(
-        savedBanks.map(
+        normalizedBanks.map(
           (
-            bank: any,
+            bank: BankInfo,
             index: number
           ) => ({
             id:
@@ -929,25 +1034,16 @@ From: ${finalFrom}`;
               Math.random(),
 
             bankName:
-              bank.bankName ||
-              bank.bank_name ||
-              "",
+              bank.bankName,
 
             branch:
-              bank.branch ||
-              bank.bank_branch ||
-              "",
+              bank.branch,
 
             amount:
-              bank.amount != null
-                ? String(
-                    bank.amount
-                  )
-                : "",
+              bank.amount,
 
             date:
               bank.date ||
-              bank.do_date ||
               item.do_date ||
               new Date()
                 .toISOString()
@@ -1220,6 +1316,24 @@ From: ${finalFrom}`;
         editGeneratedMessage ||
         buildEditMessage();
 
+      const totalBankAmount =
+        validBanks.reduce(
+          (total, bank) => {
+            const amount =
+              Number(
+                bank.amount
+              );
+
+            return (
+              total +
+              (Number.isNaN(amount)
+                ? 0
+                : amount)
+            );
+          },
+          0
+        );
+
       const payload = {
         // Keep old DB field compatible.
         // First bank date is used as do_date.
@@ -1292,11 +1406,7 @@ From: ${finalFrom}`;
           null,
 
         bank_amount:
-          firstBank?.amount
-            ? Number(
-                firstBank.amount
-              )
-            : 0,
+          totalBankAmount,
 
         banks:
           validBanks,
@@ -1854,7 +1964,7 @@ From: ${finalFrom}`;
                 }
               >
                 <Detail
-                  label="Total Amount"
+                  label="Total DO Amount"
                   value={`৳ ${money(
                     selectedDO.total_amount
                   )}`}
@@ -1863,7 +1973,9 @@ From: ${finalFrom}`;
                 <Detail
                   label="Bank Amount"
                   value={`৳ ${money(
-                    selectedDO.bank_amount
+                    getTotalBankAmount(
+                      selectedDO
+                    )
                   )}`}
                 />
               </div>
@@ -1883,19 +1995,107 @@ From: ${finalFrom}`;
                   🏦 Bank Information
                 </div>
 
-                <Detail
-                  label="Bank"
-                  value={
-                    selectedDO.bank_name
-                  }
-                />
+                {getBankInfos(
+                  selectedDO.banks
+                ).length > 0 ? (
+                  <div
+                    style={
+                      styles.viewBankList
+                    }
+                  >
+                    {getBankInfos(
+                      selectedDO.banks
+                    ).map(
+                      (
+                        bank,
+                        index
+                      ) => (
+                        <div
+                          key={
+                            bank.id ||
+                            index
+                          }
+                          style={
+                            styles.viewBankCard
+                          }
+                        >
+                          <div
+                            style={
+                              styles.viewBankHeader
+                            }
+                          >
+                            <strong>
+                              Bank #
+                              {index +
+                                1}
+                            </strong>
 
-                <Detail
-                  label="Branch"
-                  value={
-                    selectedDO.bank_branch
-                  }
-                />
+                            <strong
+                              style={
+                                styles.viewBankAmount
+                              }
+                            >
+                              ৳{" "}
+                              {money(
+                                Number(
+                                  bank.amount ||
+                                    0
+                                )
+                              )}
+                            </strong>
+                          </div>
+
+                          <Detail
+                            label="Bank"
+                            value={
+                              bank.bankName
+                            }
+                          />
+
+                          <Detail
+                            label="Branch"
+                            value={
+                              bank.branch
+                            }
+                          />
+
+                          <Detail
+                            label="Amount"
+                            value={`৳ ${money(
+                              Number(
+                                bank.amount ||
+                                  0
+                              )
+                            )}`}
+                          />
+
+                          <Detail
+                            label="Date"
+                            value={
+                              bank.date
+                            }
+                          />
+                        </div>
+                      )
+                    )}
+                  </div>
+                ) : (
+                  <>
+                    <Detail
+                      label="Bank"
+                      value={
+                        selectedDO.bank_name
+                      }
+                    />
+
+                    <Detail
+                      label="Branch"
+                      value={
+                        selectedDO.bank_branch
+                      }
+                    />
+                  </>
+                )}
               </div>
 
               {/* DO MESSAGE */}
@@ -2072,12 +2272,16 @@ From: ${finalFrom}`;
                           row.id
                         }
                         style={
-                          styles.editRow
+                          isMobile
+                            ? styles.editRowMobile
+                            : styles.editRow
                         }
                       >
                         <div
                           style={
-                            styles.editRowNumber
+                            isMobile
+                              ? styles.editRowNumberMobile
+                              : styles.editRowNumber
                           }
                         >
                           {index +
@@ -2086,7 +2290,9 @@ From: ${finalFrom}`;
 
                         <div
                           style={
-                            styles.editRowMain
+                            isMobile
+                              ? styles.editRowMainMobile
+                              : styles.editRowMain
                           }
                         >
                           <div
@@ -2153,7 +2359,9 @@ From: ${finalFrom}`;
 
                         <div
                           style={
-                            styles.editBags
+                            isMobile
+                              ? styles.editBagsMobile
+                              : styles.editBags
                           }
                         >
                           <div
@@ -2192,7 +2400,9 @@ From: ${finalFrom}`;
 
                         <div
                           style={
-                            styles.editRowTotal
+                            isMobile
+                              ? styles.editRowTotalMobile
+                              : styles.editRowTotal
                           }
                         >
                           ৳{" "}
@@ -2204,7 +2414,9 @@ From: ${finalFrom}`;
                         <button
                           type="button"
                           style={
-                            styles.removeButton
+                            isMobile
+                              ? styles.removeButtonMobile
+                              : styles.removeButton
                           }
                           onClick={() =>
                             removeEditRow(
@@ -2547,8 +2759,6 @@ From: ${finalFrom}`;
                 )}
               </div>
 
-              
-
               {/* SUMMARY */}
 
               <div
@@ -2556,7 +2766,7 @@ From: ${finalFrom}`;
                   styles.editSummary
                 }
               >
-                <Detail
+                <SummaryDetail
                   label="Total Weight"
                   value={`${editTotalWeight.toLocaleString(
                     "en-BD",
@@ -2566,14 +2776,14 @@ From: ${finalFrom}`;
                   )} kg`}
                 />
 
-                <Detail
+                <SummaryDetail
                   label="Feed Price"
                   value={`৳ ${money(
                     editFeedPrice
                   )}`}
                 />
 
-                <Detail
+                <SummaryDetail
                   label="Transportation"
                   value={
                     editTransportMode ===
@@ -2673,9 +2883,35 @@ From: ${finalFrom}`;
                     />
                   </div>
                 </div>
+
+                <div
+                  style={{
+                    marginTop: 10,
+                  }}
+                >
+                  <label
+                    style={
+                      styles.formLabel
+                    }
+                  >
+                    Vehicle No
+                  </label>
+
+                  <input
+                    value={
+                      editVehicleNo
+                    }
+                    onChange={(e) =>
+                      setEditVehicleNo(
+                        e.target.value
+                      )
+                    }
+                    style={
+                      styles.input
+                    }
+                  />
+                </div>
               </div>
-
-
 
               {/* BANK INFORMATION */}
 
@@ -2694,7 +2930,7 @@ From: ${finalFrom}`;
                       styles.editSectionTitle
                     }
                   >
-                    🏦 Bank Information
+                    Bank Information
                   </div>
 
                   <button
@@ -2728,8 +2964,9 @@ From: ${finalFrom}`;
                           styles.bankNumber
                         }
                       >
-                        Bank{" "}
-                        {index + 1}
+                        Bank #
+                        {index +
+                          1}
                       </div>
 
                       <div
@@ -2760,7 +2997,6 @@ From: ${finalFrom}`;
                                   .value
                               )
                             }
-                            placeholder="Bank Name"
                             style={
                               styles.input
                             }
@@ -2790,7 +3026,6 @@ From: ${finalFrom}`;
                                   .value
                               )
                             }
-                            placeholder="Branch"
                             style={
                               styles.input
                             }
@@ -2819,6 +3054,7 @@ From: ${finalFrom}`;
                           <input
                             type="number"
                             min="0"
+                            step="0.01"
                             value={
                               bank.amount
                             }
@@ -2832,7 +3068,6 @@ From: ${finalFrom}`;
                                   .value
                               )
                             }
-                            placeholder="Amount"
                             style={
                               styles.input
                             }
@@ -2890,80 +3125,6 @@ From: ${finalFrom}`;
                     </div>
                   )
                 )}
-
-                {editBanks.length ===
-                  0 && (
-                  <div
-                    style={{
-                      marginTop: 8,
-                      padding: 10,
-                      background:
-                        "#ffffff",
-                      border:
-                        "1px dashed #cbd5e1",
-                      borderRadius: 8,
-                      textAlign:
-                        "center",
-                      fontSize: 11,
-                      color:
-                        "#6b7280",
-                    }}
-                  >
-                    No bank added.
-                    Click "+ Add Bank"
-                    to add bank
-                    information.
-                  </div>
-                )}
-              </div>
-
-
-              {/* VEHICLE */}
-
-              <div
-                style={
-                  styles.editSection
-                }
-              >
-                <div
-                  style={
-                    styles.editSectionTitle
-                  }
-                >
-                  Vehicle Information
-                </div>
-
-                <div
-                  style={
-                    styles.formGrid
-                  }
-                >
-                  <div>
-                    <label
-                      style={
-                        styles.formLabel
-                      }
-                    >
-                      Vehicle No
-                    </label>
-
-                    <input
-                      value={
-                        editVehicleNo
-                      }
-                      onChange={(e) =>
-                        setEditVehicleNo(
-                          e.target
-                            .value
-                        )
-                      }
-                      placeholder="Vehicle No"
-                      style={
-                        styles.input
-                      }
-                    />
-                  </div>
-                </div>
               </div>
 
               {/* GENERATED MESSAGE */}
@@ -3087,6 +3248,41 @@ function Detail({
       <strong
         style={
           styles.detailValue
+        }
+      >
+        {value || "—"}
+      </strong>
+    </div>
+  );
+}
+
+
+/* SUMMARY DETAIL COMPONENT */
+
+function SummaryDetail({
+  label,
+  value,
+}: {
+  label: string;
+  value: any;
+}) {
+  return (
+    <div
+      style={
+        styles.summaryDetail
+      }
+    >
+      <span
+        style={
+          styles.summaryDetailLabel
+        }
+      >
+        {label}
+      </span>
+
+      <strong
+        style={
+          styles.summaryDetailValue
         }
       >
         {value || "—"}
@@ -3471,6 +3667,38 @@ const styles: Record<
     marginTop: 14,
   },
 
+  viewBankList: {
+    display: "flex",
+    flexDirection:
+      "column",
+    gap: 9,
+  },
+
+  viewBankCard: {
+    background:
+      "#f8fafc",
+    border:
+      "1px solid #e2e8f0",
+    borderRadius: 10,
+    padding: 10,
+  },
+
+  viewBankHeader: {
+    display: "flex",
+    justifyContent:
+      "space-between",
+    alignItems:
+      "center",
+    marginBottom: 4,
+    fontSize: 11,
+    color: "#111827",
+  },
+
+  viewBankAmount: {
+    fontSize: 12,
+    color: "#111827",
+  },
+
   messageBox: {
     marginTop: 14,
   },
@@ -3582,7 +3810,41 @@ const styles: Record<
     borderRadius: 9,
   },
 
+  // MOBILE FIX
+  editRowMobile: {
+    position: "relative",
+    display: "grid",
+    gridTemplateColumns:
+      "28px minmax(0, 1fr) 34px",
+    gap: 7,
+    alignItems:
+      "start",
+    padding: 9,
+    marginTop: 8,
+    background:
+      "#ffffff",
+    border:
+      "1px solid #e5e7eb",
+    borderRadius: 9,
+  },
+
   editRowNumber: {
+    width: 27,
+    height: 27,
+    borderRadius: 7,
+    background:
+      "#f3f4f6",
+    color: "#374151",
+    display: "flex",
+    alignItems:
+      "center",
+    justifyContent:
+      "center",
+    fontSize: 11,
+    fontWeight: 700,
+  },
+
+  editRowNumberMobile: {
     width: 27,
     height: 27,
     borderRadius: 7,
@@ -3602,8 +3864,21 @@ const styles: Record<
     minWidth: 0,
   },
 
+  editRowMainMobile: {
+    minWidth: 0,
+    width: "100%",
+  },
+
   editBags: {
     minWidth: 0,
+  },
+
+  editBagsMobile: {
+    minWidth: 0,
+    gridColumn:
+      "2 / 3",
+    width: "100%",
+    marginTop: 7,
   },
 
   editRowTotal: {
@@ -3612,6 +3887,16 @@ const styles: Record<
     fontWeight: 800,
     whiteSpace:
       "nowrap",
+  },
+
+  editRowTotalMobile: {
+    gridColumn:
+      "2 / 3",
+    padding:
+      "4px 0 0",
+    fontSize: 12,
+    fontWeight: 800,
+    color: "#111827",
   },
 
   smallLabel: {
@@ -3632,6 +3917,23 @@ const styles: Record<
     fontSize: 20,
     lineHeight: 1,
     cursor: "pointer",
+  },
+
+  removeButtonMobile: {
+    border: "none",
+    background:
+      "#fee2e2",
+    color: "#991b1b",
+    width: 30,
+    height: 30,
+    borderRadius: 7,
+    fontSize: 20,
+    lineHeight: 1,
+    cursor: "pointer",
+    gridColumn: "3 / 4",
+    gridRow: "1 / span 2",
+    justifySelf:
+      "end",
   },
 
   addItemBox: {
@@ -3798,6 +4100,10 @@ const styles: Record<
     cursor: "pointer",
   },
 
+  // =========================
+  // SUMMARY
+  // =========================
+
   editSummary: {
     marginTop: 12,
     background:
@@ -3805,6 +4111,31 @@ const styles: Record<
     color: "#ffffff",
     borderRadius: 10,
     padding: 12,
+  },
+
+  summaryDetail: {
+    display: "flex",
+    justifyContent:
+      "space-between",
+    alignItems:
+      "center",
+    gap: 12,
+    padding:
+      "7px 0",
+    borderBottom:
+      "1px solid #374151",
+    fontSize: 11,
+  },
+
+  summaryDetailLabel: {
+    color: "#d1d5db",
+  },
+
+  summaryDetailValue: {
+    color: "#ffffff",
+    textAlign:
+      "right",
+    fontWeight: 800,
   },
 
   editGrandTotal: {
@@ -3816,8 +4147,9 @@ const styles: Record<
     marginTop: 8,
     paddingTop: 10,
     borderTop:
-      "1px solid #374151",
+      "1px solid #4b5563",
     fontSize: 15,
+    color: "#ffffff",
   },
 
   copySmallButton: {
