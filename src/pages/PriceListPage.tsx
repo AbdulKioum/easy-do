@@ -2,6 +2,9 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import * as XLSX from "xlsx";
 import { saveAs } from "file-saver";
 import { supabase } from "../lib/supabase";
+import { useAuth } from "../context/AuthContext";
+
+type UserRole = "user" | "admin" | "super_admin";
 
 type PriceItem = {
   id?: number;
@@ -35,10 +38,32 @@ const emptyForm: PriceItem = {
 };
 
 export default function PriceListPage() {
+  // ==========================================
+  // AUTH / ROLE
+  // ==========================================
+
+  const { role } = useAuth();
+
+  const currentRole = role as UserRole | null;
+
+  const canManage =
+    currentRole === "admin" ||
+    currentRole === "super_admin";
+
+  const canView =
+    currentRole === "user" ||
+    currentRole === "admin" ||
+    currentRole === "super_admin";
+
+  // ==========================================
+  // STATE
+  // ==========================================
+
   const [items, setItems] = useState<PriceItem[]>([]);
   const [loading, setLoading] = useState(true);
 
   const [search, setSearch] = useState("");
+
   const [categoryFilter, setCategoryFilter] =
     useState("All");
 
@@ -54,9 +79,17 @@ export default function PriceListPage() {
   const fileInputRef =
     useRef<HTMLInputElement | null>(null);
 
+  // ==========================================
+  // LOAD PRICE LIST
+  // ==========================================
+
   useEffect(() => {
-    loadPriceList();
-  }, []);
+    if (canView) {
+      loadPriceList();
+    } else {
+      setLoading(false);
+    }
+  }, [canView]);
 
   async function loadPriceList() {
     setLoading(true);
@@ -69,16 +102,35 @@ export default function PriceListPage() {
       });
 
     if (error) {
-      console.error(error);
-      alert("Price list load failed.");
+      console.error(
+        "Price list load error:",
+        error
+      );
+
+      alert(
+        `Price list load failed: ${error.message}`
+      );
     } else {
-      setItems((data || []) as PriceItem[]);
+      setItems(
+        (data || []) as PriceItem[]
+      );
     }
 
     setLoading(false);
   }
 
+  // ==========================================
+  // ADD
+  // ==========================================
+
   function openAdd() {
+    if (!canManage) {
+      alert(
+        "Only Admin or Super Admin can add price items."
+      );
+      return;
+    }
+
     setEditingId(null);
 
     setForm({
@@ -88,7 +140,18 @@ export default function PriceListPage() {
     setShowForm(true);
   }
 
+  // ==========================================
+  // EDIT
+  // ==========================================
+
   function openEdit(item: PriceItem) {
+    if (!canManage) {
+      alert(
+        "Only Admin or Super Admin can edit price items."
+      );
+      return;
+    }
+
     setEditingId(item.id || null);
 
     setForm({
@@ -111,6 +174,10 @@ export default function PriceListPage() {
     setShowForm(true);
   }
 
+  // ==========================================
+  // CLOSE FORM
+  // ==========================================
+
   function closeForm() {
     setShowForm(false);
     setEditingId(null);
@@ -120,97 +187,186 @@ export default function PriceListPage() {
     });
   }
 
+  // ==========================================
+  // SAVE PRICE ITEM
+  // ==========================================
+
   async function savePriceItem() {
+    if (!canManage) {
+      alert(
+        "Only Admin or Super Admin can manage price items."
+      );
+      return;
+    }
+
     if (!form.item_name.trim()) {
       alert("Item name is required.");
       return;
     }
 
     if (Number(form.kg_per_bag) <= 0) {
-      alert("KG/Bag must be greater than 0.");
+      alert(
+        "KG/Bag must be greater than 0."
+      );
       return;
     }
 
     const payload = {
       category: form.category,
       item_name: form.item_name.trim(),
-      short_name: form.short_name.trim(),
-      kg_per_bag: Number(form.kg_per_bag),
-      tp_per_bag: Number(form.tp_per_bag),
-      mrp_per_bag: Number(form.mrp_per_bag),
+      short_name:
+        form.short_name.trim(),
+      kg_per_bag:
+        Number(form.kg_per_bag),
+      tp_per_bag:
+        Number(form.tp_per_bag),
+      mrp_per_bag:
+        Number(form.mrp_per_bag),
       status: form.status,
     };
 
+    // ========================================
+    // UPDATE
+    // ========================================
+
     if (editingId) {
-      const { error } = await supabase
-        .from("feed_price_list")
-        .update(payload)
-        .eq("id", editingId);
+      const { error } =
+        await supabase
+          .from("feed_price_list")
+          .update(payload)
+          .eq("id", editingId);
 
       if (error) {
-        console.error(error);
-        alert("Update failed.");
+        console.error(
+          "Price update error:",
+          error
+        );
+
+        alert(
+          `Update failed: ${error.message}`
+        );
+
         return;
       }
-    } else {
-      const { error } = await supabase
-        .from("feed_price_list")
-        .upsert([payload], {
-          onConflict: "category,item_name",
-        });
+    }
+
+    // ========================================
+    // INSERT
+    // ========================================
+
+    else {
+      const { error } =
+        await supabase
+          .from("feed_price_list")
+          .upsert(
+            [payload],
+            {
+              onConflict:
+                "category,item_name",
+            }
+          );
 
       if (error) {
-        console.error(error);
-        alert("Add failed.");
+        console.error(
+          "Price insert error:",
+          error
+        );
+
+        alert(
+          `Add failed: ${error.message}`
+        );
+
         return;
       }
     }
 
     closeForm();
+
     await loadPriceList();
   }
 
-  async function deleteItem(id?: number) {
+  // ==========================================
+  // DELETE
+  // ==========================================
+
+  async function deleteItem(
+    id?: number
+  ) {
+    if (!canManage) {
+      alert(
+        "Only Admin or Super Admin can delete price items."
+      );
+      return;
+    }
+
     if (!id) return;
 
-    const confirmed = window.confirm(
-      "Delete this price item?"
-    );
+    const confirmed =
+      window.confirm(
+        "Delete this price item?"
+      );
 
     if (!confirmed) return;
 
-    const { error } = await supabase
-      .from("feed_price_list")
-      .delete()
-      .eq("id", id);
+    const { error } =
+      await supabase
+        .from("feed_price_list")
+        .delete()
+        .eq("id", id);
 
     if (error) {
-      console.error(error);
-      alert("Delete failed.");
+      console.error(
+        "Price delete error:",
+        error
+      );
+
+      alert(
+        `Delete failed: ${error.message}`
+      );
+
       return;
     }
 
     await loadPriceList();
   }
 
+  // ==========================================
+  // EXCEL IMPORT
+  // ADMIN + SUPER ADMIN ONLY
+  // ==========================================
+
   function handleExcelImport(
     event: React.ChangeEvent<HTMLInputElement>
   ) {
-    const file = event.target.files?.[0];
+    if (!canManage) {
+      alert(
+        "Only Admin or Super Admin can import price list."
+      );
+
+      event.target.value = "";
+
+      return;
+    }
+
+    const file =
+      event.target.files?.[0];
 
     if (!file) return;
 
-    const reader = new FileReader();
+    const reader =
+      new FileReader();
 
     reader.onload = async (e) => {
       try {
-        const data = new Uint8Array(
-          e.target?.result as ArrayBuffer
-        );
+        const data =
+          new Uint8Array(
+            e.target?.result as ArrayBuffer
+          );
 
-        const workbook = XLSX.read(data, {
-          type: "array",
-        });
+        const workbook =
+          XLSX.read(data, {
+            type: "array",
+          });
 
         const sheet =
           workbook.Sheets[
@@ -223,49 +379,71 @@ export default function PriceListPage() {
           );
 
         if (!rows.length) {
-          alert("Excel file is empty.");
+          alert(
+            "Excel file is empty."
+          );
           return;
         }
 
-        const importData = rows
-          .map((row, index) => ({
-            category: String(
-              row["Category"] || ""
-            ).trim(),
+        const importData =
+          rows
+            .map(
+              (
+                row,
+                index
+              ) => ({
+                category:
+                  String(
+                    row["Category"] ||
+                      ""
+                  ).trim(),
 
-            item_name: String(
-              row["Item Name"] || ""
-            ).trim(),
+                item_name:
+                  String(
+                    row["Item Name"] ||
+                      ""
+                  ).trim(),
 
-            short_name: String(
-              row["Short Name"] || ""
-            ).trim(),
+                short_name:
+                  String(
+                    row["Short Name"] ||
+                      ""
+                  ).trim(),
 
-            kg_per_bag: Number(
-              row["KG/Bag"] || 0
-            ),
+                kg_per_bag:
+                  Number(
+                    row["KG/Bag"] ||
+                      0
+                  ),
 
-            tp_per_bag: Number(
-              row["TP/Bag"] || 0
-            ),
+                tp_per_bag:
+                  Number(
+                    row["TP/Bag"] ||
+                      0
+                  ),
 
-            mrp_per_bag: Number(
-              row["MRP/Bag"] || 0
-            ),
+                mrp_per_bag:
+                  Number(
+                    row["MRP/Bag"] ||
+                      0
+                  ),
 
-            status: String(
-              row["Status"] || "Active"
-            ).trim(),
+                status:
+                  String(
+                    row["Status"] ||
+                      "Active"
+                  ).trim(),
 
-            // Keep Excel row order
-            sort_order: index + 1,
-          }))
-          .filter(
-            (item) =>
-              item.category &&
-              item.item_name &&
-              item.kg_per_bag > 0
-          );
+                sort_order:
+                  index + 1,
+              })
+            )
+            .filter(
+              (item) =>
+                item.category &&
+                item.item_name &&
+                item.kg_per_bag > 0
+            );
 
         if (!importData.length) {
           alert(
@@ -276,18 +454,29 @@ export default function PriceListPage() {
 
         const { error } =
           await supabase
-            .from("feed_price_list")
-            .upsert(importData, {
-              onConflict:
-                "category,item_name",
-              ignoreDuplicates: false,
-            });
+            .from(
+              "feed_price_list"
+            )
+            .upsert(
+              importData,
+              {
+                onConflict:
+                  "category,item_name",
+                ignoreDuplicates:
+                  false,
+              }
+            );
 
         if (error) {
-          console.error(error);
-          alert(
-            "Excel import/update failed."
+          console.error(
+            "Excel import error:",
+            error
           );
+
+          alert(
+            `Excel import/update failed: ${error.message}`
+          );
+
           return;
         }
 
@@ -297,7 +486,10 @@ export default function PriceListPage() {
 
         await loadPriceList();
       } catch (error) {
-        console.error(error);
+        console.error(
+          "Excel processing error:",
+          error
+        );
 
         alert(
           "Invalid Excel file."
@@ -305,50 +497,132 @@ export default function PriceListPage() {
       }
     };
 
-    reader.readAsArrayBuffer(file);
+    reader.readAsArrayBuffer(
+      file
+    );
 
     event.target.value = "";
   }
+
+  // ==========================================
+  // FILTER
+  // ==========================================
+
+  const filteredItems =
+    useMemo(() => {
+      const searchText =
+        search.toLowerCase();
+
+      return items.filter(
+        (item) => {
+          const categoryMatch =
+            categoryFilter ===
+              "All" ||
+            item.category ===
+              categoryFilter;
+
+          const searchMatch =
+            item.category
+              .toLowerCase()
+              .includes(
+                searchText
+              ) ||
+            item.item_name
+              .toLowerCase()
+              .includes(
+                searchText
+              ) ||
+            (
+              item.short_name ||
+              ""
+            )
+              .toLowerCase()
+              .includes(
+                searchText
+              );
+
+          return (
+            categoryMatch &&
+            searchMatch
+          );
+        }
+      );
+    }, [
+      items,
+      search,
+      categoryFilter,
+    ]);
+
+  // ==========================================
+  // EXCEL EXPORT
+  // ALL ROLES
+  // ==========================================
 
   function exportExcel() {
     if (!filteredItems.length) {
       alert(
         "No data available to export."
       );
+
       return;
     }
 
     const exportData =
-      filteredItems.map((item) => ({
-        Category: item.category,
+      filteredItems.map(
+        (item) => ({
+          Category:
+            item.category,
 
-        "Item Name": item.item_name,
+          "Item Name":
+            item.item_name,
 
-        "Short Name":
-          item.short_name || "",
+          "Short Name":
+            item.short_name ||
+            "",
 
-        "KG/Bag": Number(
-          item.kg_per_bag
-        ),
+          "KG/Bag":
+            Number(
+              item.kg_per_bag
+            ),
 
-        "TP/Bag": Number(
-          item.tp_per_bag
-        ),
+          "TP/Bag":
+            Number(
+              item.tp_per_bag
+            ),
 
-        "TP/KG":
-          Number(item.tp_per_bag) /
-          Number(item.kg_per_bag),
+          "TP/KG":
+            Number(
+              item.kg_per_bag
+            ) > 0
+              ? Number(
+                  item.tp_per_bag
+                ) /
+                Number(
+                  item.kg_per_bag
+                )
+              : 0,
 
-        "MRP/Bag": Number(
-          item.mrp_per_bag
-        ),
+          "MRP/Bag":
+            Number(
+              item.mrp_per_bag
+            ),
 
-        "MRP/KG":
-          Number(item.mrp_per_bag) /
-          Number(item.kg_per_bag),
+          "MRP/KG":
+            Number(
+              item.kg_per_bag
+            ) > 0
+              ? Number(
+                  item.mrp_per_bag
+                ) /
+                Number(
+                  item.kg_per_bag
+                )
+              : 0,
 
-        Status: item.status,
-      }));
+          Status:
+            item.status,
+        })
+      );
 
     const worksheet =
       XLSX.utils.json_to_sheet(
@@ -377,18 +651,22 @@ export default function PriceListPage() {
     );
 
     const excelBuffer =
-      XLSX.write(workbook, {
-        bookType: "xlsx",
-        type: "array",
-      });
+      XLSX.write(
+        workbook,
+        {
+          bookType: "xlsx",
+          type: "array",
+        }
+      );
 
-    const blob = new Blob(
-      [excelBuffer],
-      {
-        type:
-          "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-      }
-    );
+    const blob =
+      new Blob(
+        [excelBuffer],
+        {
+          type:
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        }
+      );
 
     saveAs(
       blob,
@@ -396,38 +674,48 @@ export default function PriceListPage() {
     );
   }
 
-  const filteredItems =
-    useMemo(() => {
-      const searchText =
-        search.toLowerCase();
+  // ==========================================
+  // ACCESS CHECK
+  // ==========================================
 
-      return items.filter((item) => {
-        const categoryMatch =
-          categoryFilter === "All" ||
-          item.category ===
-            categoryFilter;
+  if (!canView) {
+    return (
+      <div
+        style={
+          styles.accessDenied
+        }
+      >
+        <div
+          style={
+            styles.accessIcon
+          }
+        >
+          🔒
+        </div>
 
-        const searchMatch =
-          item.category
-            .toLowerCase()
-            .includes(searchText) ||
-          item.item_name
-            .toLowerCase()
-            .includes(searchText) ||
-          (item.short_name || "")
-            .toLowerCase()
-            .includes(searchText);
+        <div
+          style={
+            styles.accessTitle
+          }
+        >
+          Access Denied
+        </div>
 
-        return (
-          categoryMatch &&
-          searchMatch
-        );
-      });
-    }, [
-      items,
-      search,
-      categoryFilter,
-    ]);
+        <div
+          style={
+            styles.accessText
+          }
+        >
+          You do not have permission
+          to view the Price List.
+        </div>
+      </div>
+    );
+  }
+
+  // ==========================================
+  // PAGE
+  // ==========================================
 
   return (
     <div style={styles.page}>
@@ -439,7 +727,11 @@ export default function PriceListPage() {
             Price List
           </h1>
 
-          <p style={styles.subtitle}>
+          <p
+            style={
+              styles.subtitle
+            }
+          >
             Feed price management
           </p>
         </div>
@@ -449,52 +741,74 @@ export default function PriceListPage() {
             styles.headerButtons
           }
         >
+          {/* EXPORT - EVERYONE */}
+
           <button
             style={
               styles.exportButton
             }
-            onClick={exportExcel}
-          >
-            📤 Export
-          </button>
-
-          <button
-            style={
-              styles.importButton
-            }
-            onClick={() =>
-              fileInputRef.current?.click()
+            onClick={
+              exportExcel
             }
           >
-            📥 Import
+            📤 Export Excel
           </button>
 
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept=".xlsx,.xls,.csv"
-            style={{
-              display: "none",
-            }}
-            onChange={
-              handleExcelImport
-            }
-          />
+          {/* IMPORT - ADMIN / SUPER ADMIN */}
 
-          <button
-            style={
-              styles.addButton
-            }
-            onClick={openAdd}
-          >
-            + Add
-          </button>
+          {canManage && (
+            <>
+              <button
+                style={
+                  styles.importButton
+                }
+                onClick={() =>
+                  fileInputRef.current?.click()
+                }
+              >
+                📥 Import Excel
+              </button>
+
+              <input
+                ref={
+                  fileInputRef
+                }
+                type="file"
+                accept=".xlsx,.xls,.csv"
+                style={{
+                  display:
+                    "none",
+                }}
+                onChange={
+                  handleExcelImport
+                }
+              />
+
+              {/* ADD - ADMIN / SUPER ADMIN */}
+
+              <button
+                style={
+                  styles.addButton
+                }
+                onClick={
+                  openAdd
+                }
+              >
+                + Add
+              </button>
+            </>
+          )}
         </div>
       </div>
 
+
       {/* SEARCH */}
 
-      <div style={styles.searchBox}>
+      <div
+        style={
+          styles.searchBox
+        }
+      >
         <span>🔍</span>
 
         <input
@@ -663,15 +977,19 @@ export default function PriceListPage() {
                   Status
                 </th>
 
-                <th
-                  style={{
-                    ...styles.th,
-                    textAlign:
-                      "center",
-                  }}
-                >
-                  Action
-                </th>
+                {/* ACTION ONLY FOR ADMIN */}
+
+                {canManage && (
+                  <th
+                    style={{
+                      ...styles.th,
+                      textAlign:
+                        "center",
+                    }}
+                  >
+                    Action
+                  </th>
+                )}
               </tr>
             </thead>
 
@@ -833,45 +1151,51 @@ export default function PriceListPage() {
                         </span>
                       </td>
 
-                      <td
-                        style={{
-                          ...styles.td,
-                          textAlign:
-                            "center",
-                        }}
-                      >
-                        <div
-                          style={
-                            styles.actionGroup
-                          }
-                        >
-                          <button
-                            style={
-                              styles.editButton
-                            }
-                            onClick={() =>
-                              openEdit(
-                                item
-                              )
-                            }
-                          >
-                            ✏️
-                          </button>
+                      {/* ACTION */}
 
-                          <button
+                      {canManage && (
+                        <td
+                          style={{
+                            ...styles.td,
+                            textAlign:
+                              "center",
+                          }}
+                        >
+                          <div
                             style={
-                              styles.deleteButton
-                            }
-                            onClick={() =>
-                              deleteItem(
-                                item.id
-                              )
+                              styles.actionGroup
                             }
                           >
-                            🗑️
-                          </button>
-                        </div>
-                      </td>
+                            <button
+                              style={
+                                styles.editButton
+                              }
+                              onClick={() =>
+                                openEdit(
+                                  item
+                                )
+                              }
+                              title="Edit"
+                            >
+                              ✏️
+                            </button>
+
+                            <button
+                              style={
+                                styles.deleteButton
+                              }
+                              onClick={() =>
+                                deleteItem(
+                                  item.id
+                                )
+                              }
+                              title="Delete"
+                            >
+                              🗑️
+                            </button>
+                          </div>
+                        </td>
+                      )}
                     </tr>
                   );
                 }
@@ -891,346 +1215,359 @@ export default function PriceListPage() {
         </div>
       )}
 
-      {/* MODAL */}
+      {/* ======================================
+          ADD / EDIT MODAL
+          ADMIN + SUPER ADMIN ONLY
+      ====================================== */}
 
-      {showForm && (
-        <div
-          style={
-            styles.overlay
-          }
-        >
+      {showForm &&
+        canManage && (
           <div
             style={
-              styles.modal
+              styles.overlay
             }
           >
             <div
               style={
-                styles.modalHeader
+                styles.modal
               }
             >
-              <h2
-                style={{
-                  margin: 0,
-                }}
+              <div
+                style={
+                  styles.modalHeader
+                }
               >
-                {editingId
-                  ? "Edit Price"
-                  : "Add Price"}
-              </h2>
+                <h2
+                  style={{
+                    margin: 0,
+                  }}
+                >
+                  {editingId
+                    ? "Edit Price"
+                    : "Add Price"}
+                </h2>
+
+                <button
+                  style={
+                    styles.closeButton
+                  }
+                  onClick={
+                    closeForm
+                  }
+                >
+                  ×
+                </button>
+              </div>
+
+              {/* CATEGORY */}
+
+              <label
+                style={
+                  styles.label
+                }
+              >
+                Category
+              </label>
+
+              <select
+                value={
+                  form.category
+                }
+                onChange={(e) =>
+                  setForm({
+                    ...form,
+                    category:
+                      e.target
+                        .value,
+                  })
+                }
+                style={
+                  styles.input
+                }
+              >
+                {categories.map(
+                  (category) => (
+                    <option
+                      key={
+                        category
+                      }
+                      value={
+                        category
+                      }
+                    >
+                      {category}
+                    </option>
+                  )
+                )}
+              </select>
+
+              {/* ITEM NAME */}
+
+              <label
+                style={
+                  styles.label
+                }
+              >
+                Item Name
+              </label>
+
+              <input
+                value={
+                  form.item_name
+                }
+                onChange={(e) =>
+                  setForm({
+                    ...form,
+                    item_name:
+                      e.target
+                        .value,
+                  })
+                }
+                placeholder="Feed item name"
+                style={
+                  styles.input
+                }
+              />
+
+              {/* SHORT NAME */}
+
+              <label
+                style={
+                  styles.label
+                }
+              >
+                Short Name
+              </label>
+
+              <input
+                value={
+                  form.short_name
+                }
+                onChange={(e) =>
+                  setForm({
+                    ...form,
+                    short_name:
+                      e.target
+                        .value,
+                  })
+                }
+                placeholder="Example: BR-S"
+                style={
+                  styles.input
+                }
+              />
+
+              <div
+                style={
+                  styles.helperText
+                }
+              >
+                This short name will
+                be used in the DO
+                Message.
+              </div>
+
+              {/* KG / BAG */}
+
+              <label
+                style={
+                  styles.label
+                }
+              >
+                KG / Bag
+              </label>
+
+              <input
+                type="number"
+                min="0"
+                step="0.01"
+                value={
+                  form.kg_per_bag
+                }
+                onChange={(e) =>
+                  setForm({
+                    ...form,
+                    kg_per_bag:
+                      Number(
+                        e.target
+                          .value
+                      ),
+                  })
+                }
+                style={
+                  styles.input
+                }
+              />
+
+              {/* TP / BAG */}
+
+              <label
+                style={
+                  styles.label
+                }
+              >
+                TP / Bag
+              </label>
+
+              <input
+                type="number"
+                min="0"
+                step="0.01"
+                value={
+                  form.tp_per_bag
+                }
+                onChange={(e) =>
+                  setForm({
+                    ...form,
+                    tp_per_bag:
+                      Number(
+                        e.target
+                          .value
+                      ),
+                  })
+                }
+                style={
+                  styles.input
+                }
+              />
+
+              {/* TP / KG */}
+
+              <div
+                style={
+                  styles.calculated
+                }
+              >
+                TP / KG: ৳
+                {form.kg_per_bag >
+                0
+                  ? (
+                      Number(
+                        form.tp_per_bag
+                      ) /
+                      Number(
+                        form.kg_per_bag
+                      )
+                    ).toFixed(
+                      2
+                    )
+                  : "0.00"}
+              </div>
+
+              {/* MRP / BAG */}
+
+              <label
+                style={
+                  styles.label
+                }
+              >
+                MRP / Bag
+              </label>
+
+              <input
+                type="number"
+                min="0"
+                step="0.01"
+                value={
+                  form.mrp_per_bag
+                }
+                onChange={(e) =>
+                  setForm({
+                    ...form,
+                    mrp_per_bag:
+                      Number(
+                        e.target
+                          .value
+                      ),
+                  })
+                }
+                style={
+                  styles.input
+                }
+              />
+
+              {/* MRP / KG */}
+
+              <div
+                style={
+                  styles.calculated
+                }
+              >
+                MRP / KG: ৳
+                {form.kg_per_bag >
+                0
+                  ? (
+                      Number(
+                        form.mrp_per_bag
+                      ) /
+                      Number(
+                        form.kg_per_bag
+                      )
+                    ).toFixed(
+                      2
+                    )
+                  : "0.00"}
+              </div>
+
+              {/* STATUS */}
+
+              <label
+                style={
+                  styles.label
+                }
+              >
+                Status
+              </label>
+
+              <select
+                value={
+                  form.status
+                }
+                onChange={(e) =>
+                  setForm({
+                    ...form,
+                    status:
+                      e.target
+                        .value,
+                  })
+                }
+                style={
+                  styles.input
+                }
+              >
+                <option value="Active">
+                  Active
+                </option>
+
+                <option value="Inactive">
+                  Inactive
+                </option>
+              </select>
+
+              {/* SAVE */}
 
               <button
                 style={
-                  styles.closeButton
+                  styles.saveButton
                 }
                 onClick={
-                  closeForm
+                  savePriceItem
                 }
               >
-                ×
+                {editingId
+                  ? "Update Price"
+                  : "Save Price"}
               </button>
             </div>
-
-            {/* CATEGORY */}
-
-            <label
-              style={
-                styles.label
-              }
-            >
-              Category
-            </label>
-
-            <select
-              value={
-                form.category
-              }
-              onChange={(e) =>
-                setForm({
-                  ...form,
-                  category:
-                    e.target
-                      .value,
-                })
-              }
-              style={
-                styles.input
-              }
-            >
-              {categories.map(
-                (category) => (
-                  <option
-                    key={
-                      category
-                    }
-                    value={
-                      category
-                    }
-                  >
-                    {category}
-                  </option>
-                )
-              )}
-            </select>
-
-            {/* ITEM NAME */}
-
-            <label
-              style={
-                styles.label
-              }
-            >
-              Item Name
-            </label>
-
-            <input
-              value={
-                form.item_name
-              }
-              onChange={(e) =>
-                setForm({
-                  ...form,
-                  item_name:
-                    e.target
-                      .value,
-                })
-              }
-              placeholder="Feed item name"
-              style={
-                styles.input
-              }
-            />
-
-            {/* SHORT NAME */}
-
-            <label
-              style={
-                styles.label
-              }
-            >
-              Short Name
-            </label>
-
-            <input
-              value={
-                form.short_name
-              }
-              onChange={(e) =>
-                setForm({
-                  ...form,
-                  short_name:
-                    e.target
-                      .value,
-                })
-              }
-              placeholder="Example: BR-S"
-              style={
-                styles.input
-              }
-            />
-
-            <div
-              style={
-                styles.helperText
-              }
-            >
-              This short name will be
-              used in the DO Message.
-            </div>
-
-            {/* KG / BAG */}
-
-            <label
-              style={
-                styles.label
-              }
-            >
-              KG / Bag
-            </label>
-
-            <input
-              type="number"
-              min="0"
-              step="0.01"
-              value={
-                form.kg_per_bag
-              }
-              onChange={(e) =>
-                setForm({
-                  ...form,
-                  kg_per_bag:
-                    Number(
-                      e.target
-                        .value
-                    ),
-                })
-              }
-              style={
-                styles.input
-              }
-            />
-
-            {/* TP / BAG */}
-
-            <label
-              style={
-                styles.label
-              }
-            >
-              TP / Bag
-            </label>
-
-            <input
-              type="number"
-              min="0"
-              step="0.01"
-              value={
-                form.tp_per_bag
-              }
-              onChange={(e) =>
-                setForm({
-                  ...form,
-                  tp_per_bag:
-                    Number(
-                      e.target
-                        .value
-                    ),
-                })
-              }
-              style={
-                styles.input
-              }
-            />
-
-            {/* TP / KG */}
-
-            <div
-              style={
-                styles.calculated
-              }
-            >
-              TP / KG: ৳
-              {form.kg_per_bag >
-              0
-                ? (
-                    Number(
-                      form.tp_per_bag
-                    ) /
-                    Number(
-                      form.kg_per_bag
-                    )
-                  ).toFixed(2)
-                : "0.00"}
-            </div>
-
-            {/* MRP / BAG */}
-
-            <label
-              style={
-                styles.label
-              }
-            >
-              MRP / Bag
-            </label>
-
-            <input
-              type="number"
-              min="0"
-              step="0.01"
-              value={
-                form.mrp_per_bag
-              }
-              onChange={(e) =>
-                setForm({
-                  ...form,
-                  mrp_per_bag:
-                    Number(
-                      e.target
-                        .value
-                    ),
-                })
-              }
-              style={
-                styles.input
-              }
-            />
-
-            {/* MRP / KG */}
-
-            <div
-              style={
-                styles.calculated
-              }
-            >
-              MRP / KG: ৳
-              {form.kg_per_bag >
-              0
-                ? (
-                    Number(
-                      form.mrp_per_bag
-                    ) /
-                    Number(
-                      form.kg_per_bag
-                    )
-                  ).toFixed(2)
-                : "0.00"}
-            </div>
-
-            {/* STATUS */}
-
-            <label
-              style={
-                styles.label
-              }
-            >
-              Status
-            </label>
-
-            <select
-              value={
-                form.status
-              }
-              onChange={(e) =>
-                setForm({
-                  ...form,
-                  status:
-                    e.target
-                      .value,
-                })
-              }
-              style={
-                styles.input
-              }
-            >
-              <option value="Active">
-                Active
-              </option>
-
-              <option value="Inactive">
-                Inactive
-              </option>
-            </select>
-
-            {/* SAVE */}
-
-            <button
-              style={
-                styles.saveButton
-              }
-              onClick={
-                savePriceItem
-              }
-            >
-              {editingId
-                ? "Update Price"
-                : "Save Price"}
-            </button>
           </div>
-        </div>
-      )}
+        )}
     </div>
   );
 }
+
+// ============================================
+// STYLES
+// ============================================
 
 const styles: Record<
   string,
@@ -1250,7 +1587,7 @@ const styles: Record<
       "space-between",
     alignItems: "center",
     gap: 10,
-    marginBottom: 14,
+    marginBottom: 10,
     flexWrap: "wrap",
   },
 
@@ -1302,6 +1639,18 @@ const styles: Record<
     borderRadius: 9,
     fontWeight: 600,
     cursor: "pointer",
+  },
+
+  roleInfo: {
+    display: "inline-block",
+    marginBottom: 10,
+    padding:
+      "5px 9px",
+    borderRadius: 7,
+    background: "#eef2ff",
+    color: "#3730a3",
+    fontSize: 10,
+    fontWeight: 700,
   },
 
   searchBox: {
@@ -1549,5 +1898,32 @@ const styles: Record<
     marginTop: 20,
     fontWeight: 700,
     cursor: "pointer",
+  },
+
+  accessDenied: {
+    minHeight: "60vh",
+    display: "flex",
+    flexDirection: "column",
+    alignItems: "center",
+    justifyContent: "center",
+    textAlign: "center",
+    padding: 20,
+  },
+
+  accessIcon: {
+    fontSize: 40,
+    marginBottom: 10,
+  },
+
+  accessTitle: {
+    fontSize: 20,
+    fontWeight: 800,
+    color: "#111827",
+  },
+
+  accessText: {
+    marginTop: 5,
+    fontSize: 12,
+    color: "#6b7280",
   },
 };

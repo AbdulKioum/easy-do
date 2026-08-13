@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import * as XLSX from "xlsx";
 import { supabase } from "../lib/supabase";
+import { useAuth } from "../context/AuthContext";
 
 type Upazila = {
   id?: number;
@@ -16,6 +17,11 @@ const emptyForm: Upazila = {
 };
 
 export default function UpazilaPage() {
+  const { role } = useAuth();
+
+  const canManage =
+    role === "admin" || role === "super_admin";
+
   const [items, setItems] = useState<Upazila[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -23,7 +29,8 @@ export default function UpazilaPage() {
   const [statusFilter, setStatusFilter] = useState("All");
 
   const [showForm, setShowForm] = useState(false);
-  const [editingId, setEditingId] = useState<number | null>(null);
+  const [editingId, setEditingId] =
+    useState<number | null>(null);
 
   const [form, setForm] =
     useState<Upazila>(emptyForm);
@@ -59,6 +66,8 @@ export default function UpazilaPage() {
   }
 
   function openAdd() {
+    if (!canManage) return;
+
     setEditingId(null);
 
     setForm({
@@ -71,6 +80,8 @@ export default function UpazilaPage() {
   }
 
   function openEdit(item: Upazila) {
+    if (!canManage) return;
+
     setEditingId(item.id || null);
 
     setForm({
@@ -94,6 +105,11 @@ export default function UpazilaPage() {
   }
 
   async function saveUpazila() {
+    if (!canManage) {
+      alert("You do not have permission to manage Upazila.");
+      return;
+    }
+
     if (!form.district.trim()) {
       alert("District is required.");
       return;
@@ -138,6 +154,11 @@ export default function UpazilaPage() {
   }
 
   async function deleteUpazila(id?: number) {
+    if (!canManage) {
+      alert("You do not have permission to delete Upazila.");
+      return;
+    }
+
     if (!id) return;
 
     const confirmed = window.confirm(
@@ -163,6 +184,14 @@ export default function UpazilaPage() {
   function handleExcelImport(
     event: React.ChangeEvent<HTMLInputElement>
   ) {
+    if (!canManage) {
+      event.target.value = "";
+      alert(
+        "You do not have permission to import Upazila."
+      );
+      return;
+    }
+
     const file = event.target.files?.[0];
 
     if (!file) return;
@@ -248,7 +277,9 @@ export default function UpazilaPage() {
 
   function exportExcel() {
     if (!filteredItems.length) {
-      alert("No Upazila data available to export.");
+      alert(
+        "No Upazila data available to export."
+      );
       return;
     }
 
@@ -331,38 +362,52 @@ export default function UpazilaPage() {
         </div>
 
         <div style={styles.headerButtons}>
+          {/* EXPORT
+              Available for all roles */}
           <button
             style={styles.exportButton}
             onClick={exportExcel}
           >
-            📤 Export
+            📤 Export Excel
           </button>
 
-          <button
-            style={styles.importButton}
-            onClick={() =>
-              fileInputRef.current?.click()
-            }
-          >
-            📥 Import
-          </button>
+          {/* IMPORT
+              Admin + Super Admin only */}
+          {canManage && (
+            <>
+              <button
+                style={styles.importButton}
+                onClick={() =>
+                  fileInputRef.current?.click()
+                }
+              >
+                📥 Import Excel
+              </button>
 
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept=".xlsx,.xls,.csv"
-            style={{
-              display: "none",
-            }}
-            onChange={handleExcelImport}
-          />
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept=".xlsx,.xls,.csv"
+                style={{
+                  display: "none",
+                }}
+                onChange={
+                  handleExcelImport
+                }
+              />
+            </>
+          )}
 
-          <button
-            style={styles.addButton}
-            onClick={openAdd}
-          >
-            + Add
-          </button>
+          {/* ADD
+              Admin + Super Admin only */}
+          {canManage && (
+            <button
+              style={styles.addButton}
+              onClick={openAdd}
+            >
+              + Add
+            </button>
+          )}
         </div>
       </div>
 
@@ -536,31 +581,50 @@ export default function UpazilaPage() {
                             styles.actions
                           }
                         >
-                          <button
-                            style={
-                              styles.editButton
-                            }
-                            onClick={() =>
-                              openEdit(item)
-                            }
-                            title="Edit"
-                          >
-                            ✏️
-                          </button>
+                          {/* EDIT
+                              Admin + Super Admin only */}
+                          {canManage && (
+                            <button
+                              style={
+                                styles.editButton
+                              }
+                              onClick={() =>
+                                openEdit(item)
+                              }
+                              title="Edit"
+                            >
+                              ✏️
+                            </button>
+                          )}
 
-                          <button
-                            style={
-                              styles.deleteButton
-                            }
-                            onClick={() =>
-                              deleteUpazila(
-                                item.id
-                              )
-                            }
-                            title="Delete"
-                          >
-                            🗑️
-                          </button>
+                          {/* DELETE
+                              Admin + Super Admin only */}
+                          {canManage && (
+                            <button
+                              style={
+                                styles.deleteButton
+                              }
+                              onClick={() =>
+                                deleteUpazila(
+                                  item.id
+                                )
+                              }
+                              title="Delete"
+                            >
+                              🗑️
+                            </button>
+                          )}
+
+                          {/* User role */}
+                          {!canManage && (
+                            <span
+                              style={
+                                styles.viewOnlyBadge
+                              }
+                            >
+                              View Only
+                            </span>
+                          )}
                         </div>
                       </td>
                     </tr>
@@ -580,7 +644,7 @@ export default function UpazilaPage() {
 
       {/* ADD / EDIT MODAL */}
 
-      {showForm && (
+      {showForm && canManage && (
         <div style={styles.overlay}>
           <div style={styles.modal}>
             <div
@@ -943,6 +1007,7 @@ const styles: Record<
   actions: {
     display: "flex",
     justifyContent: "center",
+    alignItems: "center",
     gap: 5,
   },
 
@@ -962,6 +1027,16 @@ const styles: Record<
     height: 34,
     borderRadius: 7,
     cursor: "pointer",
+  },
+
+  viewOnlyBadge: {
+    display: "inline-block",
+    background: "#f3f4f6",
+    color: "#6b7280",
+    padding: "5px 9px",
+    borderRadius: 7,
+    fontSize: 11,
+    fontWeight: 600,
   },
 
   loading: {

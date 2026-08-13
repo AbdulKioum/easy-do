@@ -18,7 +18,12 @@ type Upazila = {
   status: string;
 };
 
-const fromOptions = ["Valuka Feed Mill", "Mymensingh Depot"];
+type UserRole = "user" | "admin" | "super_admin";
+
+const fromOptions = [
+  "Valuka Feed Mill",
+  "Mymensingh Depot",
+];
 
 const emptyForm: Transportation = {
   from_location: "Valuka Feed Mill",
@@ -33,63 +38,161 @@ export default function TransportationPage() {
   const [upazilas, setUpazilas] = useState<Upazila[]>([]);
 
   const [loading, setLoading] = useState(true);
-  const [upazilaLoading, setUpazilaLoading] = useState(true);
+  const [upazilaLoading, setUpazilaLoading] =
+    useState(true);
+
+  // USER ROLE
+  const [userRole, setUserRole] =
+    useState<UserRole>("user");
+
+  const [roleLoading, setRoleLoading] =
+    useState(true);
 
   const [search, setSearch] = useState("");
-  const [fromFilter, setFromFilter] = useState("All");
+  const [fromFilter, setFromFilter] =
+    useState("All");
 
-  const [showForm, setShowForm] = useState(false);
-  const [editingId, setEditingId] = useState<number | null>(null);
+  const [showForm, setShowForm] =
+    useState(false);
 
-  const [form, setForm] = useState<Transportation>(emptyForm);
+  const [editingId, setEditingId] =
+    useState<number | null>(null);
 
-  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [form, setForm] =
+    useState<Transportation>(emptyForm);
+
+  const fileInputRef =
+    useRef<HTMLInputElement>(null);
+
+  // Only admin and super_admin can manage
+  const canManage =
+    userRole === "admin" ||
+    userRole === "super_admin";
 
   useEffect(() => {
+    loadUserRole();
     loadTransportation();
     loadUpazilas();
   }, []);
 
+  // =====================================================
+  // LOAD USER ROLE
+  // =====================================================
+
+  async function loadUserRole() {
+    setRoleLoading(true);
+
+    try {
+      const { data, error } =
+        await supabase.rpc("get_my_role");
+
+      if (error) {
+        console.error(
+          "Role loading failed:",
+          error
+        );
+
+        // SECURITY:
+        // If role cannot be confirmed,
+        // keep user as normal user.
+        setUserRole("user");
+        return;
+      }
+
+      const role = String(
+        data || "user"
+      ).toLowerCase();
+
+      if (
+        role === "admin" ||
+        role === "super_admin"
+      ) {
+        setUserRole(role as UserRole);
+      } else {
+        setUserRole("user");
+      }
+    } catch (error) {
+      console.error(error);
+
+      // Safe default
+      setUserRole("user");
+    } finally {
+      setRoleLoading(false);
+    }
+  }
+
+  // =====================================================
+  // LOAD TRANSPORTATION
+  // =====================================================
+
   async function loadTransportation() {
     setLoading(true);
 
-    const { data, error } = await supabase
-      .from("transportation")
-      .select("*")
-      .order("from_location", { ascending: true })
-      .order("to_upazila", { ascending: true });
+    const { data, error } =
+      await supabase
+        .from("transportation")
+        .select("*")
+        .order("from_location", {
+          ascending: true,
+        })
+        .order("to_upazila", {
+          ascending: true,
+        });
 
     if (error) {
       console.error(error);
-      alert("Transportation load failed.");
+      alert(
+        "Transportation load failed."
+      );
     } else {
-      setItems(data || []);
+      setItems(
+        (data || []) as Transportation[]
+      );
     }
 
     setLoading(false);
   }
 
+  // =====================================================
+  // LOAD UPAZILAS
+  // =====================================================
+
   async function loadUpazilas() {
     setUpazilaLoading(true);
 
-    const { data, error } = await supabase
-      .from("upazilas")
-      .select("*")
-      .eq("status", "Active")
-      .order("district", { ascending: true })
-      .order("upazila_name", { ascending: true });
+    const { data, error } =
+      await supabase
+        .from("upazilas")
+        .select("*")
+        .eq("status", "Active")
+        .order("district", {
+          ascending: true,
+        })
+        .order("upazila_name", {
+          ascending: true,
+        });
 
     if (error) {
       console.error(error);
-      alert("Upazila load failed.");
+      alert(
+        "Upazila load failed."
+      );
     } else {
-      setUpazilas(data || []);
+      setUpazilas(
+        (data || []) as Upazila[]
+      );
     }
 
     setUpazilaLoading(false);
   }
 
+  // =====================================================
+  // OPEN ADD
+  // =====================================================
+
   function openAdd() {
+    if (!canManage) return;
+
     setEditingId(null);
 
     setForm({
@@ -100,98 +203,174 @@ export default function TransportationPage() {
     setShowForm(true);
   }
 
-  function openEdit(item: Transportation) {
+  // =====================================================
+  // OPEN EDIT
+  // =====================================================
+
+  function openEdit(
+    item: Transportation
+  ) {
+    if (!canManage) return;
+
     setEditingId(item.id || null);
 
     setForm({
-      from_location: item.from_location,
-      to_upazila: item.to_upazila,
-      floating_cattle_rate_per_kg: Number(
-        item.floating_cattle_rate_per_kg || 0
-      ),
-      sinking_broiler_layer_sonali_rate_per_kg: Number(
-        item.sinking_broiler_layer_sonali_rate_per_kg || 0
-      ),
+      from_location:
+        item.from_location,
+
+      to_upazila:
+        item.to_upazila,
+
+      floating_cattle_rate_per_kg:
+        Number(
+          item.floating_cattle_rate_per_kg ||
+            0
+        ),
+
+      sinking_broiler_layer_sonali_rate_per_kg:
+        Number(
+          item.sinking_broiler_layer_sonali_rate_per_kg ||
+            0
+        ),
+
       status: item.status,
     });
 
     setShowForm(true);
   }
 
+  // =====================================================
+  // CLOSE FORM
+  // =====================================================
+
   function closeForm() {
     setShowForm(false);
     setEditingId(null);
+
     setForm({
       ...emptyForm,
     });
   }
 
+  // =====================================================
+  // SAVE TRANSPORTATION
+  // =====================================================
+
   async function saveTransportation() {
+    if (!canManage) {
+      alert(
+        "You do not have permission to modify transportation."
+      );
+      return;
+    }
+
     if (!form.to_upazila.trim()) {
-      alert("Please select an Upazila.");
+      alert(
+        "Please select an Upazila."
+      );
       return;
     }
 
     if (
-      Number(form.floating_cattle_rate_per_kg) < 0 ||
-      Number(form.sinking_broiler_layer_sonali_rate_per_kg) < 0
+      Number(
+        form.floating_cattle_rate_per_kg
+      ) < 0 ||
+      Number(
+        form.sinking_broiler_layer_sonali_rate_per_kg
+      ) < 0
     ) {
-      alert("Transport rate cannot be negative.");
+      alert(
+        "Transport rate cannot be negative."
+      );
       return;
     }
 
     const payload = {
-      from_location: form.from_location,
-      to_upazila: form.to_upazila,
-      floating_cattle_rate_per_kg: Number(
-        form.floating_cattle_rate_per_kg
-      ),
-      sinking_broiler_layer_sonali_rate_per_kg: Number(
-        form.sinking_broiler_layer_sonali_rate_per_kg
-      ),
+      from_location:
+        form.from_location,
+
+      to_upazila:
+        form.to_upazila,
+
+      floating_cattle_rate_per_kg:
+        Number(
+          form.floating_cattle_rate_per_kg
+        ),
+
+      sinking_broiler_layer_sonali_rate_per_kg:
+        Number(
+          form.sinking_broiler_layer_sonali_rate_per_kg
+        ),
+
       status: form.status,
     };
 
+    // UPDATE
     if (editingId) {
-      const { error } = await supabase
-        .from("transportation")
-        .update(payload)
-        .eq("id", editingId);
+      const { error } =
+        await supabase
+          .from("transportation")
+          .update(payload)
+          .eq("id", editingId);
 
       if (error) {
         console.error(error);
-        alert("Transportation update failed.");
+        alert(
+          "Transportation update failed."
+        );
         return;
       }
-    } else {
-      const { error } = await supabase
-        .from("transportation")
-        .insert([payload]);
+    }
+
+    // INSERT
+    else {
+      const { error } =
+        await supabase
+          .from("transportation")
+          .insert([payload]);
 
       if (error) {
         console.error(error);
-        alert("Transportation add failed.");
+        alert(
+          "Transportation add failed."
+        );
         return;
       }
     }
 
     closeForm();
-    loadTransportation();
+
+    await loadTransportation();
   }
 
-  async function deleteTransportation(id?: number) {
+  // =====================================================
+  // DELETE
+  // =====================================================
+
+  async function deleteTransportation(
+    id?: number
+  ) {
+    if (!canManage) {
+      alert(
+        "You do not have permission to delete transportation."
+      );
+      return;
+    }
+
     if (!id) return;
 
-    const confirmed = window.confirm(
-      "Delete this transportation rate?"
-    );
+    const confirmed =
+      window.confirm(
+        "Delete this transportation rate?"
+      );
 
     if (!confirmed) return;
 
-    const { error } = await supabase
-      .from("transportation")
-      .delete()
-      .eq("id", id);
+    const { error } =
+      await supabase
+        .from("transportation")
+        .delete()
+        .eq("id", id);
 
     if (error) {
       console.error(error);
@@ -199,67 +378,102 @@ export default function TransportationPage() {
       return;
     }
 
-    loadTransportation();
+    await loadTransportation();
   }
+
+  // =====================================================
+  // EXCEL IMPORT
+  // =====================================================
 
   function handleExcelImport(
     event: React.ChangeEvent<HTMLInputElement>
   ) {
-    const file = event.target.files?.[0];
+    if (!canManage) {
+      event.target.value = "";
+
+      alert(
+        "You do not have permission to import transportation data."
+      );
+
+      return;
+    }
+
+    const file =
+      event.target.files?.[0];
 
     if (!file) return;
 
-    const reader = new FileReader();
+    const reader =
+      new FileReader();
 
     reader.onload = async (e) => {
       try {
-        const data = new Uint8Array(
-          e.target?.result as ArrayBuffer
-        );
+        const data =
+          new Uint8Array(
+            e.target
+              ?.result as ArrayBuffer
+          );
 
-        const workbook = XLSX.read(data, {
-          type: "array",
-        });
+        const workbook =
+          XLSX.read(data, {
+            type: "array",
+          });
 
         const sheet =
-          workbook.Sheets[workbook.SheetNames[0]];
+          workbook.Sheets[
+            workbook.SheetNames[0]
+          ];
 
-        const rows = XLSX.utils.sheet_to_json<any>(sheet);
+        const rows =
+          XLSX.utils.sheet_to_json<any>(
+            sheet
+          );
 
         if (!rows.length) {
-          alert("Excel file is empty.");
+          alert(
+            "Excel file is empty."
+          );
           return;
         }
 
-        const importData = rows
-          .map((row) => ({
-            from_location: String(
-              row["From"] || ""
-            ).trim(),
+        const importData =
+          rows
+            .map((row) => ({
+              from_location:
+                String(
+                  row["From"] || ""
+                ).trim(),
 
-            to_upazila: String(
-              row["Upazila"] || ""
-            ).trim(),
+              to_upazila:
+                String(
+                  row["Upazila"] || ""
+                ).trim(),
 
-            floating_cattle_rate_per_kg: Number(
-              row["Floating & Cattle (৳/KG)"] || 0
-            ),
+              floating_cattle_rate_per_kg:
+                Number(
+                  row[
+                    "Floating & Cattle (৳/KG)"
+                  ] || 0
+                ),
 
-            sinking_broiler_layer_sonali_rate_per_kg: Number(
-              row[
-                "Sinking & Broiler & Layer & Sonali (৳/KG)"
-              ] || 0
-            ),
+              sinking_broiler_layer_sonali_rate_per_kg:
+                Number(
+                  row[
+                    "Sinking & Broiler & Layer & Sonali (৳/KG)"
+                  ] || 0
+                ),
 
-            status: String(
-              row["Status"] || "Active"
-            ).trim(),
-          }))
-          .filter(
-            (item) =>
-              item.from_location &&
-              item.to_upazila
-          );
+              status:
+                String(
+                  row["Status"] ||
+                    "Active"
+                ).trim(),
+            }))
+            .filter(
+              (item) =>
+                item.from_location &&
+                item.to_upazila
+            );
 
         if (!importData.length) {
           alert(
@@ -268,15 +482,21 @@ export default function TransportationPage() {
           return;
         }
 
-        const { error } = await supabase
-          .from("transportation")
-          .upsert(importData, {
-            onConflict: "from_location,to_upazila",
-          });
+        const { error } =
+          await supabase
+            .from("transportation")
+            .upsert(importData, {
+              onConflict:
+                "from_location,to_upazila",
+            });
 
         if (error) {
           console.error(error);
-          alert("Excel import/update failed.");
+
+          alert(
+            "Excel import/update failed."
+          );
+
           return;
         }
 
@@ -284,37 +504,64 @@ export default function TransportationPage() {
           `${importData.length} transportation rates imported/updated successfully.`
         );
 
-        loadTransportation();
+        await loadTransportation();
       } catch (error) {
         console.error(error);
-        alert("Invalid Excel file.");
+
+        alert(
+          "Invalid Excel file."
+        );
       }
     };
 
-    reader.readAsArrayBuffer(file);
+    reader.readAsArrayBuffer(
+      file
+    );
 
     event.target.value = "";
   }
 
+  // =====================================================
+  // EXCEL EXPORT
+  // =====================================================
+
   function exportExcel() {
     if (!filteredItems.length) {
-      alert("No transportation data available to export.");
+      alert(
+        "No transportation data available to export."
+      );
+
       return;
     }
 
-    const exportData = filteredItems.map((item) => ({
-      From: item.from_location,
-      Upazila: item.to_upazila,
-      "Floating & Cattle (৳/KG)": Number(
-        item.floating_cattle_rate_per_kg
-      ),
-      "Sinking & Broiler & Layer & Sonali (৳/KG)": Number(
-        item.sinking_broiler_layer_sonali_rate_per_kg
-      ),
-      Status: item.status,
-    }));
+    const exportData =
+      filteredItems.map(
+        (item) => ({
+          From:
+            item.from_location,
 
-    const worksheet = XLSX.utils.json_to_sheet(exportData);
+          Upazila:
+            item.to_upazila,
+
+          "Floating & Cattle (৳/KG)":
+            Number(
+              item.floating_cattle_rate_per_kg
+            ),
+
+          "Sinking & Broiler & Layer & Sonali (৳/KG)":
+            Number(
+              item.sinking_broiler_layer_sonali_rate_per_kg
+            ),
+
+          Status:
+            item.status,
+        })
+      );
+
+    const worksheet =
+      XLSX.utils.json_to_sheet(
+        exportData
+      );
 
     worksheet["!cols"] = [
       { wch: 16 },
@@ -324,7 +571,8 @@ export default function TransportationPage() {
       { wch: 12 },
     ];
 
-    const workbook = XLSX.utils.book_new();
+    const workbook =
+      XLSX.utils.book_new();
 
     XLSX.utils.book_append_sheet(
       workbook,
@@ -332,48 +580,91 @@ export default function TransportationPage() {
       "Transportation"
     );
 
-    const excelBuffer = XLSX.write(workbook, {
-      bookType: "xlsx",
-      type: "array",
-    });
+    const excelBuffer =
+      XLSX.write(workbook, {
+        bookType: "xlsx",
+        type: "array",
+      });
 
-    const blob = new Blob([excelBuffer], {
-      type:
-        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-    });
+    const blob = new Blob(
+      [excelBuffer],
+      {
+        type:
+          "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      }
+    );
 
-    const url = URL.createObjectURL(blob);
+    const url =
+      URL.createObjectURL(
+        blob
+      );
 
-    const link = document.createElement("a");
+    const link =
+      document.createElement(
+        "a"
+      );
+
     link.href = url;
-    link.download = "Transportation_Rates.xlsx";
 
-    document.body.appendChild(link);
+    link.download =
+      "Transportation_Rates.xlsx";
+
+    document.body.appendChild(
+      link
+    );
+
     link.click();
-    document.body.removeChild(link);
+
+    document.body.removeChild(
+      link
+    );
 
     URL.revokeObjectURL(url);
   }
 
-  const filteredItems = useMemo(() => {
-    const searchText = search.toLowerCase();
+  // =====================================================
+  // FILTER
+  // =====================================================
 
-    return items.filter((item) => {
-      const matchesFrom =
-        fromFilter === "All" ||
-        item.from_location === fromFilter;
+  const filteredItems =
+    useMemo(() => {
+      const searchText =
+        search.toLowerCase();
 
-      const matchesSearch =
-        item.from_location
-          .toLowerCase()
-          .includes(searchText) ||
-        item.to_upazila
-          .toLowerCase()
-          .includes(searchText);
+      return items.filter(
+        (item) => {
+          const matchesFrom =
+            fromFilter === "All" ||
+            item.from_location ===
+              fromFilter;
 
-      return matchesFrom && matchesSearch;
-    });
-  }, [items, search, fromFilter]);
+          const matchesSearch =
+            item.from_location
+              .toLowerCase()
+              .includes(
+                searchText
+              ) ||
+            item.to_upazila
+              .toLowerCase()
+              .includes(
+                searchText
+              );
+
+          return (
+            matchesFrom &&
+            matchesSearch
+          );
+        }
+      );
+    }, [
+      items,
+      search,
+      fromFilter,
+    ]);
+
+  // =====================================================
+  // PAGE
+  // =====================================================
 
   return (
     <div style={styles.page}>
@@ -390,64 +681,106 @@ export default function TransportationPage() {
           </p>
         </div>
 
-        <div style={styles.headerButtons}>
+        <div
+          style={
+            styles.headerButtons
+          }
+        >
+          {/* EXPORT
+              EVERYONE CAN USE */}
           <button
-            style={styles.exportButton}
-            onClick={exportExcel}
-          >
-            📤 Export
-          </button>
-
-          <button
-            style={styles.importButton}
-            onClick={() =>
-              fileInputRef.current?.click()
+            style={
+              styles.exportButton
+            }
+            onClick={
+              exportExcel
             }
           >
-            📥 Import
+            📤 Export Excel
           </button>
 
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept=".xlsx,.xls,.csv"
-            style={{
-              display: "none",
-            }}
-            onChange={handleExcelImport}
-          />
+          {/* ADMIN / SUPER ADMIN ONLY */}
+          {!roleLoading &&
+            canManage && (
+              <>
+                <button
+                  style={
+                    styles.importButton
+                  }
+                  onClick={() =>
+                    fileInputRef.current?.click()
+                  }
+                >
+                  📥 Import Excel
+                </button>
 
-          <button
-            style={styles.addButton}
-            onClick={openAdd}
-          >
-            + Add
-          </button>
+                <input
+                  ref={
+                    fileInputRef
+                  }
+                  type="file"
+                  accept=".xlsx,.xls,.csv"
+                  style={{
+                    display:
+                      "none",
+                  }}
+                  onChange={
+                    handleExcelImport
+                  }
+                />
+
+                <button
+                  style={
+                    styles.addButton
+                  }
+                  onClick={
+                    openAdd
+                  }
+                >
+                  + Add
+                </button>
+              </>
+            )}
         </div>
       </div>
 
+
+
       {/* SEARCH */}
 
-      <div style={styles.searchBox}>
+      <div
+        style={
+          styles.searchBox
+        }
+      >
         <span>🔍</span>
 
         <input
           value={search}
           onChange={(e) =>
-            setSearch(e.target.value)
+            setSearch(
+              e.target.value
+            )
           }
           placeholder="Search upazila..."
-          style={styles.searchInput}
+          style={
+            styles.searchInput
+          }
         />
       </div>
 
       {/* FROM FILTER */}
 
-      <div style={styles.filterRow}>
+      <div
+        style={
+          styles.filterRow
+        }
+      >
         <button
           style={{
             ...styles.filterButton,
-            ...(fromFilter === "All"
+            ...(fromFilter ===
+            "All"
               ? styles.filterButtonActive
               : {}),
           }}
@@ -458,318 +791,536 @@ export default function TransportationPage() {
           All
         </button>
 
-        {fromOptions.map((option) => (
-          <button
-            key={option}
-            style={{
-              ...styles.filterButton,
-              ...(fromFilter === option
-                ? styles.filterButtonActive
-                : {}),
-            }}
-            onClick={() =>
-              setFromFilter(option)
-            }
-          >
-            {option}
-          </button>
-        ))}
+        {fromOptions.map(
+          (option) => (
+            <button
+              key={option}
+              style={{
+                ...styles.filterButton,
+                ...(fromFilter ===
+                option
+                  ? styles.filterButtonActive
+                  : {}),
+              }}
+              onClick={() =>
+                setFromFilter(
+                  option
+                )
+              }
+            >
+              {option}
+            </button>
+          )
+        )}
       </div>
 
       {/* TABLE */}
 
       {loading ? (
-        <div style={styles.loading}>
+        <div
+          style={
+            styles.loading
+          }
+        >
           Loading...
         </div>
       ) : (
-        <div style={styles.tableContainer}>
-          <table style={styles.table}>
+        <div
+          style={
+            styles.tableContainer
+          }
+        >
+          <table
+            style={
+              styles.table
+            }
+          >
             <thead>
               <tr>
-                <th style={styles.th}>
+                <th
+                  style={
+                    styles.th
+                  }
+                >
                   From
                 </th>
 
-                <th style={styles.th}>
+                <th
+                  style={
+                    styles.th
+                  }
+                >
                   To / Upazila
                 </th>
 
-                <th style={styles.thRight}>
-                  Floating & Cattle
+                <th
+                  style={
+                    styles.thRight
+                  }
+                >
+                  Floating &
+                  Cattle
                   <br />
-                  <small>৳/KG</small>
+                  <small>
+                    ৳/KG
+                  </small>
                 </th>
 
-                <th style={styles.thRight}>
-                  Sinking / Broiler /
+                <th
+                  style={
+                    styles.thRight
+                  }
+                >
+                  Sinking /
+                  Broiler /
                   <br />
-                  Layer / Sonali
+                  Layer /
+                  Sonali
                   <br />
-                  <small>৳/KG</small>
+                  <small>
+                    ৳/KG
+                  </small>
                 </th>
 
-                <th style={styles.th}>
+                <th
+                  style={
+                    styles.th
+                  }
+                >
                   Status
                 </th>
 
-                <th style={styles.thCenter}>
-                  Action
-                </th>
+                {/* ACTION ONLY FOR ADMIN */}
+                {canManage && (
+                  <th
+                    style={
+                      styles.thCenter
+                    }
+                  >
+                    Action
+                  </th>
+                )}
               </tr>
             </thead>
 
             <tbody>
-              {filteredItems.map((item) => (
-                <tr key={item.id}>
-                  <td style={styles.td}>
-                    <span
-                      style={styles.fromBadge}
-                    >
-                      {item.from_location}
-                    </span>
-                  </td>
-
-                  <td
-                    style={{
-                      ...styles.td,
-                      fontWeight: 600,
-                    }}
+              {filteredItems.map(
+                (item) => (
+                  <tr
+                    key={
+                      item.id
+                    }
                   >
-                    {item.to_upazila}
-                  </td>
+                    <td
+                      style={
+                        styles.td
+                      }
+                    >
+                      <span
+                        style={
+                          styles.fromBadge
+                        }
+                      >
+                        {
+                          item.from_location
+                        }
+                      </span>
+                    </td>
 
-                  <td style={styles.tdRight}>
-                    ৳{" "}
-                    {Number(
-                      item.floating_cattle_rate_per_kg
-                    ).toFixed(2)}
-                  </td>
-
-                  <td style={styles.tdRight}>
-                    ৳{" "}
-                    {Number(
-                      item.sinking_broiler_layer_sonali_rate_per_kg
-                    ).toFixed(2)}
-                  </td>
-
-                  <td style={styles.td}>
-                    <span
+                    <td
                       style={{
-                        ...styles.status,
-                        ...(item.status === "Active"
-                          ? styles.activeStatus
-                          : styles.inactiveStatus),
+                        ...styles.td,
+                        fontWeight: 600,
                       }}
                     >
-                      {item.status}
-                    </span>
-                  </td>
+                      {
+                        item.to_upazila
+                      }
+                    </td>
 
-                  <td
-                    style={styles.tdCenter}
-                  >
-                    <div
-                      style={styles.actionGroup}
+                    <td
+                      style={
+                        styles.tdRight
+                      }
                     >
-                      <button
-                        style={styles.editButton}
-                        onClick={() =>
-                          openEdit(item)
-                        }
-                      >
-                        ✏️
-                      </button>
+                      ৳{" "}
+                      {Number(
+                        item.floating_cattle_rate_per_kg
+                      ).toFixed(
+                        2
+                      )}
+                    </td>
 
-                      <button
-                        style={styles.deleteButton}
-                        onClick={() =>
-                          deleteTransportation(
-                            item.id
-                          )
+                    <td
+                      style={
+                        styles.tdRight
+                      }
+                    >
+                      ৳{" "}
+                      {Number(
+                        item.sinking_broiler_layer_sonali_rate_per_kg
+                      ).toFixed(
+                        2
+                      )}
+                    </td>
+
+                    <td
+                      style={
+                        styles.td
+                      }
+                    >
+                      <span
+                        style={{
+                          ...styles.status,
+                          ...(item.status ===
+                          "Active"
+                            ? styles.activeStatus
+                            : styles.inactiveStatus),
+                        }}
+                      >
+                        {
+                          item.status
+                        }
+                      </span>
+                    </td>
+
+                    {/* ACTION ONLY FOR ADMIN */}
+                    {canManage && (
+                      <td
+                        style={
+                          styles.tdCenter
                         }
                       >
-                        🗑️
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
+                        <div
+                          style={
+                            styles.actionGroup
+                          }
+                        >
+                          <button
+                            style={
+                              styles.editButton
+                            }
+                            onClick={() =>
+                              openEdit(
+                                item
+                              )
+                            }
+                            title="Edit"
+                          >
+                            ✏️
+                          </button>
+
+                          <button
+                            style={
+                              styles.deleteButton
+                            }
+                            onClick={() =>
+                              deleteTransportation(
+                                item.id
+                              )
+                            }
+                            title="Delete"
+                          >
+                            🗑️
+                          </button>
+                        </div>
+                      </td>
+                    )}
+                  </tr>
+                )
+              )}
             </tbody>
           </table>
 
           {!filteredItems.length && (
-            <div style={styles.noData}>
-              No transportation data found.
+            <div
+              style={
+                styles.noData
+              }
+            >
+              No transportation
+              data found.
             </div>
           )}
         </div>
       )}
 
-      {/* ADD / EDIT MODAL */}
+      {/* ADD / EDIT MODAL
+          ADMIN ONLY */}
 
-      {showForm && (
-        <div style={styles.overlay}>
-          <div style={styles.modal}>
-            <div style={styles.modalHeader}>
-              <h2 style={styles.modalTitle}>
-                {editingId
-                  ? "Edit Transportation"
-                  : "Add Transportation"}
-              </h2>
-
-              <button
-                style={styles.closeButton}
-                onClick={closeForm}
-              >
-                ×
-              </button>
-            </div>
-
-            <label style={styles.label}>
-              From
-            </label>
-
-            <select
-              value={form.from_location}
-              onChange={(e) =>
-                setForm({
-                  ...form,
-                  from_location:
-                    e.target.value,
-                })
+      {showForm &&
+        canManage && (
+          <div
+            style={
+              styles.overlay
+            }
+          >
+            <div
+              style={
+                styles.modal
               }
-              style={styles.input}
             >
-              {fromOptions.map((option) => (
-                <option
-                  key={option}
-                  value={option}
+              <div
+                style={
+                  styles.modalHeader
+                }
+              >
+                <h2
+                  style={
+                    styles.modalTitle
+                  }
                 >
-                  {option}
-                </option>
-              ))}
-            </select>
+                  {editingId
+                    ? "Edit Transportation"
+                    : "Add Transportation"}
+                </h2>
 
-            <label style={styles.label}>
-              To / Upazila
-            </label>
-
-            {upazilaLoading ? (
-              <div style={styles.loadingSmall}>
-                Loading Upazila...
+                <button
+                  style={
+                    styles.closeButton
+                  }
+                  onClick={
+                    closeForm
+                  }
+                >
+                  ×
+                </button>
               </div>
-            ) : (
+
+              {/* FROM */}
+
+              <label
+                style={
+                  styles.label
+                }
+              >
+                From
+              </label>
+
               <select
-                value={form.to_upazila}
+                value={
+                  form.from_location
+                }
                 onChange={(e) =>
                   setForm({
                     ...form,
-                    to_upazila:
-                      e.target.value,
+                    from_location:
+                      e.target
+                        .value,
                   })
                 }
-                style={styles.input}
+                style={
+                  styles.input
+                }
               >
-                <option value="">
-                  Select Upazila
+                {fromOptions.map(
+                  (option) => (
+                    <option
+                      key={
+                        option
+                      }
+                      value={
+                        option
+                      }
+                    >
+                      {option}
+                    </option>
+                  )
+                )}
+              </select>
+
+              {/* UPAZILA */}
+
+              <label
+                style={
+                  styles.label
+                }
+              >
+                To / Upazila
+              </label>
+
+              {upazilaLoading ? (
+                <div
+                  style={
+                    styles.loadingSmall
+                  }
+                >
+                  Loading
+                  Upazila...
+                </div>
+              ) : (
+                <select
+                  value={
+                    form.to_upazila
+                  }
+                  onChange={(e) =>
+                    setForm({
+                      ...form,
+                      to_upazila:
+                        e.target
+                          .value,
+                    })
+                  }
+                  style={
+                    styles.input
+                  }
+                >
+                  <option value="">
+                    Select
+                    Upazila
+                  </option>
+
+                  {upazilas.map(
+                    (upazila) => (
+                      <option
+                        key={
+                          upazila.id
+                        }
+                        value={
+                          upazila.upazila_name
+                        }
+                      >
+                        {
+                          upazila.upazila_name
+                        }{" "}
+                        —{" "}
+                        {
+                          upazila.district
+                        }
+                      </option>
+                    )
+                  )}
+                </select>
+              )}
+
+              {/* FLOATING */}
+
+              <label
+                style={
+                  styles.label
+                }
+              >
+                Floating &
+                Cattle — ৳/KG
+              </label>
+
+              <input
+                type="number"
+                min="0"
+                step="0.01"
+                value={
+                  form.floating_cattle_rate_per_kg
+                }
+                onChange={(e) =>
+                  setForm({
+                    ...form,
+                    floating_cattle_rate_per_kg:
+                      Number(
+                        e.target
+                          .value
+                      ),
+                  })
+                }
+                style={
+                  styles.input
+                }
+              />
+
+              {/* SINKING */}
+
+              <label
+                style={
+                  styles.label
+                }
+              >
+                Sinking &
+                Broiler &
+                Layer &
+                Sonali —
+                ৳/KG
+              </label>
+
+              <input
+                type="number"
+                min="0"
+                step="0.01"
+                value={
+                  form.sinking_broiler_layer_sonali_rate_per_kg
+                }
+                onChange={(e) =>
+                  setForm({
+                    ...form,
+                    sinking_broiler_layer_sonali_rate_per_kg:
+                      Number(
+                        e.target
+                          .value
+                      ),
+                  })
+                }
+                style={
+                  styles.input
+                }
+              />
+
+              {/* STATUS */}
+
+              <label
+                style={
+                  styles.label
+                }
+              >
+                Status
+              </label>
+
+              <select
+                value={
+                  form.status
+                }
+                onChange={(e) =>
+                  setForm({
+                    ...form,
+                    status:
+                      e.target
+                        .value,
+                  })
+                }
+                style={
+                  styles.input
+                }
+              >
+                <option>
+                  Active
                 </option>
 
-                {upazilas.map((upazila) => (
-                  <option
-                    key={upazila.id}
-                    value={
-                      upazila.upazila_name
-                    }
-                  >
-                    {upazila.upazila_name} —{" "}
-                    {upazila.district}
-                  </option>
-                ))}
+                <option>
+                  Inactive
+                </option>
               </select>
-            )}
 
-            <label style={styles.label}>
-              Floating & Cattle — ৳/KG
-            </label>
+              {/* SAVE */}
 
-            <input
-              type="number"
-              min="0"
-              step="0.01"
-              value={
-                form.floating_cattle_rate_per_kg
-              }
-              onChange={(e) =>
-                setForm({
-                  ...form,
-                  floating_cattle_rate_per_kg:
-                    Number(
-                      e.target.value
-                    ),
-                })
-              }
-              style={styles.input}
-            />
-
-            <label style={styles.label}>
-              Sinking & Broiler & Layer &
-              Sonali — ৳/KG
-            </label>
-
-            <input
-              type="number"
-              min="0"
-              step="0.01"
-              value={
-                form.sinking_broiler_layer_sonali_rate_per_kg
-              }
-              onChange={(e) =>
-                setForm({
-                  ...form,
-                  sinking_broiler_layer_sonali_rate_per_kg:
-                    Number(
-                      e.target.value
-                    ),
-                })
-              }
-              style={styles.input}
-            />
-
-            <label style={styles.label}>
-              Status
-            </label>
-
-            <select
-              value={form.status}
-              onChange={(e) =>
-                setForm({
-                  ...form,
-                  status: e.target.value,
-                })
-              }
-              style={styles.input}
-            >
-              <option>Active</option>
-              <option>Inactive</option>
-            </select>
-
-            <button
-              style={styles.saveButton}
-              onClick={
-                saveTransportation
-              }
-            >
-              {editingId
-                ? "Update Transportation"
-                : "Save Transportation"}
-            </button>
+              <button
+                style={
+                  styles.saveButton
+                }
+                onClick={
+                  saveTransportation
+                }
+              >
+                {editingId
+                  ? "Update Transportation"
+                  : "Save Transportation"}
+              </button>
+            </div>
           </div>
-        </div>
-      )}
+        )}
     </div>
   );
 }
+
+// =====================================================
+// STYLES
+// =====================================================
 
 const styles: Record<
   string,
@@ -785,10 +1336,12 @@ const styles: Record<
 
   header: {
     display: "flex",
-    justifyContent: "space-between",
+    justifyContent:
+      "space-between",
     alignItems: "center",
     gap: 10,
-    marginBottom: 14,
+    marginBottom: 10,
+    flexWrap: "wrap",
   },
 
   title: {
@@ -808,11 +1361,13 @@ const styles: Record<
     display: "flex",
     gap: 6,
     flexWrap: "wrap",
-    justifyContent: "flex-end",
+    justifyContent:
+      "flex-end",
   },
 
   exportButton: {
-    border: "1px solid #d1d5db",
+    border:
+      "1px solid #d1d5db",
     background: "#ffffff",
     color: "#111827",
     padding: "9px 10px",
@@ -822,7 +1377,8 @@ const styles: Record<
   },
 
   importButton: {
-    border: "1px solid #d1d5db",
+    border:
+      "1px solid #d1d5db",
     background: "#ffffff",
     color: "#111827",
     padding: "9px 10px",
@@ -841,12 +1397,25 @@ const styles: Record<
     cursor: "pointer",
   },
 
+  viewOnlyNotice: {
+    background: "#eff6ff",
+    color: "#1d4ed8",
+    border:
+      "1px solid #bfdbfe",
+    borderRadius: 9,
+    padding: "9px 12px",
+    fontSize: 12,
+    fontWeight: 600,
+    marginBottom: 10,
+  },
+
   searchBox: {
     display: "flex",
     alignItems: "center",
     gap: 8,
     background: "#ffffff",
-    border: "1px solid #e5e7eb",
+    border:
+      "1px solid #e5e7eb",
     padding: "11px 13px",
     borderRadius: 10,
     marginBottom: 10,
@@ -870,7 +1439,8 @@ const styles: Record<
 
   filterButton: {
     flexShrink: 0,
-    border: "1px solid #d1d5db",
+    border:
+      "1px solid #d1d5db",
     background: "#ffffff",
     color: "#374151",
     padding: "7px 13px",
@@ -889,7 +1459,8 @@ const styles: Record<
     width: "100%",
     overflowX: "auto",
     background: "#ffffff",
-    border: "1px solid #e5e7eb",
+    border:
+      "1px solid #e5e7eb",
     borderRadius: 12,
     boxShadow:
       "0 1px 3px rgba(0,0,0,0.05)",
@@ -898,7 +1469,8 @@ const styles: Record<
   table: {
     width: "100%",
     minWidth: 850,
-    borderCollapse: "collapse",
+    borderCollapse:
+      "collapse",
     color: "#111827",
     fontSize: 13,
   },
@@ -995,7 +1567,8 @@ const styles: Record<
 
   actionGroup: {
     display: "flex",
-    justifyContent: "center",
+    justifyContent:
+      "center",
     gap: 5,
   },
 
@@ -1032,7 +1605,8 @@ const styles: Record<
   overlay: {
     position: "fixed",
     inset: 0,
-    background: "rgba(0,0,0,.45)",
+    background:
+      "rgba(0,0,0,.45)",
     display: "flex",
     alignItems: "flex-end",
     justifyContent: "center",
@@ -1044,7 +1618,8 @@ const styles: Record<
     maxWidth: 600,
     background: "#ffffff",
     color: "#111827",
-    borderRadius: "20px 20px 0 0",
+    borderRadius:
+      "20px 20px 0 0",
     padding: 20,
     maxHeight: "90vh",
     overflowY: "auto",
@@ -1053,7 +1628,8 @@ const styles: Record<
 
   modalHeader: {
     display: "flex",
-    justifyContent: "space-between",
+    justifyContent:
+      "space-between",
     alignItems: "center",
     marginBottom: 8,
   },
@@ -1087,7 +1663,8 @@ const styles: Record<
   input: {
     width: "100%",
     boxSizing: "border-box",
-    border: "1px solid #cbd5e1",
+    border:
+      "1px solid #cbd5e1",
     background: "#ffffff",
     color: "#111827",
     borderRadius: 9,
