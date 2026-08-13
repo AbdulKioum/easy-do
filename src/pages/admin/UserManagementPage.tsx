@@ -2,7 +2,10 @@ import { useEffect, useState } from "react";
 import { supabase } from "../../lib/supabase";
 import { useAuth } from "../../context/AuthContext";
 
-type UserRole = "user" | "admin" | "super_admin";
+type UserRole =
+  | "user"
+  | "admin"
+  | "super_admin";
 
 type Profile = {
   id: string;
@@ -22,7 +25,8 @@ export default function UserManagementPage() {
 
   const [users, setUsers] = useState<Profile[]>([]);
   const [loading, setLoading] = useState(true);
-  const [savingId, setSavingId] = useState<string | null>(null);
+  const [savingId, setSavingId] =
+    useState<string | null>(null);
 
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
@@ -31,13 +35,21 @@ export default function UserManagementPage() {
   // ADD USER FORM
   // ==========================================
 
-  const [showAddUser, setShowAddUser] = useState(false);
+  const [showAddUser, setShowAddUser] =
+    useState(false);
 
-  const [newFullName, setNewFullName] = useState("");
-  const [newEmail, setNewEmail] = useState("");
-  const [newPassword, setNewPassword] = useState("");
+  const [newFullName, setNewFullName] =
+    useState("");
+
+  const [newEmail, setNewEmail] =
+    useState("");
+
+  const [newPassword, setNewPassword] =
+    useState("");
+
   const [newRole, setNewRole] =
     useState<UserRole>("user");
+
   const [newStatus, setNewStatus] =
     useState("Active");
 
@@ -94,8 +106,7 @@ export default function UserManagementPage() {
 
   useEffect(() => {
     if (
-      currentRole ===
-      "super_admin"
+      currentRole === "super_admin"
     ) {
       loadUsers();
     } else {
@@ -166,7 +177,8 @@ export default function UserManagementPage() {
           "create-user",
           {
             body: {
-              full_name: fullName,
+              full_name:
+                fullName,
               email,
               password,
               role: newRole,
@@ -203,8 +215,6 @@ export default function UserManagementPage() {
         "User created successfully."
       );
 
-      // Reset form
-
       setNewFullName("");
       setNewEmail("");
       setNewPassword("");
@@ -214,7 +224,6 @@ export default function UserManagementPage() {
       setShowAddUser(false);
 
       await loadUsers();
-
     } catch (err) {
       console.error(
         "Create user error:",
@@ -378,7 +387,8 @@ export default function UserManagementPage() {
             user.id === userId
               ? {
                   ...user,
-                  status: newStatus,
+                  status:
+                    newStatus,
                 }
               : user
         )
@@ -387,6 +397,122 @@ export default function UserManagementPage() {
     setSuccess(
       "User status updated successfully."
     );
+
+    setSavingId(null);
+  }
+
+  // ==========================================
+  // DELETE USER
+  // ==========================================
+
+  async function handleDeleteUser(
+    userId: string,
+    userName: string
+  ) {
+    if (
+      currentRole !==
+      "super_admin"
+    ) {
+      setError(
+        "Only Super Admin can delete users."
+      );
+
+      return;
+    }
+
+    // Prevent deleting yourself
+    if (
+      userId ===
+      currentProfile?.id
+    ) {
+      setError(
+        "You cannot delete your own account."
+      );
+
+      return;
+    }
+
+    const confirmed =
+      window.confirm(
+        `Are you sure you want to delete "${userName}"?\n\nThis will permanently delete this user account.`
+      );
+
+    if (!confirmed) {
+      return;
+    }
+
+    setError("");
+    setSuccess("");
+    setSavingId(userId);
+
+    try {
+      const {
+        data,
+        error,
+      } =
+        await supabase.functions.invoke(
+          "delete-user",
+          {
+            body: {
+              user_id: userId,
+            },
+          }
+        );
+
+      console.log(
+        "Delete user response:",
+        data,
+        error
+      );
+
+      if (error) {
+        console.error(
+          "Delete user function error:",
+          error
+        );
+
+        setError(
+          `Delete user failed: ${error.message}`
+        );
+
+        setSavingId(null);
+        return;
+      }
+
+      if (!data?.success) {
+        setError(
+          data?.error ||
+            "Delete user failed."
+        );
+
+        setSavingId(null);
+        return;
+      }
+
+      // Remove from UI immediately
+      setUsers(
+        (previousUsers) =>
+          previousUsers.filter(
+            (user) =>
+              user.id !== userId
+          )
+      );
+
+      setSuccess(
+        "User deleted successfully."
+      );
+    } catch (err) {
+      console.error(
+        "Delete user error:",
+        err
+      );
+
+      setError(
+        err instanceof Error
+          ? err.message
+          : "Delete user failed."
+      );
+    }
 
     setSavingId(null);
   }
@@ -443,7 +569,6 @@ export default function UserManagementPage() {
       {/* HEADER */}
 
       <div style={styles.header}>
-
         <div>
           <h1 style={styles.title}>
             User Management
@@ -468,7 +593,6 @@ export default function UserManagementPage() {
         >
           ↻ Refresh
         </button>
-
       </div>
 
       {/* MESSAGES */}
@@ -525,12 +649,9 @@ export default function UserManagementPage() {
         </div>
       )}
 
-      {/* =====================================
-          ADD USER SECTION
-      ===================================== */}
+      {/* ADD USER */}
 
       <div style={styles.addUserBox}>
-
         <div
           style={
             styles.addUserHeader
@@ -577,7 +698,6 @@ export default function UserManagementPage() {
               styles.addUserForm
             }
           >
-
             {/* FULL NAME */}
 
             <div
@@ -760,7 +880,7 @@ export default function UserManagementPage() {
               </select>
             </div>
 
-            {/* CREATE BUTTON */}
+            {/* CREATE */}
 
             <button
               onClick={
@@ -777,15 +897,11 @@ export default function UserManagementPage() {
                 ? "Creating..."
                 : "Create User"}
             </button>
-
           </div>
         )}
-
       </div>
 
-      {/* =====================================
-          USER LIST
-      ===================================== */}
+      {/* USER LIST */}
 
       {loading ? (
         <div
@@ -806,7 +922,6 @@ export default function UserManagementPage() {
           }
         >
           {users.map((user) => {
-
             const isCurrentUser =
               user.id ===
               currentProfile?.id;
@@ -821,7 +936,6 @@ export default function UserManagementPage() {
                   styles.userCard
                 }
               >
-
                 {/* USER INFO */}
 
                 <div
@@ -972,6 +1086,44 @@ export default function UserManagementPage() {
                   </select>
                 </div>
 
+                {/* DELETE */}
+
+                {!isCurrentUser && (
+                  <div
+                    style={
+                      styles.deleteGroup
+                    }
+                  >
+                    <label
+                      style={
+                        styles.label
+                      }
+                    >
+                      Action
+                    </label>
+
+                    <button
+                      onClick={() =>
+                        handleDeleteUser(
+                          user.id,
+                          user.full_name ||
+                            user.email ||
+                            "this user"
+                        )
+                      }
+                      disabled={isSaving}
+                      style={
+                        styles.deleteButton
+                      }
+                      title="Delete User"
+                    >
+                      {isSaving
+                        ? "..."
+                        : "🗑️"}
+                    </button>
+                  </div>
+                )}
+
                 {/* SAVING */}
 
                 {isSaving && (
@@ -980,16 +1132,14 @@ export default function UserManagementPage() {
                       styles.saving
                     }
                   >
-                    Saving...
+                    Processing...
                   </div>
                 )}
-
               </div>
             );
           })}
         </div>
       )}
-
     </div>
   );
 }
@@ -1003,7 +1153,6 @@ const styles: Record<
   string,
   React.CSSProperties
 > = {
-
   page: {
     width: "100%",
     maxWidth: 1100,
@@ -1285,6 +1434,10 @@ const styles: Record<
     minWidth: 140,
   },
 
+  deleteGroup: {
+    minWidth: 55,
+  },
+
   label: {
     display: "block",
     marginBottom: 4,
@@ -1311,6 +1464,20 @@ const styles: Record<
     background: "#f3f4f6",
     color: "#9ca3af",
     cursor: "not-allowed",
+  },
+
+  deleteButton: {
+    width: 40,
+    height: 38,
+    border: "none",
+    borderRadius: 8,
+    background: "#fee2e2",
+    color: "#991b1b",
+    cursor: "pointer",
+    fontSize: 16,
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
   },
 
   saving: {
