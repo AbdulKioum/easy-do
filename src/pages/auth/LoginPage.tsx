@@ -171,6 +171,11 @@ export default function LoginPage() {
             }}
           />
 
+          <h2 style={styles.titlecourtesy}>
+         Courtesy: Team Mymensingh 
+        </h2>
+
+
         </div>
 
 
@@ -426,6 +431,15 @@ const styles: Record<
 
 
   title: {
+    margin: 0,
+    textAlign: "center",
+    fontSize: 13,
+    fontWeight: 800,
+    color: "#111827",
+    marginBottom: 22,
+  },
+
+  titlecourtesy: {
     margin: 0,
     textAlign: "center",
     fontSize: 16,
