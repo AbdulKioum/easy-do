@@ -1,4 +1,9 @@
-import { useEffect, useMemo, useState } from "react";
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { supabase } from "../lib/supabase";
 import { useAuth } from "../context/AuthContext";
 
@@ -46,54 +51,323 @@ const categories = [
   "Fish Sinking",
 ];
 
+const EASY_DO_STORAGE_KEY =
+  "easydo_current_state_v1";
+
 export default function EasyDOPage() {
   const { user } = useAuth();
 
-  const [priceList, setPriceList] = useState<FeedPrice[]>([]);
+  const [priceList, setPriceList] =
+    useState<FeedPrice[]>([]);
 
-  const [transportList, setTransportList] = useState<Transport[]>([]);
+  const [transportList, setTransportList] =
+    useState<Transport[]>([]);
 
-  const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
+  const [loading, setLoading] =
+    useState(true);
 
-  const [rows, setRows] = useState<OrderRow[]>([]);
+  const [saving, setSaving] =
+    useState(false);
 
-  const [fromLocation, setFromLocation] = useState("");
-  const [upazila, setUpazila] = useState("");
+  const [rows, setRows] =
+    useState<OrderRow[]>([]);
+
+  const [fromLocation, setFromLocation] =
+    useState("");
+
+  const [upazila, setUpazila] =
+    useState("");
 
   const [transportMode, setTransportMode] =
     useState<"with" | "without">("with");
+
+  /*
+   * Which category dropdown is currently open.
+   */
+  const [
+    openDropdownRowId,
+    setOpenDropdownRowId,
+  ] = useState<number | null>(null);
+
+  const dropdownRef =
+    useRef<HTMLDivElement | null>(null);
 
   // =========================
   // DO INFORMATION
   // =========================
 
-  const [showDOInformation, setShowDOInformation] = useState(false);
+  const [
+    showDOInformation,
+    setShowDOInformation,
+  ] = useState(false);
 
-  const [agentCode, setAgentCode] = useState("");
-  const [agentName, setAgentName] = useState("");
-  const [vehicleNo, setVehicleNo] = useState("");
+  const [agentCode, setAgentCode] =
+    useState("");
 
-  const [banks, setBanks] = useState<BankInfo[]>([
-    {
-      id: Date.now(),
-      bankName: "",
-      branch: "",
-      date: new Date().toISOString().split("T")[0],
-      amount: "",
-    },
-  ]);
+  const [agentName, setAgentName] =
+    useState("");
 
-  const [generatedMessage, setGeneratedMessage] = useState("");
+  const [vehicleNo, setVehicleNo] =
+    useState("");
+
+  const [banks, setBanks] =
+    useState<BankInfo[]>([
+      {
+        id: Date.now(),
+        bankName: "",
+        branch: "",
+        date: new Date()
+          .toISOString()
+          .split("T")[0],
+        amount: "",
+      },
+    ]);
+
+  const [
+    generatedMessage,
+    setGeneratedMessage,
+  ] = useState("");
+
+  // =========================
+  // INITIAL LOAD
+  // =========================
 
   useEffect(() => {
+    const navigationEntry =
+      performance.getEntriesByType(
+        "navigation"
+      )[0] as
+        | PerformanceNavigationTiming
+        | undefined;
+
+    const isReload =
+      navigationEntry?.type === "reload";
+
+    /*
+     * If browser was actually reloaded,
+     * clear the current DO.
+     *
+     * If user presses reload and then CANCELS,
+     * this code does not run because page never
+     * reloads.
+     */
+    if (isReload) {
+      sessionStorage.removeItem(
+        EASY_DO_STORAGE_KEY
+      );
+    } else {
+      restoreEasyDOState();
+    }
+
     loadData();
   }, []);
+
+  // =========================
+  // RELOAD WARNING
+  // =========================
+
+  useEffect(() => {
+    function handleBeforeUnload(
+      event: BeforeUnloadEvent
+    ) {
+      /*
+       * Browser will show its own standard
+       * confirmation message.
+       */
+      event.preventDefault();
+      event.returnValue = "";
+    }
+
+    window.addEventListener(
+      "beforeunload",
+      handleBeforeUnload
+    );
+
+    return () => {
+      window.removeEventListener(
+        "beforeunload",
+        handleBeforeUnload
+      );
+    };
+  }, []);
+
+  // =========================
+  // CLOSE DROPDOWN
+  // =========================
+
+  useEffect(() => {
+    function handleOutsideClick(
+      event: MouseEvent
+    ) {
+      if (!dropdownRef.current) {
+        return;
+      }
+
+      if (
+        !dropdownRef.current.contains(
+          event.target as Node
+        )
+      ) {
+        setOpenDropdownRowId(null);
+      }
+    }
+
+    document.addEventListener(
+      "mousedown",
+      handleOutsideClick
+    );
+
+    return () => {
+      document.removeEventListener(
+        "mousedown",
+        handleOutsideClick
+      );
+    };
+  }, []);
+
+  // =========================
+  // RESTORE CURRENT DO
+  // =========================
+
+  function restoreEasyDOState() {
+    try {
+      const saved =
+        sessionStorage.getItem(
+          EASY_DO_STORAGE_KEY
+        );
+
+      if (!saved) {
+        return;
+      }
+
+      const state =
+        JSON.parse(saved);
+
+      if (
+        Array.isArray(state.rows)
+      ) {
+        setRows(state.rows);
+      }
+
+      setFromLocation(
+        state.fromLocation || ""
+      );
+
+      setUpazila(
+        state.upazila || ""
+      );
+
+      setTransportMode(
+        state.transportMode ===
+          "without"
+          ? "without"
+          : "with"
+      );
+
+      setAgentCode(
+        state.agentCode || ""
+      );
+
+      setAgentName(
+        state.agentName || ""
+      );
+
+      setVehicleNo(
+        state.vehicleNo || ""
+      );
+
+      if (
+        Array.isArray(
+          state.banks
+        ) &&
+        state.banks.length > 0
+      ) {
+        setBanks(state.banks);
+      }
+
+      setShowDOInformation(
+        Boolean(
+          state.showDOInformation
+        )
+      );
+
+      setGeneratedMessage(
+        state.generatedMessage || ""
+      );
+    } catch (error) {
+      console.error(
+        "EasyDO restore failed:",
+        error
+      );
+
+      sessionStorage.removeItem(
+        EASY_DO_STORAGE_KEY
+      );
+    }
+  }
+
+  // =========================
+  // AUTO SAVE CURRENT DO
+  // =========================
+
+  useEffect(() => {
+    /*
+     * Do not save anything before the
+     * initial restore/load process.
+     */
+    if (loading) {
+      return;
+    }
+
+    const state = {
+      rows,
+      fromLocation,
+      upazila,
+      transportMode,
+      agentCode,
+      agentName,
+      vehicleNo,
+      banks,
+      showDOInformation,
+      generatedMessage,
+    };
+
+    try {
+      sessionStorage.setItem(
+        EASY_DO_STORAGE_KEY,
+        JSON.stringify(state)
+      );
+    } catch (error) {
+      console.error(
+        "EasyDO state save failed:",
+        error
+      );
+    }
+  }, [
+    loading,
+    rows,
+    fromLocation,
+    upazila,
+    transportMode,
+    agentCode,
+    agentName,
+    vehicleNo,
+    banks,
+    showDOInformation,
+    generatedMessage,
+  ]);
+
+  // =========================
+  // LOAD DATA
+  // =========================
 
   async function loadData() {
     setLoading(true);
 
-    const [priceResponse, transportResponse] = await Promise.all([
+    const [
+      priceResponse,
+      transportResponse,
+    ] = await Promise.all([
       supabase
         .from("feed_price_list")
         .select(
@@ -116,17 +390,31 @@ export default function EasyDOPage() {
     ]);
 
     if (priceResponse.error) {
-      console.error(priceResponse.error);
-      alert("Price list load failed.");
+      console.error(
+        priceResponse.error
+      );
+
+      alert(
+        "Price list load failed."
+      );
     } else {
-      setPriceList(priceResponse.data || []);
+      setPriceList(
+        priceResponse.data || []
+      );
     }
 
     if (transportResponse.error) {
-      console.error(transportResponse.error);
-      alert("Transportation load failed.");
+      console.error(
+        transportResponse.error
+      );
+
+      alert(
+        "Transportation load failed."
+      );
     } else {
-      setTransportList(transportResponse.data || []);
+      setTransportList(
+        transportResponse.data || []
+      );
     }
 
     setLoading(false);
@@ -136,44 +424,344 @@ export default function EasyDOPage() {
   // CATEGORY
   // =========================
 
-  function addCategory(category: string) {
+  function addCategory(
+    category: string
+  ) {
+    /*
+     * Check whether this category still
+     * has any unselected item.
+     */
+    const availableItems =
+      priceList.filter(
+        (item) =>
+          item.category ===
+            category &&
+          !rows.some(
+            (row) =>
+              row.category ===
+                category &&
+              row.item?.id ===
+                item.id
+          )
+      );
+
+    if (
+      availableItems.length === 0
+    ) {
+      alert(
+        `All ${category} items have already been added.`
+      );
+
+      return;
+    }
+
     const newRow: OrderRow = {
-      id: Date.now() + Math.random(),
+      id:
+        Date.now() +
+        Math.random(),
+
       category,
+
       item: null,
+
       bags: 0,
     };
 
-    setRows((prev) => [...prev, newRow]);
+    setRows((prev) => [
+      ...prev,
+      newRow,
+    ]);
+
+    /*
+     * Automatically open the new
+     * category dropdown.
+     */
+    setTimeout(() => {
+      setOpenDropdownRowId(
+        newRow.id
+      );
+    }, 50);
   }
 
-  function removeRow(rowId: number) {
-    setRows((prev) => prev.filter((row) => row.id !== rowId));
-  }
+  // =========================
+  // REMOVE ROW
+  // =========================
 
-  function updateItem(rowId: number, itemId: string) {
-    const item =
-      priceList.find((price) => String(price.id) === itemId) || null;
-
+  function removeRow(
+    rowId: number
+  ) {
     setRows((prev) =>
-      prev.map((row) =>
-        row.id === rowId
-          ? {
-              ...row,
-              item,
-            }
-          : row
+      prev.filter(
+        (row) =>
+          row.id !== rowId
       )
+    );
+
+    if (
+      openDropdownRowId ===
+      rowId
+    ) {
+      setOpenDropdownRowId(null);
+    }
+  }
+
+  // =========================
+  // SELECT MULTIPLE ITEMS
+  // =========================
+
+  function toggleItem(
+    rowId: number,
+    itemId: number
+  ) {
+    const currentRow =
+      rows.find(
+        (row) =>
+          row.id === rowId
+      );
+
+    if (!currentRow) {
+      return;
+    }
+
+    /*
+     * This row is a temporary category
+     * selector because item is null.
+     */
+    const item =
+      priceList.find(
+        (price) =>
+          price.id === itemId
+      );
+
+    if (!item) {
+      return;
+    }
+
+    /*
+     * If this row already represents
+     * an item, don't duplicate it.
+     */
+    if (currentRow.item) {
+      return;
+    }
+
+    /*
+     * Create the selected item as a
+     * normal row.
+     *
+     * The original empty category row
+     * is removed.
+     */
+    setRows((prev) => {
+      const rowIndex =
+        prev.findIndex(
+          (row) =>
+            row.id === rowId
+        );
+
+      if (rowIndex === -1) {
+        return prev;
+      }
+
+      const newRow: OrderRow = {
+        id: rowId,
+        category:
+          currentRow.category,
+        item,
+        bags: 0,
+      };
+
+      const updated = [
+        ...prev,
+      ];
+
+      updated[rowIndex] =
+        newRow;
+
+      return updated;
+    });
+  }
+
+  /*
+   * Multiple selection helper.
+   *
+   * The dropdown keeps a temporary
+   * selection list. When user clicks
+   * Done, all selected items are
+   * converted into normal rows.
+   */
+  const [
+    pendingSelections,
+    setPendingSelections,
+  ] = useState<
+    Record<number, number[]>
+  >({});
+
+  function getPendingSelection(
+    rowId: number
+  ) {
+    return (
+      pendingSelections[
+        rowId
+      ] || []
     );
   }
 
-  function updateBags(rowId: number, bags: number) {
+  function togglePendingItem(
+    rowId: number,
+    itemId: number
+  ) {
+    setPendingSelections(
+      (prev) => {
+        const current =
+          prev[rowId] || [];
+
+        const exists =
+          current.includes(
+            itemId
+          );
+
+        return {
+          ...prev,
+          [rowId]: exists
+            ? current.filter(
+                (id) =>
+                  id !== itemId
+              )
+            : [
+                ...current,
+                itemId,
+              ],
+        };
+      }
+    );
+  }
+
+  function confirmMultipleItems(
+    rowId: number
+  ) {
+    const currentRow =
+      rows.find(
+        (row) =>
+          row.id === rowId
+      );
+
+    if (!currentRow) {
+      return;
+    }
+
+    const selectedIds =
+      getPendingSelection(
+        rowId
+      );
+
+    if (
+      selectedIds.length === 0
+    ) {
+      return;
+    }
+
+    const selectedItems =
+      selectedIds
+        .map((id) =>
+          priceList.find(
+            (item) =>
+              item.id === id
+          )
+        )
+        .filter(
+          (
+            item
+          ): item is FeedPrice =>
+            Boolean(item)
+        );
+
+    setRows((prev) => {
+      const index =
+        prev.findIndex(
+          (row) =>
+            row.id === rowId
+        );
+
+      if (index === -1) {
+        return prev;
+      }
+
+      const before =
+        prev.slice(
+          0,
+          index
+        );
+
+      const after =
+        prev.slice(
+          index + 1
+        );
+
+      const newRows =
+        selectedItems.map(
+          (
+            item,
+            itemIndex
+          ) => ({
+            id:
+              itemIndex ===
+              0
+                ? rowId
+                : Date.now() +
+                  Math.random() +
+                  itemIndex,
+
+            category:
+              currentRow.category,
+
+            item,
+
+            bags: 0,
+          })
+        );
+
+      return [
+        ...before,
+        ...newRows,
+        ...after,
+      ];
+    });
+
+    setPendingSelections(
+      (prev) => {
+        const copy = {
+          ...prev,
+        };
+
+        delete copy[rowId];
+
+        return copy;
+      }
+    );
+
+    setOpenDropdownRowId(
+      null
+    );
+  }
+
+  // =========================
+  // BAGS
+  // =========================
+
+  function updateBags(
+    rowId: number,
+    bags: number
+  ) {
     setRows((prev) =>
       prev.map((row) =>
         row.id === rowId
           ? {
               ...row,
-              bags: bags < 0 ? 0 : bags,
+              bags:
+                bags < 0
+                  ? 0
+                  : bags,
             }
           : row
       )
@@ -184,54 +772,90 @@ export default function EasyDOPage() {
   // SELECTED TRANSPORT
   // =========================
 
-  const selectedTransport = useMemo(() => {
-    if (!fromLocation || !upazila) {
-      return null;
-    }
+  const selectedTransport =
+    useMemo(() => {
+      if (
+        !fromLocation ||
+        !upazila
+      ) {
+        return null;
+      }
 
-    return (
-      transportList.find(
-        (transport) =>
-          transport.from_location === fromLocation &&
-          transport.to_upazila === upazila
-      ) || null
-    );
-  }, [transportList, fromLocation, upazila]);
+      return (
+        transportList.find(
+          (transport) =>
+            transport.from_location ===
+              fromLocation &&
+            transport.to_upazila ===
+              upazila
+        ) || null
+      );
+    }, [
+      transportList,
+      fromLocation,
+      upazila,
+    ]);
 
   // =========================
   // TRANSPORT RATE
   // =========================
 
-  function getTransportRate(category: string) {
+  function getTransportRate(
+    category: string
+  ) {
     if (!selectedTransport) {
       return 0;
     }
 
     if (
-      category === "Fish Floating" ||
+      category ===
+        "Fish Floating" ||
       category === "Cattle"
     ) {
       return Number(
-        selectedTransport.floating_cattle_rate_per_kg
+        selectedTransport
+          .floating_cattle_rate_per_kg
       );
     }
 
     return Number(
-      selectedTransport.sinking_broiler_layer_sonali_rate_per_kg
+      selectedTransport
+        .sinking_broiler_layer_sonali_rate_per_kg
     );
   }
 
-  function getRowWeight(row: OrderRow) {
-    if (!row.item || !row.bags) {
+  // =========================
+  // ROW WEIGHT
+  // =========================
+
+  function getRowWeight(
+    row: OrderRow
+  ) {
+    if (
+      !row.item ||
+      !row.bags
+    ) {
       return 0;
     }
 
-    return Number(row.item.kg_per_bag) * Number(row.bags);
+    return (
+      Number(
+        row.item.kg_per_bag
+      ) *
+      Number(row.bags)
+    );
   }
 
-  function getRowTransport(row: OrderRow) {
+  // =========================
+  // ROW TRANSPORT
+  // =========================
+
+  function getRowTransport(
+    row: OrderRow
+  ) {
     if (
-      transportMode !== "without" ||
+      transportMode !==
+        "without" ||
       !row.item ||
       !row.bags ||
       !selectedTransport
@@ -239,8 +863,13 @@ export default function EasyDOPage() {
       return 0;
     }
 
-    const weight = getRowWeight(row);
-    const rate = getTransportRate(row.category);
+    const weight =
+      getRowWeight(row);
+
+    const rate =
+      getTransportRate(
+        row.category
+      );
 
     return weight * rate;
   }
@@ -249,119 +878,174 @@ export default function EasyDOPage() {
   // ROW TOTAL
   // =========================
 
-  function getRowTotal(row: OrderRow) {
-    if (!row.item || !row.bags) {
+  function getRowTotal(
+    row: OrderRow
+  ) {
+    if (
+      !row.item ||
+      !row.bags
+    ) {
       return 0;
     }
 
     const tpTotal =
-      Number(row.item.tp_per_bag) * Number(row.bags);
+      Number(
+        row.item.tp_per_bag
+      ) *
+      Number(row.bags);
 
-    if (transportMode === "with") {
+    if (
+      transportMode ===
+      "with"
+    ) {
       return tpTotal;
     }
 
-    return tpTotal - getRowTransport(row);
+    return (
+      tpTotal -
+      getRowTransport(row)
+    );
   }
 
   // =========================
   // TOTAL TRANSPORT
   // =========================
 
-  const totalTransportAmount = useMemo(() => {
-    if (!selectedTransport) {
-      return 0;
-    }
-
-    return rows.reduce((total, row) => {
-      if (!row.item || !row.bags) {
-        return total;
+  const totalTransportAmount =
+    useMemo(() => {
+      if (
+        !selectedTransport
+      ) {
+        return 0;
       }
 
-      return (
-        total +
-        getRowWeight(row) *
-          getTransportRate(row.category)
+      return rows.reduce(
+        (total, row) => {
+          if (
+            !row.item ||
+            !row.bags
+          ) {
+            return total;
+          }
+
+          return (
+            total +
+            getRowWeight(
+              row
+            ) *
+              getTransportRate(
+                row.category
+              )
+          );
+        },
+        0
       );
-    }, 0);
-  }, [rows, selectedTransport]);
+    }, [
+      rows,
+      selectedTransport,
+    ]);
 
   // =========================
   // TOTAL WEIGHT
   // =========================
 
-  const totalWeight = useMemo(() => {
-    return rows.reduce(
-      (total, row) => total + getRowWeight(row),
-      0
-    );
-  }, [rows]);
+  const totalWeight =
+    useMemo(() => {
+      return rows.reduce(
+        (total, row) =>
+          total +
+          getRowWeight(row),
+        0
+      );
+    }, [rows]);
 
   // =========================
   // FEED PRICE
   // =========================
 
-  const feedPrice = useMemo(() => {
-    return rows.reduce(
-      (total, row) =>
-        total +
-        (row.item
-          ? Number(row.item.tp_per_bag) *
-            Number(row.bags)
-          : 0),
-      0
-    );
-  }, [rows]);
+  const feedPrice =
+    useMemo(() => {
+      return rows.reduce(
+        (total, row) =>
+          total +
+          (row.item
+            ? Number(
+                row.item
+                  .tp_per_bag
+              ) *
+              Number(
+                row.bags
+              )
+            : 0),
+        0
+      );
+    }, [rows]);
 
   // =========================
   // GRAND TOTAL
   // =========================
 
-  const totalAmount = useMemo(() => {
-    return rows.reduce(
-      (total, row) => total + getRowTotal(row),
-      0
-    );
-  }, [
-    rows,
-    transportMode,
-    selectedTransport,
-  ]);
+  const totalAmount =
+    useMemo(() => {
+      return rows.reduce(
+        (total, row) =>
+          total +
+          getRowTotal(row),
+        0
+      );
+    }, [
+      rows,
+      transportMode,
+      selectedTransport,
+    ]);
 
   // =========================
   // FROM LOCATIONS
   // =========================
 
-  const fromLocations = useMemo(() => {
-    return Array.from(
-      new Set(
-        transportList
-          .map((item) => item.from_location)
-          .filter(Boolean)
-      )
-    );
-  }, [transportList]);
+  const fromLocations =
+    useMemo(() => {
+      return Array.from(
+        new Set(
+          transportList
+            .map(
+              (item) =>
+                item.from_location
+            )
+            .filter(Boolean)
+        )
+      );
+    }, [transportList]);
 
   // =========================
   // UPAZILA
   // =========================
 
-  const upazilas = useMemo(() => {
-    const filtered = fromLocation
-      ? transportList.filter(
-          (item) =>
-            item.from_location === fromLocation
-        )
-      : transportList;
+  const upazilas =
+    useMemo(() => {
+      const filtered =
+        fromLocation
+          ? transportList.filter(
+              (item) =>
+                item.from_location ===
+                fromLocation
+            )
+          : transportList;
 
-    return Array.from(
-      new Set(
-        filtered
-          .map((item) => item.to_upazila)
-          .filter(Boolean)
-      )
-    );
-  }, [transportList, fromLocation]);
+      return Array.from(
+        new Set(
+          filtered
+            .map(
+              (item) =>
+                item.to_upazila
+            )
+            .filter(Boolean)
+        )
+      );
+    }, [
+      transportList,
+      fromLocation,
+    ]);
 
   // =========================
   // BANK FUNCTIONS
@@ -371,18 +1055,31 @@ export default function EasyDOPage() {
     setBanks((prev) => [
       ...prev,
       {
-        id: Date.now() + Math.random(),
+        id:
+          Date.now() +
+          Math.random(),
+
         bankName: "",
+
         branch: "",
-        date: new Date().toISOString().split("T")[0],
+
+        date: new Date()
+          .toISOString()
+          .split("T")[0],
+
         amount: "",
       },
     ]);
   }
 
-  function removeBank(id: number) {
+  function removeBank(
+    id: number
+  ) {
     setBanks((prev) =>
-      prev.filter((bank) => bank.id !== id)
+      prev.filter(
+        (bank) =>
+          bank.id !== id
+      )
     );
   }
 
@@ -396,7 +1093,8 @@ export default function EasyDOPage() {
         bank.id === id
           ? {
               ...bank,
-              [field]: value,
+              [field]:
+                value,
             }
           : bank
       )
@@ -407,8 +1105,12 @@ export default function EasyDOPage() {
   // SHORT FEED NAME
   // =========================
 
-  function getFeedShortName(item: FeedPrice) {
-    if (item.short_name?.trim()) {
+  function getFeedShortName(
+    item: FeedPrice
+  ) {
+    if (
+      item.short_name?.trim()
+    ) {
       return item.short_name.trim();
     }
 
@@ -421,92 +1123,113 @@ export default function EasyDOPage() {
 
   function buildDOMessage() {
     const finalAgentCode =
-      agentCode.trim() || "[Agent Code]";
+      agentCode.trim() ||
+      "[Agent Code]";
 
     const finalAgentName =
-      agentName.trim() || "[Agent Name]";
+      agentName.trim() ||
+      "[Agent Name]";
 
     const finalVehicle =
-      vehicleNo.trim() || "[Vehicle No]";
+      vehicleNo.trim() ||
+      "[Vehicle No]";
 
-    // =========================
-    // BANK MESSAGE
-    // =========================
-
-    const validBanks = banks.filter(
-      (bank) =>
-        bank.bankName.trim() ||
-        bank.branch.trim() ||
-        bank.date.trim() ||
-        bank.amount.trim()
-    );
+    const validBanks =
+      banks.filter(
+        (bank) =>
+          bank.bankName.trim() ||
+          bank.branch.trim() ||
+          bank.date.trim() ||
+          bank.amount.trim()
+      );
 
     let bankText = "";
 
-    if (!validBanks.length) {
-      bankText = "[Bank Details]";
+    if (
+      !validBanks.length
+    ) {
+      bankText =
+        "[Bank Details]";
     } else {
-      bankText = validBanks
-        .map((bank) => {
-          const bankName =
-            bank.bankName.trim() ||
-            "[Bank Name]";
+      bankText =
+        validBanks
+          .map((bank) => {
+            const bankName =
+              bank.bankName.trim() ||
+              "[Bank Name]";
 
-          const branch =
-            bank.branch.trim() ||
-            "[Branch]";
+            const branch =
+              bank.branch.trim() ||
+              "[Branch]";
 
-          const date =
-            bank.date.trim() ||
-            "[Date]";
+            const date =
+              bank.date.trim() ||
+              "[Date]";
 
-          const amount =
-            bank.amount.trim()
-              ? `৳ ${Number(
-                  bank.amount
-                ).toLocaleString("en-BD", {
-                  minimumFractionDigits: 2,
-                  maximumFractionDigits: 2,
-                })}`
-              : "[Bank Amount]";
+            const amount =
+              bank.amount.trim()
+                ? `৳ ${Number(
+                    bank.amount
+                  ).toLocaleString(
+                    "en-BD",
+                    {
+                      minimumFractionDigits: 2,
+                      maximumFractionDigits: 2,
+                    }
+                  )}`
+                : "[Bank Amount]";
 
-          return `${bankName}
+            return `${bankName}
 ${branch}
 ${date}
 ${amount}`;
-        })
-        .join("\n\n");
+          })
+          .join("\n\n");
     }
 
     // =========================
     // FEED MESSAGE
     // =========================
 
-    const validRows = rows.filter(
-  (row): row is OrderRow & { item: FeedPrice } =>
-    row.item !== null &&
-    row.item !== undefined &&
-    Number(row.bags) > 0
-);
+    const validRows =
+      rows.filter(
+        (
+          row
+        ): row is OrderRow & {
+          item: FeedPrice;
+        } =>
+          row.item !==
+            null &&
+          row.item !==
+            undefined &&
+          Number(row.bags) >
+            0
+      );
 
-let feedText = "";
+    let feedText = "";
 
-if (!validRows.length) {
-  feedText = "[Feed Details]";
-} else {
-  feedText = validRows
-    .map((row) => {
-      const name =
-        getFeedShortName(row.item);
+    if (
+      !validRows.length
+    ) {
+      feedText =
+        "[Feed Details]";
+    } else {
+      feedText =
+        validRows
+          .map((row) => {
+            const name =
+              getFeedShortName(
+                row.item
+              );
 
-      return `${name} - ${row.bags} bag${
-        row.bags !== 1
-          ? "s"
-          : ""
-      }`;
-    })
-    .join("\n");
-}
+            return `${name} - ${row.bags} bag${
+              row.bags !== 1
+                ? "s"
+                : ""
+            }`;
+          })
+          .join("\n");
+    }
 
     const finalFrom =
       fromLocation.trim() ||
@@ -529,7 +1252,9 @@ From: ${finalFrom}`;
   function openDOInformation() {
     setShowDOInformation(true);
 
-    setGeneratedMessage(buildDOMessage());
+    setGeneratedMessage(
+      buildDOMessage()
+    );
 
     setTimeout(() => {
       const element =
@@ -551,7 +1276,9 @@ From: ${finalFrom}`;
   // =========================
 
   useEffect(() => {
-    if (!showDOInformation) {
+    if (
+      !showDOInformation
+    ) {
       return;
     }
 
@@ -575,7 +1302,9 @@ From: ${finalFrom}`;
   // =========================
 
   async function copyMessage() {
-    if (!generatedMessage) {
+    if (
+      !generatedMessage
+    ) {
       return;
     }
 
@@ -584,9 +1313,12 @@ From: ${finalFrom}`;
         generatedMessage
       );
 
-      alert("DO Message copied.");
+      alert(
+        "DO Message copied."
+      );
     } catch (error) {
       console.error(error);
+
       alert("Copy failed.");
     }
   }
@@ -596,102 +1328,136 @@ From: ${finalFrom}`;
   // =========================
 
   async function saveDO() {
-  if (saving) {
-    return;
-  }
+    if (saving) {
+      return;
+    }
 
-  if (!user) {
-    alert("You are not logged in.");
-    return;
-  }
-
-  if (rows.length === 0) {
-    alert("Please add at least one feed item.");
-    return;
-  }
-
-  // ==========================================
-  // VALID ROWS
-  // ==========================================
-
-  const validRows: OrderRow[] = rows.filter(
-    (row: OrderRow) =>
-      row.item !== null &&
-      row.bags > 0
-  );
-
-  if (validRows.length === 0) {
-    alert(
-      "Please select feed item and enter bags."
-    );
-    return;
-  }
-
-  setSaving(true);
-
-  try {
-      const validBanks = banks.filter(
-        (bank) =>
-          bank.bankName.trim() ||
-          bank.branch.trim() ||
-          bank.date.trim() ||
-          bank.amount.trim()
+    if (!user) {
+      alert(
+        "You are not logged in."
       );
 
-      const bankDetails = validBanks
-        .map((bank) => {
-          return `${bank.bankName || "[Bank Name]"}\n${
-            bank.branch || "[Branch]"
-          }\n${
-            bank.date || "[Date]"
-          }\n${
-            bank.amount
-              ? `৳ ${Number(bank.amount).toLocaleString(
-                  "en-BD",
-                  {
-                    minimumFractionDigits: 2,
-                    maximumFractionDigits: 2,
-                  }
-                )}`
-              : "[Bank Amount]"
-          }`;
-        })
-        .join("\n\n");
+      return;
+    }
 
-      const orderItems = validRows.map(
-        (row) => ({
-          category: row.category,
-
-          item_id: row.item?.id || null,
-
-          item_name:
-            row.item?.item_name || "",
-
-          short_name:
-            row.item?.short_name || "",
-
-          bags:
-            Number(row.bags),
-
-          kg_per_bag:
-            Number(row.item?.kg_per_bag || 0),
-
-          tp_per_bag:
-            Number(row.item?.tp_per_bag || 0),
-
-          weight:
-            getRowWeight(row),
-
-          transport:
-            getRowTransport(row),
-
-          total:
-            getRowTotal(row),
-        })
+    if (rows.length === 0) {
+      alert(
+        "Please add at least one feed item."
       );
+
+      return;
+    }
+
+    const validRows: OrderRow[] =
+      rows.filter(
+        (row: OrderRow) =>
+          row.item !== null &&
+          row.bags > 0
+      );
+
+    if (
+      validRows.length === 0
+    ) {
+      alert(
+        "Please select feed item and enter bags."
+      );
+
+      return;
+    }
+
+    setSaving(true);
+
+    try {
+      const validBanks =
+        banks.filter(
+          (bank) =>
+            bank.bankName.trim() ||
+            bank.branch.trim() ||
+            bank.date.trim() ||
+            bank.amount.trim()
+        );
+
+      const bankDetails =
+        validBanks
+          .map((bank) => {
+            return `${bank.bankName || "[Bank Name]"}
+${bank.branch || "[Branch]"}
+${bank.date || "[Date]"}
+${
+  bank.amount
+    ? `৳ ${Number(
+        bank.amount
+      ).toLocaleString(
+        "en-BD",
+        {
+          minimumFractionDigits: 2,
+          maximumFractionDigits: 2,
+        }
+      )}`
+    : "[Bank Amount]"
+}`;
+          })
+          .join("\n\n");
+
+      const orderItems =
+        validRows.map(
+          (row) => ({
+            category:
+              row.category,
+
+            item_id:
+              row.item?.id ||
+              null,
+
+            item_name:
+              row.item
+                ?.item_name ||
+              "",
+
+            short_name:
+              row.item
+                ?.short_name ||
+              "",
+
+            bags:
+              Number(
+                row.bags
+              ),
+
+            kg_per_bag:
+              Number(
+                row.item
+                  ?.kg_per_bag ||
+                  0
+              ),
+
+            tp_per_bag:
+              Number(
+                row.item
+                  ?.tp_per_bag ||
+                  0
+              ),
+
+            weight:
+              getRowWeight(
+                row
+              ),
+
+            transport:
+              getRowTransport(
+                row
+              ),
+
+            total:
+              getRowTotal(
+                row
+              ),
+          })
+        );
 
       const firstBank =
-        validBanks.length > 0
+        validBanks.length >
+        0
           ? validBanks[0]
           : null;
 
@@ -700,56 +1466,77 @@ From: ${finalFrom}`;
         buildDOMessage();
 
       const payload = {
-        user_id: user.id,
+        user_id:
+          user.id,
 
         agent_info:
-          `${agentCode.trim()}, ${agentName.trim()}`.replace(
-            /^,\s*|\s*,\s*$/g,
-            ""
-          ) || null,
+          `${agentCode.trim()}, ${agentName.trim()}`
+            .replace(
+              /^,\s*|\s*,\s*$/g,
+              ""
+            ) || null,
 
         vehicle_number:
-          vehicleNo.trim() || null,
+          vehicleNo.trim() ||
+          null,
 
         bank_details:
-          bankDetails || null,
+          bankDetails ||
+          null,
 
         from_location:
-          fromLocation || null,
+          fromLocation ||
+          null,
 
         to_upazila:
-          upazila || null,
+          upazila ||
+          null,
 
         transport_mode:
           transportMode,
 
         total_weight:
-          Number(totalWeight.toFixed(2)),
+          Number(
+            totalWeight.toFixed(
+              2
+            )
+          ),
 
         total_amount:
-          Number(totalAmount.toFixed(2)),
+          Number(
+            totalAmount.toFixed(
+              2
+            )
+          ),
 
         order_items:
           orderItems,
 
         agent_code:
-          agentCode.trim() || null,
+          agentCode.trim() ||
+          null,
 
         agent_name:
-          agentName.trim() || null,
+          agentName.trim() ||
+          null,
 
         vehicle_no:
-          vehicleNo.trim() || null,
+          vehicleNo.trim() ||
+          null,
 
         bank_name:
-          firstBank?.bankName.trim() || null,
+          firstBank?.bankName.trim() ||
+          null,
 
         bank_branch:
-          firstBank?.branch.trim() || null,
+          firstBank?.branch.trim() ||
+          null,
 
         bank_amount:
           firstBank?.amount
-            ? Number(firstBank.amount)
+            ? Number(
+                firstBank.amount
+              )
             : 0,
 
         banks:
@@ -767,7 +1554,9 @@ From: ${finalFrom}`;
       const { error } =
         await supabase
           .from("saved_dos")
-          .insert([payload]);
+          .insert([
+            payload,
+          ]);
 
       if (error) {
         console.error(
@@ -782,11 +1571,15 @@ From: ${finalFrom}`;
         return;
       }
 
-      alert("DO saved successfully.");
-
+      alert(
+        "DO saved successfully."
+      );
     } catch (error) {
       console.error(error);
-      alert("Something went wrong while saving DO.");
+
+      alert(
+        "Something went wrong while saving DO."
+      );
     } finally {
       setSaving(false);
     }
@@ -796,8 +1589,12 @@ From: ${finalFrom}`;
   // FORMAT NUMBER
   // =========================
 
-  function money(value: number) {
-    return Number(value).toLocaleString(
+  function money(
+    value: number
+  ) {
+    return Number(
+      value
+    ).toLocaleString(
       "en-BD",
       {
         minimumFractionDigits: 2,
@@ -806,27 +1603,40 @@ From: ${finalFrom}`;
     );
   }
 
+  // =========================
+  // RENDER
+  // =========================
+
   return (
-    <div style={styles.page}>
+    <div
+      style={styles.page}
+    >
+      {/* HEADER */}
 
-      {/* =========================
-          HEADER
-      ========================= */}
-
-      <div style={styles.header}>
+      <div
+        style={styles.header}
+      >
         <div>
-          <h1 style={styles.title}>
+          <h1
+            style={styles.title}
+          >
             Create D/O
           </h1>
 
-          <p style={styles.subtitle}>
+          <p
+            style={
+              styles.subtitle
+            }
+          >
             Feed order entry
           </p>
         </div>
       </div>
 
       {loading ? (
-        <div style={styles.loading}>
+        <div
+          style={styles.loading}
+        >
           Loading...
         </div>
       ) : (
@@ -835,16 +1645,30 @@ From: ${finalFrom}`;
               FEED CATEGORY
           ========================= */}
 
-          <div style={styles.categoryCard}>
-            <div style={styles.sectionTitle}>
+          <div
+            style={
+              styles.categoryCard
+            }
+          >
+            <div
+              style={
+                styles.sectionTitle
+              }
+            >
               Add Feed Item
             </div>
 
-            <div style={styles.categoryGrid}>
+            <div
+              style={
+                styles.categoryGrid
+              }
+            >
               {categories.map(
                 (category) => (
                   <button
-                    key={category}
+                    key={
+                      category
+                    }
                     style={
                       styles.categoryButton
                     }
@@ -873,7 +1697,11 @@ From: ${finalFrom}`;
               ORDER ITEMS
           ========================= */}
 
-          <div style={styles.orderCard}>
+          <div
+            style={
+              styles.orderCard
+            }
+          >
             <div
               style={
                 styles.sectionHeader
@@ -899,12 +1727,26 @@ From: ${finalFrom}`;
               </div>
 
               <div
-                style={styles.itemCount}
+                style={
+                  styles.itemCount
+                }
               >
-                {rows.length} item
-                {rows.length !== 1
-                  ? "s"
-                  : ""}
+                {
+                  rows.filter(
+                    (row) =>
+                      row.item
+                  ).length
+                }{" "}
+                item
+                {
+                  rows.filter(
+                    (row) =>
+                      row.item
+                  ).length !==
+                  1
+                    ? "s"
+                    : ""
+                }
               </div>
             </div>
 
@@ -940,45 +1782,64 @@ From: ${finalFrom}`;
                 </div>
               </div>
             ) : (
-              <div style={styles.rows}>
+              <div
+                style={
+                  styles.rows
+                }
+              >
                 {rows.map(
-                  (row, index) => {
+                  (
+                    row,
+                    index
+                  ) => {
                     /*
-                     * IMPORTANT:
-                     * একই category-তে যেসব item
-                     * আগের row-গুলোতে already selected হয়েছে,
-                     * সেগুলো current row-এর option-এ দেখানো হবে না।
-                     *
-                     * Row delete হলে rows থেকে item চলে যাবে,
-                     * তাই automatically আবার option-এ ফিরে আসবে।
+                     * Items already selected
+                     * in this category.
                      */
-                    const selectedItemIdsInCategory =
+                    const selectedItemIds =
                       rows
                         .filter(
-                          (existingRow) =>
+                          (
+                            existingRow
+                          ) =>
                             existingRow.category ===
                               row.category &&
-                            existingRow.id !==
-                              row.id &&
                             existingRow.item
                         )
                         .map(
-                          (existingRow) =>
-                            existingRow.item!.id
+                          (
+                            existingRow
+                          ) =>
+                            existingRow
+                              .item!
+                              .id
                         );
 
+                    /*
+                     * Available items.
+                     *
+                     * Current row's own item
+                     * is allowed.
+                     */
                     const items =
                       priceList.filter(
                         (item) =>
                           item.category ===
                             row.category &&
-                          !selectedItemIdsInCategory.includes(
+                          !selectedItemIds.includes(
                             item.id
                           )
                       );
 
+                    const pending =
+                      getPendingSelection(
+                        row.id
+                      );
+
                     const rowWeight =
-                      getRowWeight(row);
+                      getRowWeight(
+                        row
+                      );
 
                     const rate =
                       getTransportRate(
@@ -990,19 +1851,322 @@ From: ${finalFrom}`;
                         ? Number(
                             row.item
                               .kg_per_bag
-                          ) * rate
+                          ) *
+                          rate
                         : 0;
 
                     const currentTotal =
-                      getRowTotal(row);
+                      getRowTotal(
+                        row
+                      );
 
+                    /*
+                     * Empty category row:
+                     * show multiple selection
+                     * dropdown.
+                     */
+                    if (
+                      !row.item
+                    ) {
+                      return (
+                        <div
+                          key={
+                            row.id
+                          }
+                          style={{
+                            ...styles.orderRow,
+                            background:
+                              index %
+                                2 ===
+                              0
+                                ? "#ffffff"
+                                : "#f1f5f9",
+                          }}
+                          className="easy-do-order-row"
+                        >
+                          <div
+                            style={
+                              styles.rowNumber
+                            }
+                          >
+                            {index +
+                              1}
+                          </div>
+
+                          <div
+                            style={{
+                              ...styles.categoryColumn,
+                              gridColumn:
+                                "2 / -1",
+                            }}
+                          >
+                            <div
+                              style={
+                                styles.categoryLabel
+                              }
+                            >
+                              {
+                                row.category
+                              }
+                            </div>
+
+                            <div
+                              ref={
+                                openDropdownRowId ===
+                                row.id
+                                  ? dropdownRef
+                                  : null
+                              }
+                              style={{
+                                position:
+                                  "relative",
+                              }}
+                            >
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  setOpenDropdownRowId(
+                                    openDropdownRowId ===
+                                      row.id
+                                      ? null
+                                      : row.id
+                                  )
+                                }
+                                style={{
+                                  ...styles.selectButton,
+                                  width:
+                                    "100%",
+                                }}
+                              >
+                                <span>
+                                  {pending.length >
+                                  0
+                                    ? `${pending.length} item${
+                                        pending.length !==
+                                        1
+                                          ? "s"
+                                          : ""
+                                      } selected`
+                                    : `Select ${row.category} items`}
+                                </span>
+
+                                <span
+                                  style={
+                                    styles.dropdownArrow
+                                  }
+                                >
+                                  {openDropdownRowId ===
+                                  row.id
+                                    ? "▲"
+                                    : "▼"}
+                                </span>
+                              </button>
+
+                              {openDropdownRowId ===
+                                row.id && (
+                                <div
+                                  style={
+                                    styles.multiDropdown
+                                  }
+                                >
+                                  <div
+                                    style={
+                                      styles.multiDropdownHeader
+                                    }
+                                  >
+                                    <span>
+                                      Select{" "}
+                                      {
+                                        row.category
+                                      }{" "}
+                                      items
+                                    </span>
+
+                                    <span
+                                      style={
+                                        styles.multiCount
+                                      }
+                                    >
+                                      {
+                                        pending.length
+                                      }{" "}
+                                      selected
+                                    </span>
+                                  </div>
+
+                                  <div
+                                    style={
+                                      styles.multiOptions
+                                    }
+                                  >
+                                    {items.length ===
+                                    0 ? (
+                                      <div
+                                        style={
+                                          styles.noItems
+                                        }
+                                      >
+                                        No more items
+                                        available.
+                                      </div>
+                                    ) : (
+                                      items.map(
+                                        (
+                                          item
+                                        ) => {
+                                          const checked =
+                                            pending.includes(
+                                              item.id
+                                            );
+
+                                          return (
+                                            <label
+                                              key={
+                                                item.id
+                                              }
+                                              style={{
+                                                ...styles.multiOption,
+                                                ...(checked
+                                                  ? styles.multiOptionChecked
+                                                  : {}),
+                                              }}
+                                            >
+                                              <input
+                                                type="checkbox"
+                                                checked={
+                                                  checked
+                                                }
+                                                onChange={() =>
+                                                  togglePendingItem(
+                                                    row.id,
+                                                    item.id
+                                                  )
+                                                }
+                                                style={
+                                                  styles.checkbox
+                                                }
+                                              />
+
+                                              <span
+                                                style={
+                                                  styles.multiItemName
+                                                }
+                                              >
+                                                {
+                                                  item.item_name
+                                                }
+                                              </span>
+                                            </label>
+                                          );
+                                        }
+                                      )
+                                    )}
+                                  </div>
+
+                                  <div
+                                    style={
+                                      styles.multiDropdownFooter
+                                    }
+                                  >
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        setPendingSelections(
+                                          (
+                                            prev
+                                          ) => {
+                                            const copy =
+                                              {
+                                                ...prev,
+                                              };
+
+                                            delete copy[
+                                              row.id
+                                            ];
+
+                                            return copy;
+                                          }
+                                        );
+
+                                        setOpenDropdownRowId(
+                                          null
+                                        );
+                                      }}
+                                      style={
+                                        styles.cancelSelectButton
+                                      }
+                                    >
+                                      Cancel
+                                    </button>
+
+                                    <button
+                                      type="button"
+                                      disabled={
+                                        pending.length ===
+                                        0
+                                      }
+                                      onClick={() =>
+                                        confirmMultipleItems(
+                                          row.id
+                                        )
+                                      }
+                                      style={{
+                                        ...styles.confirmSelectButton,
+                                        opacity:
+                                          pending.length ===
+                                          0
+                                            ? 0.5
+                                            : 1,
+                                      }}
+                                    >
+                                      Add Selected
+                                    </button>
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+
+                            <div
+                              style={
+                                styles.selectHelp
+                              }
+                            >
+                              You can select
+                              multiple items at
+                              once.
+                            </div>
+                          </div>
+
+                          <button
+                            style={
+                              styles.removeButton
+                            }
+                            onClick={() =>
+                              removeRow(
+                                row.id
+                              )
+                            }
+                          >
+                            ×
+                          </button>
+                        </div>
+                      );
+                    }
+
+                    /*
+                     * Normal selected item row.
+                     */
                     return (
                       <div
-                        key={row.id}
+                        key={
+                          row.id
+                        }
                         style={{
                           ...styles.orderRow,
                           background:
-                            index % 2 === 0
+                            index %
+                              2 ===
+                            0
                               ? "#ffffff"
                               : "#f1f5f9",
                         }}
@@ -1013,7 +2177,8 @@ From: ${finalFrom}`;
                             styles.rowNumber
                           }
                         >
-                          {index + 1}
+                          {index +
+                            1}
                         </div>
 
                         {/* ITEM */}
@@ -1028,54 +2193,21 @@ From: ${finalFrom}`;
                               styles.categoryLabel
                             }
                           >
-                            {row.category}
+                            {
+                              row.category
+                            }
                           </div>
 
-                          <select
-                            value={
-                              row.item
-                                ? String(
-                                    row.item
-                                      .id
-                                  )
-                                : ""
-                            }
-                            onChange={(e) =>
-                              updateItem(
-                                row.id,
-                                e.target
-                                  .value
-                              )
-                            }
+                          <div
                             style={
-                              styles.select
+                              styles.selectedItemBox
                             }
                           >
-                            <option value="">
-                              Select{" "}
-                              {
-                                row.category
-                              }{" "}
-                              item
-                            </option>
-
-                            {items.map(
-                              (item) => (
-                                <option
-                                  key={
-                                    item.id
-                                  }
-                                  value={
-                                    item.id
-                                  }
-                                >
-                                  {
-                                    item.item_name
-                                  }
-                                </option>
-                              )
-                            )}
-                          </select>
+                            {
+                              row.item
+                                .item_name
+                            }
+                          </div>
                         </div>
 
                         {/* PRICE */}
@@ -1138,28 +2270,41 @@ From: ${finalFrom}`;
                             Bags
                           </div>
 
-                          <input
-                            type="number"
-                            min="0"
-                            step="1"
-                            value={
-                              row.bags ||
-                              ""
-                            }
-                            onChange={(e) =>
-                              updateBags(
-                                row.id,
-                                Number(
-                                  e.target
-                                    .value
+                          {!row.item ? (
+                            <div
+                              style={
+                                styles.selectItemsHint
+                              }
+                            >
+                              Select items
+                            </div>
+                          ) : (
+                            <input
+                              type="number"
+                              min="0"
+                              step="1"
+                              value={
+                                row.bags ||
+                                ""
+                              }
+                              onChange={(
+                                e
+                              ) =>
+                                updateBags(
+                                  row.id,
+                                  Number(
+                                    e
+                                      .target
+                                      .value
+                                  )
                                 )
-                              )
-                            }
-                            placeholder="0"
-                            style={
-                              styles.bagInput
-                            }
-                          />
+                              }
+                              placeholder="Add bag amount"
+                              style={
+                                styles.bagInput
+                              }
+                            />
+                          )}
                         </div>
 
                         {/* TRANSPORT */}
@@ -1226,15 +2371,38 @@ From: ${finalFrom}`;
                               styles.rowTotal
                             }
                           >
-                            ৳{" "}
-                            {money(
-                              currentTotal
+                            {!row.item ? (
+                              <span
+                                style={
+                                  styles.selectItemsHint
+                                }
+                              >
+                                Select items
+                              </span>
+                            ) : row.bags <=
+                              0 ? (
+                              <span
+                                style={
+                                  styles.addBagAmountText
+                                }
+                              >
+                                Add bag amount
+                              </span>
+                            ) : (
+                              <>
+                                ৳{" "}
+                                {money(
+                                  currentTotal
+                                )}
+                              </>
                             )}
                           </div>
 
                           {transportMode ===
                             "without" &&
                             row.item &&
+                            row.bags >
+                              0 &&
                             selectedTransport && (
                               <div
                                 style={
@@ -1313,7 +2481,9 @@ From: ${finalFrom}`;
                 {categories.map(
                   (category) => (
                     <button
-                      key={category}
+                      key={
+                        category
+                      }
                       style={
                         styles.addAnotherButton
                       }
@@ -1370,6 +2540,7 @@ From: ${finalFrom}`;
                     setFromLocation(
                       e.target.value
                     );
+
                     setUpazila("");
                   }}
                   style={
@@ -1390,7 +2561,9 @@ From: ${finalFrom}`;
                           location
                         }
                       >
-                        {location}
+                        {
+                          location
+                        }
                       </option>
                     )
                   )}
@@ -1407,10 +2580,13 @@ From: ${finalFrom}`;
                 </label>
 
                 <select
-                  value={upazila}
+                  value={
+                    upazila
+                  }
                   onChange={(e) =>
                     setUpazila(
-                      e.target.value
+                      e.target
+                        .value
                     )
                   }
                   style={
@@ -1427,8 +2603,12 @@ From: ${finalFrom}`;
                   {upazilas.map(
                     (name) => (
                       <option
-                        key={name}
-                        value={name}
+                        key={
+                          name
+                        }
+                        value={
+                          name
+                        }
                       >
                         {name}
                       </option>
@@ -1466,7 +2646,9 @@ From: ${finalFrom}`;
                       {Number(
                         selectedTransport
                           .floating_cattle_rate_per_kg
-                      ).toFixed(2)}
+                      ).toFixed(
+                        2
+                      )}
                       /kg
                     </strong>
                   </div>
@@ -1483,7 +2665,9 @@ From: ${finalFrom}`;
                       {Number(
                         selectedTransport
                           .sinking_broiler_layer_sonali_rate_per_kg
-                      ).toFixed(2)}
+                      ).toFixed(
+                        2
+                      )}
                       /kg
                     </strong>
                   </div>
@@ -1658,7 +2842,10 @@ From: ${finalFrom}`;
               </span>
 
               <strong>
-                ৳ {money(feedPrice)}
+                ৳{" "}
+                {money(
+                  feedPrice
+                )}
               </strong>
             </div>
 
@@ -1688,8 +2875,6 @@ From: ${finalFrom}`;
                 styles.divider
               }
             />
-
-            {/* GRAND TOTAL */}
 
             <div
               style={
@@ -1722,37 +2907,52 @@ From: ${finalFrom}`;
                   styles.grandTotalValue
                 }
               >
-                ৳ {money(totalAmount)}
+                ৳{" "}
+                {money(
+                  totalAmount
+                )}
               </div>
             </div>
 
-            {/* =========================
-                ACTION BUTTONS
-            ========================= */}
+            {/* ACTION */}
 
             <div
-                style={{
-              ...styles.actionButtons,
-              display: "flex",
-              justifyContent: "center",
-              alignItems: "center",
-            }}
->
+              style={{
+                ...styles.actionButtons,
+                display:
+                  "flex",
+                justifyContent:
+                  "center",
+                alignItems:
+                  "center",
+              }}
+            >
               <button
                 style={{
-                  display: "block",
-                  margin: "20px auto",
-                  width: "min(100%, 360px)",
-                  padding: "16px 24px",
-                  border: "none",
-                  borderRadius: "14px",
+                  display:
+                    "block",
+                  margin:
+                    "20px auto",
+                  width:
+                    "min(100%, 360px)",
+                  padding:
+                    "16px 24px",
+                  border:
+                    "none",
+                  borderRadius:
+                    "14px",
                   background:
                     "#374151",
-                  color: "#ffffff",
-                  fontSize: "16px",
-                  fontWeight: 800,
-                  letterSpacing: "0.2px",
-                  cursor: "pointer",
+                  color:
+                    "#ffffff",
+                  fontSize:
+                    "16px",
+                  fontWeight:
+                    800,
+                  letterSpacing:
+                    "0.2px",
+                  cursor:
+                    "pointer",
                   boxShadow:
                     "0 7px 20px rgba(17, 24, 39, 0.25)",
                 }}
@@ -1804,19 +3004,17 @@ From: ${finalFrom}`;
                   style={
                     styles.closeDOInformationButton
                   }
-                  onClick={() => {
+                  onClick={() =>
                     setShowDOInformation(
                       false
-                    );
-                  }}
+                    )
+                  }
                 >
                   ×
                 </button>
               </div>
 
-              {/* =========================
-                  AGENT INFORMATION
-              ========================= */}
+              {/* AGENT */}
 
               <div
                 style={
@@ -1851,7 +3049,8 @@ From: ${finalFrom}`;
                       }
                       onChange={(e) =>
                         setAgentCode(
-                          e.target.value
+                          e.target
+                            .value
                         )
                       }
                       placeholder="Optional"
@@ -1876,7 +3075,8 @@ From: ${finalFrom}`;
                       }
                       onChange={(e) =>
                         setAgentName(
-                          e.target.value
+                          e.target
+                            .value
                         )
                       }
                       placeholder="Optional"
@@ -1888,9 +3088,7 @@ From: ${finalFrom}`;
                 </div>
               </div>
 
-              {/* =========================
-                  BANK DETAILS
-              ========================= */}
+              {/* BANK DETAILS */}
 
               <div
                 style={
@@ -1923,7 +3121,10 @@ From: ${finalFrom}`;
                 </div>
 
                 {banks.map(
-                  (bank, index) => (
+                  (
+                    bank,
+                    index
+                  ) => (
                     <div
                       key={
                         bank.id
@@ -1937,7 +3138,9 @@ From: ${finalFrom}`;
                           styles.bankNumber
                         }
                       >
-                        Bank {index + 1}
+                        Bank{" "}
+                        {index +
+                          1}
                       </div>
 
                       <div
@@ -1964,7 +3167,8 @@ From: ${finalFrom}`;
                               updateBank(
                                 bank.id,
                                 "bankName",
-                                e.target
+                                e
+                                  .target
                                   .value
                               )
                             }
@@ -1994,7 +3198,8 @@ From: ${finalFrom}`;
                               updateBank(
                                 bank.id,
                                 "branch",
-                                e.target
+                                e
+                                  .target
                                   .value
                               )
                             }
@@ -2005,8 +3210,6 @@ From: ${finalFrom}`;
                           />
                         </div>
                       </div>
-
-                      {/* BANK DATE + AMOUNT */}
 
                       <div
                         style={
@@ -2033,7 +3236,8 @@ From: ${finalFrom}`;
                               updateBank(
                                 bank.id,
                                 "date",
-                                e.target
+                                e
+                                  .target
                                   .value
                               )
                             }
@@ -2065,7 +3269,8 @@ From: ${finalFrom}`;
                               updateBank(
                                 bank.id,
                                 "amount",
-                                e.target
+                                e
+                                  .target
                                   .value
                               )
                             }
@@ -2105,9 +3310,7 @@ From: ${finalFrom}`;
                 )}
               </div>
 
-              {/* =========================
-                  VEHICLE ONLY
-              ========================= */}
+              {/* VEHICLE */}
 
               <div
                 style={
@@ -2128,7 +3331,8 @@ From: ${finalFrom}`;
                   }
                   onChange={(e) =>
                     setVehicleNo(
-                      e.target.value
+                      e.target
+                        .value
                     )
                   }
                   placeholder="Optional"
@@ -2138,9 +3342,7 @@ From: ${finalFrom}`;
                 />
               </div>
 
-              {/* =========================
-                  GENERATED MESSAGE
-              ========================= */}
+              {/* GENERATED MESSAGE */}
 
               <div
                 style={
@@ -2178,7 +3380,8 @@ From: ${finalFrom}`;
                   }
                   onChange={(e) =>
                     setGeneratedMessage(
-                      e.target.value
+                      e.target
+                        .value
                     )
                   }
                   style={
@@ -2187,7 +3390,7 @@ From: ${finalFrom}`;
                 />
               </div>
 
-              {/* SAVE AGAIN */}
+              {/* SAVE */}
 
               <button
                 style={{
@@ -2294,7 +3497,8 @@ const styles: Record<
 
   categoryCard: {
     background: "#ffffff",
-    border: "1px solid #e5e7eb",
+    border:
+      "1px solid #e5e7eb",
     borderRadius: 12,
     padding: 14,
     marginBottom: 12,
@@ -2377,20 +3581,23 @@ const styles: Record<
     borderRadius: 7,
     fontSize: 11,
     fontWeight: 650,
-    whiteSpace: "nowrap",
+    whiteSpace:
+      "nowrap",
   },
 
   emptyState: {
     border:
       "1px dashed #d1d5db",
     borderRadius: 10,
-    padding: "35px 15px",
+    padding:
+      "35px 15px",
     textAlign: "center",
     background: "#fafafa",
   },
 
   emptyIcon: {
-    margin: "0 auto 8px",
+    margin:
+      "0 auto 8px",
     width: 35,
     height: 35,
     borderRadius: 10,
@@ -2398,7 +3605,8 @@ const styles: Record<
     color: "#ffffff",
     display: "flex",
     alignItems: "center",
-    justifyContent: "center",
+    justifyContent:
+      "center",
     fontSize: 22,
   },
 
@@ -2416,12 +3624,14 @@ const styles: Record<
 
   rows: {
     display: "flex",
-    flexDirection: "column",
+    flexDirection:
+      "column",
     gap: 8,
   },
 
   orderRow: {
-    position: "relative",
+    position:
+      "relative",
     display: "grid",
     gridTemplateColumns:
       "32px minmax(180px, 1.8fr) minmax(110px, .9fr) 85px minmax(125px, 1fr) minmax(120px, 1fr) 32px",
@@ -2442,7 +3652,8 @@ const styles: Record<
     color: "#374151",
     display: "flex",
     alignItems: "center",
-    justifyContent: "center",
+    justifyContent:
+      "center",
     fontSize: 11,
     fontWeight: 700,
   },
@@ -2460,7 +3671,8 @@ const styles: Record<
 
   select: {
     width: "100%",
-    boxSizing: "border-box",
+    boxSizing:
+      "border-box",
     border:
       "1px solid #cbd5e1",
     borderRadius: 8,
@@ -2469,6 +3681,183 @@ const styles: Record<
     padding: "9px 8px",
     fontSize: 12,
     outline: "none",
+  },
+
+  /*
+   * NEW MULTI SELECT
+   */
+
+  selectButton: {
+    border:
+      "1px solid #cbd5e1",
+    borderRadius: 8,
+    background: "#ffffff",
+    color: "#111827",
+    padding:
+      "10px 11px",
+    fontSize: 12,
+    outline: "none",
+    cursor: "pointer",
+    display: "flex",
+    alignItems: "center",
+    justifyContent:
+      "space-between",
+    gap: 10,
+    textAlign: "left",
+  },
+
+  dropdownArrow: {
+    fontSize: 9,
+    color: "#6b7280",
+    flexShrink: 0,
+  },
+
+  multiDropdown: {
+    position:
+      "absolute",
+    top:
+      "calc(100% + 5px)",
+    left: 0,
+    right: 0,
+    background:
+      "#ffffff",
+    border:
+      "1px solid #d1d5db",
+    borderRadius: 10,
+    boxShadow:
+      "0 12px 30px rgba(0,0,0,.15)",
+    zIndex: 1000,
+    overflow:
+      "hidden",
+  },
+
+  multiDropdownHeader: {
+    display: "flex",
+    justifyContent:
+      "space-between",
+    alignItems:
+      "center",
+    gap: 10,
+    padding:
+      "10px 11px",
+    borderBottom:
+      "1px solid #e5e7eb",
+    fontSize: 11,
+    fontWeight: 750,
+    color: "#111827",
+  },
+
+  multiCount: {
+    fontSize: 9,
+    fontWeight: 650,
+    color: "#6b7280",
+    whiteSpace:
+      "nowrap",
+  },
+
+  multiOptions: {
+    maxHeight: 240,
+    overflowY:
+      "auto",
+    padding: 5,
+  },
+
+  multiOption: {
+    display: "flex",
+    alignItems:
+      "center",
+    gap: 8,
+    padding:
+      "9px 8px",
+    borderRadius: 7,
+    cursor: "pointer",
+    fontSize: 11,
+    color: "#374151",
+  },
+
+  multiOptionChecked: {
+    background:
+      "#f3f4f6",
+  },
+
+  checkbox: {
+    width: 16,
+    height: 16,
+    margin: 0,
+    accentColor:
+      "#111827",
+    cursor: "pointer",
+    flexShrink: 0,
+  },
+
+  multiItemName: {
+    flex: 1,
+    minWidth: 0,
+  },
+
+  multiDropdownFooter: {
+    display: "flex",
+    justifyContent:
+      "flex-end",
+    gap: 7,
+    padding: 8,
+    borderTop:
+      "1px solid #e5e7eb",
+    background:
+      "#fafafa",
+  },
+
+  cancelSelectButton: {
+    border:
+      "1px solid #d1d5db",
+    background:
+      "#ffffff",
+    color: "#374151",
+    borderRadius: 7,
+    padding:
+      "8px 11px",
+    fontSize: 10,
+    fontWeight: 700,
+    cursor: "pointer",
+  },
+
+  confirmSelectButton: {
+    border: "none",
+    background:
+      "#111827",
+    color: "#ffffff",
+    borderRadius: 7,
+    padding:
+      "8px 11px",
+    fontSize: 10,
+    fontWeight: 700,
+    cursor: "pointer",
+  },
+
+  selectHelp: {
+    marginTop: 5,
+    fontSize: 9,
+    color: "#9ca3af",
+  },
+
+  selectedItemBox: {
+    width: "100%",
+    boxSizing:
+      "border-box",
+    border:
+      "1px solid #cbd5e1",
+    borderRadius: 8,
+    background:
+      "#ffffff",
+    color: "#111827",
+    padding:
+      "9px 8px",
+    fontSize: 12,
+    fontWeight: 600,
+    minHeight: 36,
+    display: "flex",
+    alignItems:
+      "center",
   },
 
   priceColumn: {
@@ -2500,16 +3889,38 @@ const styles: Record<
 
   bagInput: {
     width: "100%",
-    boxSizing: "border-box",
+    boxSizing:
+      "border-box",
     border:
       "1px solid #cbd5e1",
     borderRadius: 8,
-    background: "#ffffff",
+    background:
+      "#ffffff",
     color: "#111827",
-    padding: "9px 7px",
+    padding:
+      "9px 7px",
     fontSize: 13,
-    textAlign: "center",
+    textAlign:
+      "center",
     outline: "none",
+  },
+
+  selectItemsHint: {
+    fontSize: 10,
+    color: "#9ca3af",
+    fontWeight: 600,
+    padding:
+      "8px 3px",
+    whiteSpace:
+      "nowrap",
+  },
+
+  addBagAmountText: {
+    fontSize: 10,
+    color: "#b45309",
+    fontWeight: 700,
+    whiteSpace:
+      "nowrap",
   },
 
   transportColumn: {
@@ -2520,7 +3931,8 @@ const styles: Record<
     fontSize: 12,
     fontWeight: 750,
     color: "#374151",
-    whiteSpace: "nowrap",
+    whiteSpace:
+      "nowrap",
   },
 
   totalColumn: {
@@ -2531,7 +3943,8 @@ const styles: Record<
     fontSize: 14,
     fontWeight: 800,
     color: "#111827",
-    whiteSpace: "nowrap",
+    whiteSpace:
+      "nowrap",
   },
 
   withoutText: {
@@ -2542,7 +3955,8 @@ const styles: Record<
 
   removeButton: {
     border: "none",
-    background: "#fee2e2",
+    background:
+      "#fee2e2",
     color: "#991b1b",
     width: 30,
     height: 30,
@@ -2553,7 +3967,8 @@ const styles: Record<
   },
 
   weightInfo: {
-    gridColumn: "2 / -1",
+    gridColumn:
+      "2 / -1",
     fontSize: 9,
     color: "#9ca3af",
     marginTop: -2,
@@ -2561,7 +3976,8 @@ const styles: Record<
 
   addAnotherCard: {
     marginTop: 10,
-    background: "#ffffff",
+    background:
+      "#ffffff",
     border:
       "1px dashed #cbd5e1",
     borderRadius: 12,
@@ -2585,17 +4001,20 @@ const styles: Record<
   addAnotherButton: {
     border:
       "1px solid #e5e7eb",
-    background: "#fafafa",
+    background:
+      "#fafafa",
     color: "#374151",
     borderRadius: 8,
-    padding: "8px 6px",
+    padding:
+      "8px 6px",
     fontSize: 10,
     cursor: "pointer",
   },
 
   transportCard: {
     marginTop: 12,
-    background: "#ffffff",
+    background:
+      "#ffffff",
     border:
       "1px solid #e5e7eb",
     borderRadius: 12,
@@ -2623,7 +4042,8 @@ const styles: Record<
   rateBox: {
     marginTop: 12,
     padding: 12,
-    background: "#f8fafc",
+    background:
+      "#f8fafc",
     border:
       "1px solid #e2e8f0",
     borderRadius: 9,
@@ -2661,13 +4081,15 @@ const styles: Record<
   modeButton: {
     border:
       "1px solid #d1d5db",
-    background: "#ffffff",
+    background:
+      "#ffffff",
     color: "#111827",
     borderRadius: 10,
     padding: 12,
     cursor: "pointer",
     display: "flex",
-    alignItems: "center",
+    alignItems:
+      "center",
     gap: 9,
     textAlign: "left",
   },
@@ -2675,27 +4097,34 @@ const styles: Record<
   modeActive: {
     border:
       "2px solid #111827",
-    background: "#f9fafb",
+    background:
+      "#f9fafb",
   },
 
   radio: {
     width: 23,
     height: 23,
-    borderRadius: "50%",
+    borderRadius:
+      "50%",
     border:
       "1px solid #9ca3af",
     display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
+    alignItems:
+      "center",
+    justifyContent:
+      "center",
     flexShrink: 0,
     fontSize: 12,
     fontWeight: 800,
   },
 
   radioActive: {
-    background: "#111827",
-    color: "#ffffff",
-    borderColor: "#111827",
+    background:
+      "#111827",
+    color:
+      "#ffffff",
+    borderColor:
+      "#111827",
   },
 
   modeTitle: {
@@ -2711,8 +4140,10 @@ const styles: Record<
 
   summaryCard: {
     marginTop: 12,
-    background: "#111827",
-    color: "#ffffff",
+    background:
+      "#111827",
+    color:
+      "#ffffff",
     borderRadius: 12,
     padding: 16,
   },
@@ -2721,24 +4152,30 @@ const styles: Record<
     display: "flex",
     justifyContent:
       "space-between",
-    alignItems: "center",
+    alignItems:
+      "center",
     gap: 15,
-    padding: "6px 0",
+    padding:
+      "6px 0",
     fontSize: 12,
-    color: "#e5e7eb",
+    color:
+      "#e5e7eb",
   },
 
   divider: {
     height: 1,
-    background: "#374151",
-    margin: "8px 0",
+    background:
+      "#374151",
+    margin:
+      "8px 0",
   },
 
   grandTotalRow: {
     display: "flex",
     justifyContent:
       "space-between",
-    alignItems: "center",
+    alignItems:
+      "center",
     gap: 15,
   },
 
@@ -2756,108 +4193,8 @@ const styles: Record<
   grandTotalValue: {
     fontSize: 22,
     fontWeight: 850,
-    whiteSpace: "nowrap",
-  },
-
-  // =========================
-  // DO AMOUNT
-  // =========================
-
-  doAmountBox: {
-    marginTop: 16,
-    background: "#ffffff",
-    border:
-      "1px solid #d1d5db",
-    borderRadius: 11,
-    padding: 13,
-  },
-
-  doAmountLabel: {
-    display: "block",
-    color: "#111827",
-    fontSize: 13,
-    fontWeight: 800,
-    marginBottom: 4,
-  },
-
-  doAmountHint: {
-    fontSize: 10,
-    lineHeight: 1.4,
-    color: "#6b7280",
-    marginBottom: 9,
-  },
-
-  doAmountInputWrapper: {
-    display: "flex",
-    alignItems: "center",
-    border:
-      "2px solid #111827",
-    borderRadius: 9,
-    background: "#ffffff",
-    overflow: "hidden",
-  },
-
-  currencySymbol: {
-    paddingLeft: 12,
-    fontSize: 17,
-    fontWeight: 800,
-    color: "#111827",
-  },
-
-  doAmountInput: {
-    flex: 1,
-    border: "none",
-    outline: "none",
-    background: "#ffffff",
-    color: "#111827",
-    padding: "11px 10px",
-    fontSize: 17,
-    fontWeight: 800,
-  },
-
-  customAmountWarning: {
-    marginTop: 7,
-    background: "#fff7ed",
-    color: "#9a3412",
-    padding: "7px 9px",
-    borderRadius: 7,
-    fontSize: 10,
-    fontWeight: 700,
-  },
-
-  // =========================
-  // ACTION BUTTONS
-  // =========================
-
-  actionButtons: {
-    display: "grid",
-    gridTemplateColumns:
-      "repeat(2, minmax(0, 1fr))",
-    gap: 9,
-    marginTop: 13,
-  },
-
-  saveDOButton: {
-    border:
-      "1px solid #d1d5db",
-    background: "#ffffff",
-    color: "#111827",
-    borderRadius: 9,
-    padding: "12px 10px",
-    fontSize: 12,
-    fontWeight: 750,
-    cursor: "pointer",
-  },
-
-  generateButton: {
-    border: "none",
-    background: "#111827",
-    color: "#ffffff",
-    borderRadius: 9,
-    padding: "12px 10px",
-    fontSize: 12,
-    fontWeight: 750,
-    cursor: "pointer",
+    whiteSpace:
+      "nowrap",
   },
 
   // =========================
@@ -2866,7 +4203,8 @@ const styles: Record<
 
   doInformationCard: {
     marginTop: 12,
-    background: "#ffffff",
+    background:
+      "#ffffff",
     border:
       "1px solid #e5e7eb",
     borderRadius: 12,
@@ -2880,7 +4218,8 @@ const styles: Record<
     display: "flex",
     justifyContent:
       "space-between",
-    alignItems: "flex-start",
+    alignItems:
+      "flex-start",
     gap: 10,
     marginBottom: 12,
   },
@@ -2901,11 +4240,15 @@ const styles: Record<
     width: 32,
     height: 32,
     border: "none",
-    borderRadius: "50%",
-    background: "#f3f4f6",
-    color: "#111827",
+    borderRadius:
+      "50%",
+    background:
+      "#f3f4f6",
+    color:
+      "#111827",
     fontSize: 21,
-    cursor: "pointer",
+    cursor:
+      "pointer",
     flexShrink: 0,
   },
 
@@ -2915,7 +4258,8 @@ const styles: Record<
     border:
       "1px solid #e5e7eb",
     borderRadius: 10,
-    background: "#fafafa",
+    background:
+      "#fafafa",
   },
 
   formSectionTitle: {
@@ -2934,13 +4278,16 @@ const styles: Record<
 
   input: {
     width: "100%",
-    boxSizing: "border-box",
+    boxSizing:
+      "border-box",
     border:
       "1px solid #cbd5e1",
-    background: "#ffffff",
-    color: "#111827",
+    background:
+      "#ffffff",
+    color:
+      "#111827",
     borderRadius: 8,
-    padding: "10px",
+    padding: 10,
     fontSize: 12,
     outline: "none",
   },
@@ -2949,24 +4296,30 @@ const styles: Record<
     display: "flex",
     justifyContent:
       "space-between",
-    alignItems: "center",
+    alignItems:
+      "center",
     gap: 10,
   },
 
   addBankButton: {
     border: "none",
-    background: "#111827",
-    color: "#ffffff",
+    background:
+      "#111827",
+    color:
+      "#ffffff",
     borderRadius: 7,
-    padding: "7px 9px",
+    padding:
+      "7px 9px",
     fontSize: 10,
     fontWeight: 700,
-    cursor: "pointer",
+    cursor:
+      "pointer",
   },
 
   bankCard: {
     marginTop: 9,
-    background: "#ffffff",
+    background:
+      "#ffffff",
     border:
       "1px solid #e5e7eb",
     borderRadius: 9,
@@ -2980,22 +4333,18 @@ const styles: Record<
     marginBottom: 4,
   },
 
-  bankAmountRow: {
-    display: "flex",
-    alignItems: "flex-end",
-    gap: 8,
-    marginTop: 9,
-  },
-
   removeBankButton: {
     border: "none",
-    background: "#fee2e2",
-    color: "#991b1b",
+    background:
+      "#fee2e2",
+    color:
+      "#991b1b",
     borderRadius: 7,
-    padding: "10px",
+    padding: 10,
     fontSize: 10,
     fontWeight: 700,
-    cursor: "pointer",
+    cursor:
+      "pointer",
   },
 
   generatedSection: {
@@ -3004,43 +4353,53 @@ const styles: Record<
     border:
       "1px solid #d1d5db",
     borderRadius: 10,
-    background: "#f9fafb",
+    background:
+      "#f9fafb",
   },
 
   generatedHeader: {
     display: "flex",
     justifyContent:
       "space-between",
-    alignItems: "center",
+    alignItems:
+      "center",
     gap: 10,
     marginBottom: 8,
   },
 
   copyButton: {
     border: "none",
-    background: "#111827",
-    color: "#ffffff",
+    background:
+      "#111827",
+    color:
+      "#ffffff",
     borderRadius: 7,
-    padding: "7px 10px",
+    padding:
+      "7px 10px",
     fontSize: 10,
     fontWeight: 700,
-    cursor: "pointer",
+    cursor:
+      "pointer",
   },
 
   messageTextarea: {
     width: "100%",
     minHeight: 260,
-    boxSizing: "border-box",
+    boxSizing:
+      "border-box",
     border:
       "1px solid #cbd5e1",
     borderRadius: 8,
-    background: "#ffffff",
-    color: "#111827",
+    background:
+      "#ffffff",
+    color:
+      "#111827",
     padding: 11,
     fontSize: 13,
     lineHeight: 1.6,
     outline: "none",
-    resize: "vertical",
+    resize:
+      "vertical",
     fontFamily:
       "Arial, sans-serif",
   },
@@ -3048,21 +4407,27 @@ const styles: Record<
   generateModalButton: {
     width: "100%",
     border: "none",
-    background: "#111827",
-    color: "#ffffff",
+    background:
+      "#111827",
+    color:
+      "#ffffff",
     borderRadius: 9,
     padding: 13,
     marginTop: 13,
     fontSize: 13,
     fontWeight: 800,
-    cursor: "pointer",
+    cursor:
+      "pointer",
   },
 
   loading: {
-    background: "#ffffff",
+    background:
+      "#ffffff",
     borderRadius: 12,
     padding: 40,
-    textAlign: "center",
-    color: "#374151",
+    textAlign:
+      "center",
+    color:
+      "#374151",
   },
 };
