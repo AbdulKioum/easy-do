@@ -3690,7 +3690,7 @@ const styles: Record<
   multiOption: {
     display: "flex",
     alignItems:
-      "center",
+      "left",
     gap: 8,
     padding:
       "9px 8px",

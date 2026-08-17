@@ -32,6 +32,7 @@ type BankInfo = {
 
 type SavedDO = {
   id: number;
+  user_id: string | null;
   do_date: string | null;
   agent_code: string | null;
   agent_name: string | null;
@@ -72,6 +73,21 @@ export default function SavedDOPage() {
   const [loading, setLoading] = useState(true);
 
   const [search, setSearch] = useState("");
+
+  // =========================
+  // USER FILTER
+  // =========================
+
+  const [users, setUsers] = useState<
+    {
+      id: string;
+      email: string | null;
+      full_name: string | null;
+    }[]
+  >([]);
+
+  const [selectedUser, setSelectedUser] =
+    useState("all");
 
   const [selectedDO, setSelectedDO] =
     useState<SavedDO | null>(null);
@@ -184,6 +200,30 @@ export default function SavedDOPage() {
   }
 
   // =========================
+  // LOAD USERS
+  // =========================
+
+  async function loadUsers() {
+    const { data, error } = await supabase
+      .from("profiles")
+      .select("id, email, full_name")
+      .order("full_name", {
+        ascending: true,
+      });
+
+    if (error) {
+      console.error(
+        "Users load failed:",
+        error
+      );
+
+      return;
+    }
+
+    setUsers(data || []);
+  }
+
+  // =========================
   // LOAD PRICE + TRANSPORT
   // =========================
 
@@ -238,6 +278,7 @@ export default function SavedDOPage() {
   useEffect(() => {
     loadDOs();
     loadEditData();
+    loadUsers();
   }, []);
 
   // =========================
@@ -290,10 +331,38 @@ export default function SavedDOPage() {
       ${item.to_upazila || ""}
     `.toLowerCase();
 
-    return text.includes(
+    const matchesSearch = text.includes(
       search.toLowerCase()
     );
+
+    const matchesUser =
+      selectedUser === "all" ||
+      item.user_id === selectedUser;
+
+    return (
+      matchesSearch &&
+      matchesUser
+    );
   });
+
+  function getSavedByName(
+    userId: string | null
+  ) {
+    if (!userId) {
+      return "Unknown User";
+    }
+
+    const user = users.find(
+      (profile) =>
+        profile.id === userId
+    );
+
+    return (
+      user?.full_name ||
+      user?.email ||
+      "Unknown User"
+    );
+  }
 
   // =========================
   // MONEY
@@ -1526,6 +1595,34 @@ From: ${finalFrom}`;
           placeholder="Search agent, vehicle, location..."
           style={styles.search}
         />
+
+        <select
+          value={selectedUser}
+          onChange={(e) =>
+            setSelectedUser(
+              e.target.value
+            )
+          }
+          style={{
+            ...styles.search,
+            marginTop: 8,
+          }}
+        >
+          <option value="all">
+            All Users
+          </option>
+
+          {users.map((user) => (
+            <option
+              key={user.id}
+              value={user.id}
+            >
+              {user.full_name ||
+                user.email ||
+                "Unknown User"}
+            </option>
+          ))}
+        </select>
       </div>
 
       {/* LIST */}
@@ -1677,6 +1774,26 @@ From: ${finalFrom}`;
                       ৳{" "}
                       {money(
                         item.total_amount
+                      )}
+                    </strong>
+                  </div>
+
+                  <div>
+                    <span
+                      style={
+                        styles.infoLabel
+                      }
+                    >
+                      Saved By
+                    </span>
+
+                    <strong
+                      style={
+                        styles.infoValue
+                      }
+                    >
+                      {getSavedByName(
+                        item.user_id
                       )}
                     </strong>
                   </div>
