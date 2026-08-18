@@ -402,7 +402,7 @@ function MainApp() {
             src="/easy_do_logo.png"
             alt="Easy D/O"
             style={{
-              width: "80px",
+              width: "100px",
               height: "auto",
               objectFit: "contain",
               display: "block",
@@ -412,7 +412,7 @@ function MainApp() {
           />
 
           <h2 style={styles.titlecourtesy}>
-         Courtesy: Team Mymensingh 
+         By Team Mymensingh 
         </h2>
 
         </div>
@@ -536,12 +536,13 @@ const styles: Record<
       "center",
     fontSize: 18,
     fontWeight: 800,
+    marginTop: 12,
   },
 
    titlecourtesy: {
     margin: 0,
     textAlign: "center",
-    fontSize: 10,
+    fontSize: 11,
     fontWeight: 800,
     color: "#111827",
     marginBottom: 22,
