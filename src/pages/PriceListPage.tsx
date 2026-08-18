@@ -751,7 +751,7 @@ export default function PriceListPage() {
               exportExcel
             }
           >
-            📤 Export Excel
+            📤 Download Price List
           </button>
 
           {/* IMPORT - ADMIN / SUPER ADMIN */}

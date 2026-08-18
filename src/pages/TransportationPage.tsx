@@ -696,7 +696,7 @@ export default function TransportationPage() {
               exportExcel
             }
           >
-            📤 Export Excel
+            📤 Download Transportation List
           </button>
 
           {/* ADMIN / SUPER ADMIN ONLY */}

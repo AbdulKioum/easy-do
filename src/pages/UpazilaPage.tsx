@@ -368,7 +368,7 @@ export default function UpazilaPage() {
             style={styles.exportButton}
             onClick={exportExcel}
           >
-            📤 Export Excel
+            📤 Download Upazila List
           </button>
 
           {/* IMPORT
