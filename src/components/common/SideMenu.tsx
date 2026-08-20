@@ -1,9 +1,5 @@
 import React from "react";
-
-import {
-  useAuth,
-} from "../../context/AuthContext";
-
+import { useAuth } from "../../context/AuthContext";
 
 type SideMenuProps = {
   open: boolean;
@@ -12,7 +8,6 @@ type SideMenuProps = {
   onNavigate: (page: string) => void;
 };
 
-
 export default function SideMenu({
   open,
   onClose,
@@ -20,193 +15,56 @@ export default function SideMenu({
   onNavigate,
 }: SideMenuProps) {
 
-  const {
-    profile,
-    role,
-    signOut,
-  } = useAuth();
-
+  const { profile, role, signOut } = useAuth();
 
   if (!open) {
     return null;
   }
 
-
   function navigate(page: string) {
-
     onNavigate(page);
-
     onClose();
   }
-
 
   async function handleLogout() {
-
     await signOut();
-
     onClose();
   }
-
 
   return (
     <>
       {/* BACKDROP */}
-
-      <div
-        style={styles.backdrop}
-        onClick={onClose}
-      />
-
+      <div style={styles.backdrop} onClick={onClose} />
 
       {/* DRAWER */}
-
       <aside style={styles.drawer}>
 
         {/* HEADER */}
-
         <div style={styles.header}>
-
-          <div>
-
-            <div style={styles.logo}>
-
-              <img
-                src="/easy_do_logo.png"
-                alt="Easy D/O"
-                style={{
-                  width: "100px",
-                  height: "auto",
-                  objectFit: "contain",
-                  display: "block",
-                }}
-              />
-
-            </div>
-
-
-            <div style={styles.subtitle}>
-              Feed Order Management
-            </div>
-
-          </div>
-
-
-          <button
-            onClick={onClose}
-            style={styles.closeButton}
-          >
-            ×
-          </button>
-
-        </div>
-
-
-
-
-        {/* MENU */}
-
-        <div style={styles.menu}>
-
-          {/* CREATE D/O */}
-
-          <MenuItem
-            icon="📝"
-            label="Create D/O"
-            active={
-              currentPage ===
-              "easy-do"
-            }
-            onClick={() =>
-              navigate("easy-do")
-            }
-          />
-
-
-          {/* SAVED DO */}
-
-          <MenuItem
-            icon="💾"
-            label="Saved DO"
-            active={
-              currentPage ===
-              "saved-dos"
-            }
-            onClick={() =>
-              navigate("saved-dos")
-            }
-          />
-
-
-          {/* PRICE LIST */}
-
-          <MenuItem
-            icon="💰"
-            label="Price List"
-            active={
-              currentPage ===
-              "price-list"
-            }
-            onClick={() =>
-              navigate("price-list")
-            }
-          />
-
-
-          {/* TRANSPORTATION */}
-
-          <MenuItem
-            icon="🚚"
-            label="Transportation"
-            active={
-              currentPage ===
-              "transportation"
-            }
-            onClick={() =>
-              navigate("transportation")
-            }
-          />
-
-
-          {/* UPAZILA */}
-
-          <MenuItem
-            icon="📍"
-            label="Upazila"
-            active={
-              currentPage ===
-              "upazila"
-            }
-            onClick={() =>
-              navigate("upazila")
-            }
-          />
-
-          {role === "super_admin" && (
-            <MenuItem
-              icon="👥"
-              label="User Management"
-              active={currentPage === "user-management"}
-              onClick={() =>
-                navigate("user-management")
-              }
+          <div style={styles.headerLeft}>
+            <img
+              src="/easy_do_logo.png"
+              alt="Easy D/O"
+              style={{
+                width: "90px",
+                height: "auto",
+                objectFit: "contain",
+                display: "block",
+              }}
             />
-          )}
-
-        </div>
-
-
-          
-        {/* USER INFO */}
-
-        <div style={styles.userBox}>
-
-          <div style={styles.userName}>
-            {profile?.full_name ||
-              profile?.email ||
-              "User"}
+            <div style={styles.subtitle}>Feed Order Management</div>
           </div>
 
+          <button onClick={onClose} style={styles.closeButton}>
+            ✕
+          </button>
+        </div>
 
+        {/* USER INFO */}
+        <div style={styles.userBox}>
+          <div style={styles.userName}>
+            {profile?.full_name || profile?.email || "User"}
+          </div>
           <div style={styles.roleBadge}>
             {role === "super_admin"
               ? "SUPER ADMIN"
@@ -214,32 +72,75 @@ export default function SideMenu({
               ? "ADMIN"
               : "USER"}
           </div>
+        </div>
+
+        {/* MENU ITEMS (LEFT ALIGNED) */}
+        <div style={styles.menu}>
+
+          <MenuItem
+            icon="📄"
+            label="Create D/O Format 1"
+            active={currentPage === "easy-do-format-1"}
+            onClick={() => navigate("easy-do-format-1")}
+          />
+
+          <MenuItem
+            icon="📝"
+            label="Create D/O Format 2"
+            active={currentPage === "easy-do"}
+            onClick={() => navigate("easy-do")}
+          />
+
+          <MenuItem
+            icon="💾"
+            label="Saved DO"
+            active={currentPage === "saved-dos"}
+            onClick={() => navigate("saved-dos")}
+          />
+
+          <MenuItem
+            icon="💰"
+            label="Price List"
+            active={currentPage === "price-list"}
+            onClick={() => navigate("price-list")}
+          />
+
+          <MenuItem
+            icon="🚚"
+            label="Transportation"
+            active={currentPage === "transportation"}
+            onClick={() => navigate("transportation")}
+          />
+
+          <MenuItem
+            icon="📍"
+            label="Upazila"
+            active={currentPage === "upazila"}
+            onClick={() => navigate("upazila")}
+          />
+
+          {role === "super_admin" && (
+            <MenuItem
+              icon="👥"
+              label="User Management"
+              active={currentPage === "user-management"}
+              onClick={() => navigate("user-management")}
+            />
+          )}
 
         </div>
-        
-
 
         {/* FOOTER */}
-
         <div style={styles.footer}>
-
-
-          {/* LOGOUT */}
-
-          <button
-            onClick={handleLogout}
-            style={styles.logoutButton}
-          >
+          <button onClick={handleLogout} style={styles.logoutButton}>
             🚪 Logout
           </button>
-
         </div>
 
       </aside>
     </>
   );
 }
-
 
 function MenuItem({
   icon,
@@ -252,188 +153,174 @@ function MenuItem({
   active: boolean;
   onClick: () => void;
 }) {
-
   return (
     <button
       onClick={onClick}
       style={{
         ...styles.menuItem,
-        ...(active
-          ? styles.menuItemActive
-          : {}),
+        ...(active ? styles.menuItemActive : {}),
       }}
     >
-
-      <span style={styles.icon}>
-        {icon}
-      </span>
-
-
-      <span>
-        {label}
-      </span>
-
+      <span style={styles.icon}>{icon}</span>
+      <span style={styles.label}>{label}</span>
     </button>
   );
 }
 
-
-const styles: Record<
-  string,
-  React.CSSProperties
-> = {
-
+const styles: Record<string, React.CSSProperties> = {
   backdrop: {
     position: "fixed",
     inset: 0,
-    background:
-      "rgba(0, 0, 0, 0.45)",
+    background: "rgba(15, 23, 42, 0.4)",
+    backdropFilter: "blur(2px)",
     zIndex: 999,
   },
 
   drawer: {
-  position: "fixed",
-  top: 0,
-  left: 0,
-  bottom: 0,
-  width: 280,
-  maxWidth: "82vw",
-  background: "#ffffff",
-  zIndex: 1000,
-  boxShadow: "4px 0 20px rgba(0,0,0,.15)",
-  display: "flex",
-  flexDirection: "column",
-},
+    position: "fixed",
+    top: 0,
+    left: 0,
+    bottom: 0,
+    width: 280,
+    maxWidth: "82vw",
+    background: "#ffffff",
+    zIndex: 1000,
+    boxShadow: "4px 0 24px rgba(0, 0, 0, 0.08)",
+    display: "flex",
+    flexDirection: "column",
+  },
 
   header: {
-    padding: "22px 18px",
-    borderBottom:
-      "1px solid #e5e7eb",
+    padding: "18px 16px",
+    borderBottom: "1px solid #f1f5f9",
     display: "flex",
-    justifyContent:
-      "space-between",
+    justifyContent: "space-between",
     alignItems: "center",
   },
 
-  logo: {
-    fontSize: 21,
-    fontWeight: 800,
-    color: "#111827",
+  headerLeft: {
+    display: "flex",
+    flexDirection: "column",
+    alignItems: "flex-start",
   },
 
   subtitle: {
-    marginTop: 3,
+    marginTop: 4,
     fontSize: 11,
-    color: "#6b7280",
+    color: "#64748b",
+    fontWeight: 500,
   },
 
   closeButton: {
     border: "none",
-    background: "#f3f4f6",
-    color: "#111827",
-    width: 36,
-    height: 36,
-    borderRadius: 10,
-    fontSize: 24,
+    background: "#f1f5f9",
+    color: "#475569",
+    width: 32,
+    height: 32,
+    borderRadius: 8,
+    fontSize: 14,
     cursor: "pointer",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
   },
 
   userBox: {
-    margin: "12px 12px 4px",
-    padding: "11px 13px",
-    borderRadius: 11,
+    margin: "12px 16px 4px 16px",
+    padding: "10px 12px",
+    borderRadius: 8,
     background: "#f8fafc",
-    border:
-      "1px solid #e5e7eb",
+    border: "1px solid #e2e8f0",
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "center",
   },
 
   userName: {
     fontSize: 13,
-    fontWeight: 700,
-    color: "#111827",
+    fontWeight: 600,
+    color: "#1e293b",
     overflow: "hidden",
     textOverflow: "ellipsis",
     whiteSpace: "nowrap",
+    maxWidth: "150px",
   },
 
   roleBadge: {
-    display: "inline-block",
-    marginTop: 3,
-    padding: "1px 5px",
-    borderRadius: 6,
-    background: "#111827",
+    padding: "2px 6px",
+    borderRadius: 4,
+    background: "#0f172a",
     color: "#ffffff",
-    fontSize: 7,
-    fontWeight: 800,
+    fontSize: 9,
+    fontWeight: 700,
   },
 
   menu: {
-  padding: 12,
-  display: "flex",
-  flexDirection: "column",
-  gap: 5,
-
-  flex: 1,
-  overflowY: "auto",
-},
+    padding: "12px 10px",
+    display: "flex",
+    flexDirection: "column",
+    gap: 4,
+    flex: 1,
+    overflowY: "auto",
+  },
 
   menuItem: {
     width: "100%",
     border: "none",
     background: "transparent",
-    color: "#374151",
-    padding: "13px 14px",
-    borderRadius: 11,
+    color: "#334155",
+    padding: "10px 12px",
+    borderRadius: 8,
     display: "flex",
     alignItems: "center",
-    gap: 13,
-    fontSize: 15,
-    fontWeight: 600,
+    justifyContent: "flex-start", // Left Aligned
+    gap: 12,
+    fontSize: 14,
+    fontWeight: 500,
     textAlign: "left",
     cursor: "pointer",
+    transition: "all 0.15s ease",
   },
 
   menuItemActive: {
-    background: "#111827",
+    background: "#2563eb", // Professional Blue Accent
     color: "#ffffff",
+    fontWeight: 600,
   },
 
   icon: {
-    width: 24,
-    textAlign: "center",
-    fontSize: 19,
+    width: 20,
+    textAlign: "left",
+    fontSize: 16,
+    display: "flex",
+    alignItems: "center",
+  },
+
+  label: {
+    flex: 1,
+    textAlign: "left",
   },
 
   footer: {
-  padding: 14,
-  borderTop: "1px solid #e5e7eb",
-  fontSize: 12,
-  fontWeight: 700,
-  color: "#374151",
-  display: "flex",
-  flexDirection: "column",
-  gap: 3,
-
-  flexShrink: 0,
-  background: "#ffffff",
-},
-
-  footerSpan: {
-    color: "#9ca3af",
-    fontWeight: 400,
+    padding: 16,
+    borderTop: "1px solid #f1f5f9",
+    flexShrink: 0,
+    background: "#ffffff",
   },
 
   logoutButton: {
-    marginTop: 14,
     width: "100%",
-    border:
-      "1px solid #fecaca",
+    border: "1px solid #fecaca",
     background: "#fef2f2",
-    color: "#b91c1c",
-    borderRadius: 9,
-    padding: "10px 12px",
-    fontSize: 12,
-    fontWeight: 700,
+    color: "#dc2626",
+    borderRadius: 8,
+    padding: "10px",
+    fontSize: 13,
+    fontWeight: 600,
     cursor: "pointer",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
   },
 };

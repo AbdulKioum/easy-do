@@ -9,6 +9,7 @@ import {
 import SideMenu from "./components/common/SideMenu";
 
 import EasyDOPage from "./pages/EasyDOPage";
+import EasyDOFormat1 from "./pages/EasyDOFormat1";
 import SavedDOPage from "./pages/do/SavedDOPage";
 import PriceListPage from "./pages/PriceListPage";
 import TransportationPage from "./pages/TransportationPage";
@@ -29,20 +30,13 @@ export default function App() {
     <BrowserRouter>
       <Routes>
 
-        {/* =========================
-            LOGIN
-        ========================= */}
-
+        {/* LOGIN */}
         <Route
           path="/login"
           element={<LoginPage />}
         />
 
-
-        {/* =========================
-            PROTECTED APP
-        ========================= */}
-
+        {/* PROTECTED APP */}
         <Route element={<ProtectedRoute />}>
           <Route
             path="/*"
@@ -50,11 +44,7 @@ export default function App() {
           />
         </Route>
 
-
-        {/* =========================
-            FALLBACK
-        ========================= */}
-
+        {/* FALLBACK */}
         <Route
           path="*"
           element={
@@ -84,85 +74,18 @@ function canAccessPage(
     return false;
   }
 
-
-  /* =========================
-     USER MANAGEMENT
-     SUPER ADMIN ONLY
-  ========================= */
-
-  if (
-    page === "user-management"
-  ) {
+  if (page === "user-management") {
     return role === "super_admin";
   }
 
-
-  /* =========================
-     EASY DO
-     ALL USERS
-  ========================= */
-
-  if (
-    page === "easy-do"
-  ) {
+  if (page === "easy-do" || page === "easy-do-format-1") {
     return true;
   }
 
-
-  /* =========================
-     SAVED DO
-     ALL USERS
-  ========================= */
-
   if (
-    page === "saved-dos"
-  ) {
-    return (
-      role === "user" ||
-      role === "admin" ||
-      role === "super_admin"
-    );
-  }
-
-
-  /* =========================
-     PRICE LIST
-     ALL USERS CAN VIEW
-  ========================= */
-
-  if (
-    page === "price-list"
-  ) {
-    return (
-      role === "user" ||
-      role === "admin" ||
-      role === "super_admin"
-    );
-  }
-
-
-  /* =========================
-     TRANSPORTATION
-     ALL USERS CAN VIEW
-  ========================= */
-
-  if (
-    page === "transportation"
-  ) {
-    return (
-      role === "user" ||
-      role === "admin" ||
-      role === "super_admin"
-    );
-  }
-
-
-  /* =========================
-     UPAZILA
-     ALL USERS CAN VIEW
-  ========================= */
-
-  if (
+    page === "saved-dos" ||
+    page === "price-list" ||
+    page === "transportation" ||
     page === "upazila"
   ) {
     return (
@@ -171,7 +94,6 @@ function canAccessPage(
       role === "super_admin"
     );
   }
-
 
   return false;
 }
@@ -183,293 +105,111 @@ function canAccessPage(
 
 function MainApp() {
 
-  const {
-    role,
-  } = useAuth();
+  const { role } = useAuth();
+  const [menuOpen, setMenuOpen] = useState(false);
 
+  // সাইটে ঢুকলেই যেন ১ম পেজ হিসেবে Easy DO Format 1 আসে
+  const [currentPage, setCurrentPage] = useState("easy-do-format-1");
 
-  const [menuOpen, setMenuOpen] =
-    useState(false);
+  function handleNavigate(page: string) {
 
-
-  const [currentPage, setCurrentPage] =
-    useState("easy-do");
-
-
-  /* =====================================================
-     NAVIGATION WITH ROLE CHECK
-  ===================================================== */
-
-  function handleNavigate(
-    page: string
-  ) {
-
-    /* =========================
-       CHECK PERMISSION
-    ========================= */
-
-    if (
-      !canAccessPage(
-        page,
-        role
-      )
-    ) {
-
-      console.warn(
-        `Access denied for page "${page}"`,
-        {
-          role,
-          page,
-        }
-      );
-
-      // Unauthorized page হলে
-      // Easy DO-তে নিয়ে যাবে
-
-      setCurrentPage("easy-do");
-
+    if (!canAccessPage(page, role)) {
+      console.warn(`Access denied for page "${page}"`, { role, page });
+      setCurrentPage("easy-do-format-1");
       setMenuOpen(false);
-
       return;
     }
 
-
-    /* =========================
-       ACCESS GRANTED
-    ========================= */
-
     setCurrentPage(page);
-
     setMenuOpen(false);
   }
 
-
-  /* =====================================================
-     PAGE RENDER
-  ===================================================== */
-
   function renderPage() {
 
-    /* =========================
-       EXTRA SECURITY CHECK
-    ========================= */
-
-    if (
-      !canAccessPage(
-        currentPage,
-        role
-      )
-    ) {
-
-      return <EasyDOPage />;
+    if (!canAccessPage(currentPage, role)) {
+      return <EasyDOFormat1 />;
     }
 
-
-    /* =========================
-       PAGE SWITCH
-    ========================= */
-
-    switch (
-      currentPage
-    ) {
-
-      /* =========================
-         EASY DO
-      ========================= */
+    switch (currentPage) {
+      case "easy-do-format-1":
+        return <EasyDOFormat1 />;
 
       case "easy-do":
-
-        return (
-          <EasyDOPage />
-        );
-
-
-      /* =========================
-         SAVED DO
-      ========================= */
+        return <EasyDOPage />;
 
       case "saved-dos":
-
-        return (
-          <SavedDOPage />
-        );
-
-
-      /* =========================
-         PRICE LIST
-      ========================= */
+        return <SavedDOPage />;
 
       case "price-list":
-
-        return (
-          <PriceListPage />
-        );
-
-
-      /* =========================
-         TRANSPORTATION
-      ========================= */
+        return <PriceListPage />;
 
       case "transportation":
-
-        return (
-          <TransportationPage />
-        );
-
-
-      /* =========================
-         UPAZILA
-      ========================= */
+        return <TransportationPage />;
 
       case "upazila":
-
-        return (
-          <UpazilaPage />
-        );
-
-
-      /* =========================
-         USER MANAGEMENT
-         SUPER ADMIN ONLY
-      ========================= */
+        return <UpazilaPage />;
 
       case "user-management":
-
-        if (
-          role !== "super_admin"
-        ) {
-
-          return (
-            <EasyDOPage />
-          );
+        if (role !== "super_admin") {
+          return <EasyDOFormat1 />;
         }
-
-        return (
-          <UserManagementPage />
-        );
-
-
-      /* =========================
-         DEFAULT
-      ========================= */
+        return <UserManagementPage />;
 
       default:
-
-        return (
-          <EasyDOPage />
-        );
+        return <EasyDOFormat1 />;
     }
   }
 
-
   return (
-    <div
-      style={styles.app}
-    >
+    <div style={styles.app}>
 
-      {/* =================================================
-          TOP BAR
-      ================================================= */}
-
-      <header
-        style={styles.topBar}
-      >
-
-        {/* MENU BUTTON */}
+      {/* TOP BAR */}
+      <header style={styles.topBar}>
 
         <button
-          onClick={() =>
-            setMenuOpen(true)
-          }
-          style={
-            styles.menuButton
-          }
+          onClick={() => setMenuOpen(true)}
+          style={styles.menuButton}
           aria-label="Open menu"
         >
           ☰
         </button>
 
-
-        {/* LOGO */}
-
-        <div
-          style={
-            styles.topTitle
-          }
-        >
-
+        <div style={styles.topTitle}>
           <img
             src="/easy_do_logo.png"
             alt="Easy D/O"
             style={{
-              width: "100px",
+              width: "90px",
               height: "auto",
               objectFit: "contain",
               display: "block",
               margin: "0 auto",
-              paddingTop: "5px",
             }}
           />
-
           <h2 style={styles.titlecourtesy}>
-         By Team Mymensingh 
-        </h2>
-
+            By Team Mymensingh
+          </h2>
         </div>
 
-
-        {/* RIGHT SIDE */}
-
-        <div
-          style={
-            styles.topRight
-          }
-        >
-
-          {currentPage ===
-            "easy-do" && (
-            <span
-              style={
-                styles.statusDot
-              }
-            />
+        <div style={styles.topRight}>
+          {(currentPage === "easy-do" || currentPage === "easy-do-format-1") && (
+            <span style={styles.statusDot} />
           )}
-
         </div>
 
       </header>
 
-
-      {/* =================================================
-          PAGE
-      ================================================= */}
-
-      <main
-        style={
-          styles.content
-        }
-      >
-
+      {/* PAGE CONTENT */}
+      <main style={styles.content}>
         {renderPage()}
-
       </main>
 
-
-      {/* =================================================
-          SIDE MENU
-      ================================================= */}
-
+      {/* SIDE MENU */}
       <SideMenu
         open={menuOpen}
-        onClose={() =>
-          setMenuOpen(false)
-        }
-        currentPage={
-          currentPage
-        }
-        onNavigate={
-          handleNavigate
-        }
+        onClose={() => setMenuOpen(false)}
+        currentPage={currentPage}
+        onNavigate={handleNavigate}
       />
 
     </div>
@@ -481,97 +221,76 @@ function MainApp() {
    STYLES
 ===================================================== */
 
-const styles: Record<
-  string,
-  React.CSSProperties
-> = {
-
+const styles: Record<string, React.CSSProperties> = {
   app: {
     minHeight: "100vh",
-    background:
-      "#f3f4f6",
-    color:
-      "#111827",
+    background: "#f8fafc",
+    color: "#0f172a",
+    fontFamily: "system-ui, -apple-system, sans-serif",
   },
-
 
   topBar: {
-    position:
-      "sticky",
+    position: "sticky",
     top: 0,
     zIndex: 100,
-    height: 58,
-    background:
-      "#ffffff",
-    borderBottom:
-      "1px solid #e5e7eb",
-    display:
-      "flex",
-    alignItems:
-      "center",
-    padding:
-      "0 14px",
+    height: 60,
+    background: "#ffffff",
+    borderBottom: "1px solid #e2e8f0",
+    display: "flex",
+    alignItems: "center",
+    padding: "0 16px",
+    boxShadow: "0 1px 2px 0 rgba(0, 0, 0, 0.03)",
   },
-
 
   menuButton: {
-    border:
-      "none",
-    background:
-      "#f3f4f6",
-    color:
-      "#111827",
+    border: "1px solid #e2e8f0",
+    background: "#f1f5f9",
+    color: "#1e293b",
     width: 38,
     height: 38,
-    borderRadius: 10,
-    fontSize: 20,
-    cursor:
-      "pointer",
+    borderRadius: 8,
+    fontSize: 18,
+    cursor: "pointer",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
   },
-
 
   topTitle: {
     flex: 1,
-    textAlign:
-      "center",
-    fontSize: 18,
-    fontWeight: 800,
-    marginTop: 12,
-  },
-
-   titlecourtesy: {
-    margin: 0,
     textAlign: "center",
-    fontSize: 11,
-    fontWeight: 800,
-    color: "#111827",
-    marginBottom: 22,
+    display: "flex",
+    flexDirection: "column",
+    alignItems: "center",
+    justifyContent: "center",
   },
 
+  titlecourtesy: {
+    margin: "2px 0 0 0",
+    textAlign: "center",
+    fontSize: 10,
+    fontWeight: 700,
+    color: "#64748b",
+    letterSpacing: "0.5px",
+  },
 
   topRight: {
     width: 38,
-    display:
-      "flex",
-    justifyContent:
-      "flex-end",
+    display: "flex",
+    justifyContent: "flex-end",
+    alignItems: "center",
   },
-
 
   statusDot: {
-    width: 8,
-    height: 8,
-    background:
-      "#22c55e",
-    borderRadius:
-      "50%",
+    width: 9,
+    height: 9,
+    background: "#10b981",
+    borderRadius: "50%",
+    boxShadow: "0 0 0 2px #d1fae5",
   },
 
-
   content: {
-    width:
-      "100%",
-    minHeight:
-      "calc(100vh - 58px)",
+    width: "100%",
+    minHeight: "calc(100vh - 60px)",
   },
 };

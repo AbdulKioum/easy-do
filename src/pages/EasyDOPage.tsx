@@ -1545,7 +1545,7 @@ ${
           <h1
             style={styles.title}
           >
-            Create D/O
+            Create D/O (Format 2)
           </h1>
 
           <p
