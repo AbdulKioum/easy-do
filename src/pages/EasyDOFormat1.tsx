@@ -187,7 +187,7 @@ export default function EasyDOFormat1() {
     setLoading(false);
   }
 
-  // CHECKBOX HANDLER (Uncheck করলে ব্যাগ ০ হবে)
+  // CHECKBOX HANDLER (টিক দিলেও ব্যাগ ০ থাকবে, deselect করলে ব্যাগ ০ হবে)
   function toggleItemSelect(itemId: number) {
     const isCurrentlySelected = selectedItemIds.includes(itemId) || (bagQuantities[itemId] || 0) > 0;
 
@@ -201,7 +201,7 @@ export default function EasyDOFormat1() {
       setSelectedItemIds((prev) => [...prev, itemId]);
       setBagQuantities((prev) => ({
         ...prev,
-        [itemId]: prev[itemId] && prev[itemId] > 0 ? prev[itemId] : 1,
+        [itemId]: prev[itemId] || 0, // ১ না করে ০ রাখা হলো
       }));
     }
   }
@@ -505,7 +505,7 @@ export default function EasyDOFormat1() {
 
   return (
     <div style={styles.page}>
-      {/* HEADER */}
+      {/* HEADER (Centered) */}
       <div style={styles.header}>
         <h1 style={styles.title}>Create D/O (Format 1)</h1>
         <p style={styles.subtitle}>Direct feed order entry table</p>
@@ -524,7 +524,7 @@ export default function EasyDOFormat1() {
                     <th style={{ ...styles.th, ...styles.stickyCol1, left: 0, zIndex: 12 }}>
                       Select
                     </th>
-                    <th style={{ ...styles.th, ...styles.stickyCol2, left: 42, zIndex: 12 }}>
+                    <th style={styles.th}>
                       Item Name
                     </th>
                     <th style={styles.th}>Bag Amount</th>
@@ -576,12 +576,10 @@ export default function EasyDOFormat1() {
                           />
                         </td>
 
-                        {/* STICKY ITEM NAME */}
+                        {/* ITEM NAME (UNFROZEN / SCROLLABLE) */}
                         <td
                           style={{
                             ...styles.td,
-                            ...styles.stickyCol2,
-                            left: 42,
                             background: rowBg,
                           }}
                         >
@@ -963,7 +961,7 @@ export default function EasyDOFormat1() {
 }
 
 /* =====================================================
-   STYLES (Fixed Input & Select Text Colors)
+   STYLES
 ===================================================== */
 
 const styles: Record<string, React.CSSProperties> = {
@@ -975,22 +973,22 @@ const styles: Record<string, React.CSSProperties> = {
     boxSizing: "border-box",
   },
   header: {
-  marginBottom: 12,
-  textAlign: "center", // left থেকে পরিবর্তন করে center করা হয়েছে
-},
-title: {
-  margin: 0,
-  fontSize: 22,
-  fontWeight: 800,
-  color: "#0f172a",
-  textAlign: "center", // center এলাইনমেন্ট নিশ্চিত করতে
-},
-subtitle: {
-  margin: "3px 0 0",
-  fontSize: 12,
-  color: "#64748b",
-  textAlign: "center", // center এলাইনমেন্ট নিশ্চিত করতে
-},
+    marginBottom: 12,
+    textAlign: "center", // centered
+  },
+  title: {
+    margin: 0,
+    fontSize: 22,
+    fontWeight: 800,
+    color: "#0f172a",
+    textAlign: "center",
+  },
+  subtitle: {
+    margin: "3px 0 0",
+    fontSize: 12,
+    color: "#64748b",
+    textAlign: "center",
+  },
   tableCard: {
     background: "#ffffff",
     border: "1px solid #e2e8f0",
@@ -1040,13 +1038,6 @@ subtitle: {
     zIndex: 2,
     boxShadow: "2px 0 5px rgba(0,0,0,0.03)",
   },
-  stickyCol2: {
-    position: "sticky",
-    minWidth: 140,
-    maxWidth: 180,
-    zIndex: 2,
-    boxShadow: "2px 0 5px rgba(0,0,0,0.03)",
-  },
   checkbox: {
     width: 18,
     height: 18,
@@ -1081,7 +1072,7 @@ subtitle: {
     fontWeight: 700,
     outline: "none",
     background: "#ffffff",
-    color: "#0f172a", // নির্দিষ্ট গাঢ় টেক্সট কালার
+    color: "#0f172a",
   },
   bagInputActive: {
     borderColor: "#2563eb",
@@ -1144,7 +1135,7 @@ subtitle: {
     padding: "8px",
     fontSize: 12,
     background: "#ffffff",
-    color: "#0f172a", // সিলেক্ট ড্রপডাউনের স্পষ্ট টেক্সট কালার
+    color: "#0f172a",
   },
   rateBox: {
     marginTop: 10,
@@ -1329,7 +1320,7 @@ subtitle: {
     padding: 8,
     fontSize: 12,
     background: "#ffffff",
-    color: "#0f172a", // স্পষ্ট ইনপুট টেক্সট কালার
+    color: "#0f172a",
   },
   bankHeader: {
     display: "flex",
@@ -1403,7 +1394,7 @@ subtitle: {
     lineHeight: 1.5,
     fontFamily: "Arial, sans-serif",
     background: "#ffffff",
-    color: "#0f172a", // স্পষ্ট মেসেজ টেক্সট কালার
+    color: "#0f172a",
   },
   generateModalButton: {
     width: "100%",
