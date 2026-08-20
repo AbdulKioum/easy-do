@@ -577,24 +577,24 @@ export default function EasyDOFormat1() {
                         </td>
 
                         {/* ITEM NAME (UNFROZEN / SCROLLABLE) */}
+                        {/* ITEM NAME (লেখায় ক্লিক তুলে দেওয়া হয়েছে) */}
                         <td
-                          style={{
+                        style={{
                             ...styles.td,
                             background: rowBg,
-                          }}
+                        }}
                         >
-                          <div
+                        <div
                             style={{
-                              ...styles.itemNameText,
-                              ...(isSelected ? styles.itemNameActive : {}),
+                            ...styles.itemNameText,
+                            ...(isSelected ? styles.itemNameActive : {}),
                             }}
-                            onClick={() => toggleItemSelect(item.id)}
-                          >
+                        >
                             {item.item_name}
-                          </div>
-                          <div style={styles.itemCategorySub}>
+                        </div>
+                        <div style={styles.itemCategorySub}>
                             {item.category} • {item.kg_per_bag}kg
-                          </div>
+                        </div>
                         </td>
 
                         {/* BAG INPUT */}
@@ -977,12 +977,16 @@ const styles: Record<string, React.CSSProperties> = {
     textAlign: "center", // centered
   },
   title: {
-    margin: 0,
-    fontSize: 22,
-    fontWeight: 800,
-    color: "#0f172a",
-    textAlign: "center",
-  },
+  margin: 0,
+  fontSize: 18,
+  fontWeight: 800,
+  textAlign: "center",
+  fontFamily: "'Outfit', 'Poppins', -apple-system, BlinkMacSystemFont, sans-serif",
+  letterSpacing: "-0.01em",
+  lineHeight: 1.2,
+  color: "#0f172a",
+  textShadow: "0px 2px 4px rgba(0, 0, 0, 0.08)", // লাল দাগ চলে যাবে
+},
   subtitle: {
     margin: "3px 0 0",
     fontSize: 12,
@@ -1045,13 +1049,13 @@ const styles: Record<string, React.CSSProperties> = {
     accentColor: "#2563eb",
   },
   itemNameText: {
-    fontWeight: 600,
-    color: "#1e293b",
-    fontSize: 13,
-    lineHeight: 1.2,
-    cursor: "pointer",
-    textAlign: "left",
-  },
+  fontWeight: 600,
+  color: "#1e293b",
+  fontSize: 13,
+  lineHeight: 1.2,
+  cursor: "default", // pointer থেকে default করা হলো
+  textAlign: "left",
+},
   itemNameActive: {
     fontWeight: 700,
     color: "#1d4ed8",

@@ -3408,11 +3408,16 @@ const styles: Record<
   },
 
   title: {
-    margin: 0,
-    fontSize: 24,
-    fontWeight: 800,
-    color: "#111827",
-  },
+  margin: 0,
+  fontSize: 18,
+  fontWeight: 800,
+  textAlign: "center",
+  fontFamily: "'Outfit', 'Poppins', -apple-system, BlinkMacSystemFont, sans-serif",
+  letterSpacing: "-0.01em",
+  lineHeight: 1.2,
+  color: "#0f172a",
+  textShadow: "0px 2px 4px rgba(0, 0, 0, 0.08)", // লাল দাগ চলে যাবে
+},
 
   subtitle: {
     margin: "3px 0 0",
