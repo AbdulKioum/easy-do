@@ -34,12 +34,12 @@ const EASY_DO_STORAGE_KEY = "easydo_format1_current_state_v1";
 
 // Category configuration for icons, names, and background colors
 const CATEGORY_CONFIG: Record<string, { label: string; icon: string; bg: string; activeBg: string }> = {
-  Broiler: { label: "Broiler", icon: "🐔", bg: "#fef2f2", activeBg: "#fee2e2" },
-  Layer: { label: "Layer", icon: "🥚", bg: "#fffbebe6", activeBg: "#fef3c7" },
-  Sonali: { label: "Sonali", icon: "🐤", bg: "#f0fdf4", activeBg: "#dcfce7" },
-  Cattle: { label: "Cattle", icon: "🐄", bg: "#faf5ff", activeBg: "#f3e8ff" },
-  "Fish Floating": { label: "Fish (Fl)", icon: "🐟", bg: "#f0f9ff", activeBg: "#e0f2fe" },
-  "Fish Sinking": { label: "Fish (Snk)", icon: "🐠", bg: "#f0fdfa", activeBg: "#ccfbf1" },
+  Broiler: { label: "Broiler", icon: "", bg: "#fef2f2", activeBg: "#fee2e2" },
+  Layer: { label: "Layer", icon: "", bg: "#fffbebe6", activeBg: "#fef3c7" },
+  Sonali: { label: "Sonali", icon: "", bg: "#f0fdf4", activeBg: "#dcfce7" },
+  Cattle: { label: "Cattle", icon: "", bg: "#faf5ff", activeBg: "#f3e8ff" },
+  "Fish Floating": { label: "Fish (Fl)", icon: "", bg: "#f0f9ff", activeBg: "#e0f2fe" },
+  "Fish Sinking": { label: "Fish (Snk)", icon: "", bg: "#f0fdfa", activeBg: "#ccfbf1" },
 };
 
 export default function EasyDOFormat1() {
