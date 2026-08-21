@@ -60,19 +60,7 @@ export default function SideMenu({
           </button>
         </div>
 
-        {/* USER INFO */}
-        <div style={styles.userBox}>
-          <div style={styles.userName}>
-            {profile?.full_name || profile?.email || "User"}
-          </div>
-          <div style={styles.roleBadge}>
-            {role === "super_admin"
-              ? "SUPER ADMIN"
-              : role === "admin"
-              ? "ADMIN"
-              : "USER"}
-          </div>
-        </div>
+        
 
         {/* MENU ITEMS (LEFT ALIGNED) */}
         <div style={styles.menu}>
@@ -128,6 +116,20 @@ export default function SideMenu({
             />
           )}
 
+        </div>
+
+        {/* USER INFO */}
+        <div style={styles.userBox}>
+          <div style={styles.userName}>
+            {profile?.full_name || profile?.email || "User"}
+          </div>
+          <div style={styles.roleBadge}>
+            {role === "super_admin"
+              ? "SUPER ADMIN"
+              : role === "admin"
+              ? "ADMIN"
+              : "USER"}
+          </div>
         </div>
 
         {/* FOOTER */}
