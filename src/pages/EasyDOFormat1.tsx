@@ -32,6 +32,16 @@ type BankInfo = {
 
 const EASY_DO_STORAGE_KEY = "easydo_format1_current_state_v1";
 
+// Category configuration for icons, names, and background colors
+const CATEGORY_CONFIG: Record<string, { label: string; icon: string; bg: string; activeBg: string }> = {
+  Broiler: { label: "Broiler", icon: "🐔", bg: "#fef2f2", activeBg: "#fee2e2" },
+  Layer: { label: "Layer", icon: "🥚", bg: "#fffbebe6", activeBg: "#fef3c7" },
+  Sonali: { label: "Sonali", icon: "🐤", bg: "#f0fdf4", activeBg: "#dcfce7" },
+  Cattle: { label: "Cattle", icon: "🐄", bg: "#faf5ff", activeBg: "#f3e8ff" },
+  "Fish Floating": { label: "Fish (Fl)", icon: "🐟", bg: "#f0f9ff", activeBg: "#e0f2fe" },
+  "Fish Sinking": { label: "Fish (Snk)", icon: "🐠", bg: "#f0fdfa", activeBg: "#ccfbf1" },
+};
+
 export default function EasyDOFormat1() {
   const { user } = useAuth();
 
@@ -39,6 +49,9 @@ export default function EasyDOFormat1() {
   const [transportList, setTransportList] = useState<Transport[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+
+  // Category Filter State ("All" means show everything)
+  const [selectedCategory, setSelectedCategory] = useState<string>("All");
 
   // Bag quantities mapped by item ID
   const [bagQuantities, setBagQuantities] = useState<Record<number, number>>({});
@@ -187,7 +200,7 @@ export default function EasyDOFormat1() {
     setLoading(false);
   }
 
-  // CHECKBOX HANDLER (টিক দিলেও ব্যাগ ০ থাকবে, deselect করলে ব্যাগ ০ হবে)
+  // CHECKBOX HANDLER
   function toggleItemSelect(itemId: number) {
     const isCurrentlySelected = selectedItemIds.includes(itemId) || (bagQuantities[itemId] || 0) > 0;
 
@@ -201,12 +214,12 @@ export default function EasyDOFormat1() {
       setSelectedItemIds((prev) => [...prev, itemId]);
       setBagQuantities((prev) => ({
         ...prev,
-        [itemId]: prev[itemId] || 0, // ১ না করে ০ রাখা হলো
+        [itemId]: prev[itemId] || 0,
       }));
     }
   }
 
-  // BAG INPUT HANDLER (ব্যাগ টাইপ করলে অটো সিলেক্ট হবে)
+  // BAG INPUT HANDLER
   function handleBagChange(itemId: number, bags: number) {
     const validBags = bags < 0 ? 0 : bags;
     setBagQuantities((prev) => ({
@@ -241,7 +254,7 @@ export default function EasyDOFormat1() {
     return Number(selectedTransport.sinking_broiler_layer_sonali_rate_per_kg);
   }
 
-  // CALCULATIONS FOR ACTIVE ITEMS
+  // CALCULATIONS FOR ACTIVE ITEMS (Include all selected items regardless of filter)
   const activeOrderList = useMemo(() => {
     return priceList
       .filter((item) => selectedItemIds.includes(item.id) || (bagQuantities[item.id] || 0) > 0)
@@ -266,6 +279,14 @@ export default function EasyDOFormat1() {
         };
       });
   }, [priceList, selectedItemIds, bagQuantities, selectedTransport, transportMode]);
+
+  // Filter items for display in table
+  const displayedPriceList = useMemo(() => {
+    if (selectedCategory === "All") return priceList;
+    return priceList.filter(
+      (item) => item.category.toLowerCase() === selectedCategory.toLowerCase()
+    );
+  }, [priceList, selectedCategory]);
 
   const totalWeight = useMemo(() => {
     return activeOrderList.reduce((acc, row) => acc + row.weight, 0);
@@ -503,6 +524,13 @@ export default function EasyDOFormat1() {
     });
   }
 
+  // Get Row color based on item category
+  function getRowBgColor(category: string, isSelected: boolean) {
+    if (isSelected) return "#dbeafe"; // Highlighted selection color
+    const config = CATEGORY_CONFIG[category];
+    return config ? config.bg : "#ffffff";
+  }
+
   return (
     <div style={styles.page}>
       {/* HEADER (Centered) */}
@@ -515,6 +543,40 @@ export default function EasyDOFormat1() {
         <div style={styles.loading}>Loading price list...</div>
       ) : (
         <>
+          {/* COMPACT CATEGORY FILTER BAR FOR MOBILE */}
+          <div style={styles.filterBarContainer}>
+            <div style={styles.filterBar}>
+              <button
+                onClick={() => setSelectedCategory("All")}
+                style={{
+                  ...styles.filterBtn,
+                  ...(selectedCategory === "All" ? styles.filterBtnActive : {}),
+                }}
+              >
+                <span>🌐</span> All
+              </button>
+
+              {Object.keys(CATEGORY_CONFIG).map((cat) => {
+                const conf = CATEGORY_CONFIG[cat];
+                const isActive = selectedCategory.toLowerCase() === cat.toLowerCase();
+                return (
+                  <button
+                    key={cat}
+                    onClick={() => setSelectedCategory(cat)}
+                    style={{
+                      ...styles.filterBtn,
+                      background: isActive ? "#2563eb" : conf.bg,
+                      color: isActive ? "#ffffff" : "#334155",
+                      borderColor: isActive ? "#2563eb" : "#cbd5e1",
+                    }}
+                  >
+                    <span>{conf.icon}</span> {conf.label}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
           {/* ITEM LIST TABLE CONTAINER */}
           <div style={styles.tableCard}>
             <div style={styles.tableWrapper}>
@@ -524,9 +586,7 @@ export default function EasyDOFormat1() {
                     <th style={{ ...styles.th, ...styles.stickyCol1, left: 0, zIndex: 12 }}>
                       Select
                     </th>
-                    <th style={styles.th}>
-                      Item Name
-                    </th>
+                    <th style={styles.th}>Item Name</th>
                     <th style={styles.th}>Bag Amount</th>
                     <th style={styles.th}>TP / Bag</th>
                     <th style={styles.th}>Transport</th>
@@ -534,7 +594,7 @@ export default function EasyDOFormat1() {
                   </tr>
                 </thead>
                 <tbody>
-                  {priceList.map((item, index) => {
+                  {displayedPriceList.map((item) => {
                     const bags = bagQuantities[item.id] ?? "";
                     const isSelected = selectedItemIds.includes(item.id) || Number(bags) > 0;
                     const rate = getTransportRate(item.category);
@@ -544,11 +604,7 @@ export default function EasyDOFormat1() {
                     const transportTotal = itemWeight * rate;
                     const rowTotal = transportMode === "with" ? tpTotal : tpTotal - transportTotal;
 
-                    const rowBg = isSelected
-                      ? "#eff6ff"
-                      : index % 2 === 0
-                      ? "#ffffff"
-                      : "#f8fafc";
+                    const rowBg = getRowBgColor(item.category, isSelected);
 
                     return (
                       <tr
@@ -576,25 +632,24 @@ export default function EasyDOFormat1() {
                           />
                         </td>
 
-                        {/* ITEM NAME (UNFROZEN / SCROLLABLE) */}
-                        {/* ITEM NAME (লেখায় ক্লিক তুলে দেওয়া হয়েছে) */}
+                        {/* ITEM NAME */}
                         <td
-                        style={{
+                          style={{
                             ...styles.td,
                             background: rowBg,
-                        }}
+                          }}
                         >
-                        <div
+                          <div
                             style={{
-                            ...styles.itemNameText,
-                            ...(isSelected ? styles.itemNameActive : {}),
+                              ...styles.itemNameText,
+                              ...(isSelected ? styles.itemNameActive : {}),
                             }}
-                        >
+                          >
                             {item.item_name}
-                        </div>
-                        <div style={styles.itemCategorySub}>
+                          </div>
+                          <div style={styles.itemCategorySub}>
                             {item.category} • {item.kg_per_bag}kg
-                        </div>
+                          </div>
                         </td>
 
                         {/* BAG INPUT */}
@@ -974,24 +1029,54 @@ const styles: Record<string, React.CSSProperties> = {
   },
   header: {
     marginBottom: 12,
-    textAlign: "center", // centered
+    textAlign: "center",
   },
   title: {
-  margin: 0,
-  fontSize: 18,
-  fontWeight: 800,
-  textAlign: "center",
-  fontFamily: "'Outfit', 'Poppins', -apple-system, BlinkMacSystemFont, sans-serif",
-  letterSpacing: "-0.01em",
-  lineHeight: 1.2,
-  color: "#0f172a",
-  textShadow: "0px 2px 4px rgba(0, 0, 0, 0.08)", // লাল দাগ চলে যাবে
-},
+    margin: 0,
+    fontSize: 18,
+    fontWeight: 800,
+    textAlign: "center",
+    fontFamily: "'Outfit', 'Poppins', -apple-system, BlinkMacSystemFont, sans-serif",
+    letterSpacing: "-0.01em",
+    lineHeight: 1.2,
+    color: "#0f172a",
+  },
   subtitle: {
     margin: "3px 0 0",
     fontSize: 12,
     color: "#64748b",
     textAlign: "center",
+  },
+  filterBarContainer: {
+    marginBottom: 8,
+    overflowX: "auto",
+    WebkitOverflowScrolling: "touch",
+    paddingBottom: 4,
+  },
+  filterBar: {
+    display: "flex",
+    gap: 6,
+    whiteSpace: "nowrap",
+  },
+  filterBtn: {
+    padding: "6px 10px",
+    borderRadius: 20,
+    border: "1px solid #cbd5e1",
+    background: "#ffffff",
+    color: "#334155",
+    fontSize: 11,
+    fontWeight: 600,
+    cursor: "pointer",
+    display: "flex",
+    alignItems: "center",
+    gap: 4,
+    flexShrink: 0,
+    transition: "all 0.15s ease",
+  },
+  filterBtnActive: {
+    background: "#2563eb",
+    color: "#ffffff",
+    borderColor: "#2563eb",
   },
   tableCard: {
     background: "#ffffff",
@@ -1023,11 +1108,11 @@ const styles: Record<string, React.CSSProperties> = {
     whiteSpace: "nowrap",
   },
   tr: {
-    borderBottom: "1px solid #f1f5f9",
+    borderBottom: "1px solid #e2e8f0",
     transition: "all 0.15s ease",
   },
   trActive: {
-    boxShadow: "inset 2px 0 0 #2563eb",
+    boxShadow: "inset 3px 0 0 #2563eb",
   },
   td: {
     padding: "10px 8px",
@@ -1049,13 +1134,13 @@ const styles: Record<string, React.CSSProperties> = {
     accentColor: "#2563eb",
   },
   itemNameText: {
-  fontWeight: 600,
-  color: "#1e293b",
-  fontSize: 13,
-  lineHeight: 1.2,
-  cursor: "default", // pointer থেকে default করা হলো
-  textAlign: "left",
-},
+    fontWeight: 600,
+    color: "#1e293b",
+    fontSize: 13,
+    lineHeight: 1.2,
+    cursor: "default",
+    textAlign: "left",
+  },
   itemNameActive: {
     fontWeight: 700,
     color: "#1d4ed8",
