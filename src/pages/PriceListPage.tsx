@@ -323,85 +323,98 @@ export default function PriceListPage() {
 
   
    async function exportExcel() {
-    if (!filteredItems.length) {
-      alert("No data available to export.");
-      return;
-    }
+  if (!filteredItems.length) {
+    alert("No data available to export.");
+    return;
+  }
 
-    if (user?.id) {
-      const today = new Date().toISOString().split("T")[0];
-      await supabase.from("page_visits").insert([
-        {
-          user_id: user.id,
-          page_name: "Pricelist Download",
-          visit_date: today,
-        },
-      ]);
-    }
+  if (user?.id) {
+    const today = new Date().toISOString().split("T")[0];
+    await supabase.from("page_visits").insert([
+      {
+        user_id: user.id,
+        page_name: "Pricelist Download",
+        visit_date: today,
+      },
+    ]);
+  }
 
-    const exportData = filteredItems.map((item) => ({
-      Category: item.category,
-      "Item Name": item.item_name,
-      "KG/Bag": Number(item.kg_per_bag),
-      "TP/Bag": Number(item.tp_per_bag),
-      "TP/KG": Number(item.kg_per_bag) > 0 ? Number(item.tp_per_bag) / Number(item.kg_per_bag) : 0,
-      "MRP/Bag": Number(item.mrp_per_bag),
-      "MRP/KG": Number(item.kg_per_bag) > 0 ? Number(item.mrp_per_bag) / Number(item.kg_per_bag) : 0,
-    }));
+  const exportData = filteredItems.map((item) => ({
+    Category: item.category,
+    "Item Name": item.item_name,
+    "KG/Bag": Number(item.kg_per_bag),
+    "TP/Bag": Number(item.tp_per_bag),
+    "TP/KG": Number(item.kg_per_bag) > 0 ? Number(item.tp_per_bag) / Number(item.kg_per_bag) : 0,
+    "MRP/Bag": Number(item.mrp_per_bag),
+    "MRP/KG": Number(item.kg_per_bag) > 0 ? Number(item.mrp_per_bag) / Number(item.kg_per_bag) : 0,
+  }));
 
-    const worksheet = XLSX.utils.json_to_sheet(exportData);
-    worksheet["!cols"] = [
-      { wch: 16 }, { wch: 28 }, { wch: 10 },
-      { wch: 12 }, { wch: 12 }, { wch: 12 }, { wch: 12 },
-    ];
+  const worksheet = XLSX.utils.json_to_sheet(exportData);
+  worksheet["!cols"] = [
+    { wch: 16 }, { wch: 28 }, { wch: 10 },
+    { wch: 12 }, { wch: 12 }, { wch: 12 }, { wch: 12 },
+  ];
 
-    // Common thin border styling for excel cells
-    const thinBorder = {
-      top: { style: "thin", color: { rgb: "D1D5DB" } },
-      bottom: { style: "thin", color: { rgb: "D1D5DB" } },
-      left: { style: "thin", color: { rgb: "D1D5DB" } },
-      right: { style: "thin", color: { rgb: "D1D5DB" } },
-    };
+  // Common thin border styling for excel cells
+  const thinBorder = {
+    top: { style: "thin", color: { rgb: "D1D5DB" } },
+    bottom: { style: "thin", color: { rgb: "D1D5DB" } },
+    left: { style: "thin", color: { rgb: "D1D5DB" } },
+    right: { style: "thin", color: { rgb: "D1D5DB" } },
+  };
 
-    const range = XLSX.utils.decode_range(worksheet["!ref"] || "A1");
-    for (let R = range.s.r; R <= range.e.r; ++R) {
-      for (let C = range.s.c; C <= range.e.c; ++C) {
-        const cellAddress = XLSX.utils.encode_cell({ r: R, c: C });
-        if (!worksheet[cellAddress]) continue;
+  const range = XLSX.utils.decode_range(worksheet["!ref"] || "A1");
+  for (let R = range.s.r; R <= range.e.r; ++R) {
+    for (let C = range.s.c; C <= range.e.c; ++C) {
+      const cellAddress = XLSX.utils.encode_cell({ r: R, c: C });
+      if (!worksheet[cellAddress]) continue;
 
-        if (R === 0) {
-          // Header Row Style with Border
+      if (R === 0) {
+        // Header Row Style with Border
+        worksheet[cellAddress].s = {
+          font: { bold: true, color: { rgb: "111827" } },
+          fill: { patternType: "solid", fgColor: { rgb: "E5E7EB" } },
+          alignment: { horizontal: "center", vertical: "center" },
+          border: thinBorder,
+        };
+      } else {
+        const item = filteredItems[R - 1];
+        if (item) {
+          // Full category color for the entire row (No alternating)
+          const hexColor = EXCEL_CATEGORY_COLORS[item.category] || "FFFFFF";
+
           worksheet[cellAddress].s = {
-            font: { bold: true, color: { rgb: "111827" } },
-            fill: { patternType: "solid", fgColor: { rgb: "E5E7EB" } },
-            alignment: { horizontal: "center", vertical: "center" },
+            fill: { patternType: "solid", fgColor: { rgb: hexColor } },
+            font: { color: { rgb: "111827" } },
+            alignment: { vertical: "center" },
             border: thinBorder,
           };
-        } else {
-          const item = filteredItems[R - 1];
-          if (item) {
-            // Full category color for the entire row (No alternating)
-            const hexColor = EXCEL_CATEGORY_COLORS[item.category] || "FFFFFF";
-
-            worksheet[cellAddress].s = {
-              fill: { patternType: "solid", fgColor: { rgb: hexColor } },
-              font: { color: { rgb: "111827" } },
-              alignment: { vertical: "center" },
-              border: thinBorder,
-            };
-          }
         }
       }
     }
-
-    const workbook = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(workbook, worksheet, "Price List");
-    const excelBuffer = XLSX.write(workbook, { bookType: "xlsx", type: "array", cellStyles: true });
-    const blob = new Blob([excelBuffer], {
-      type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-    });
-    saveAs(blob, "Feed_Price_List.xlsx");
   }
+
+  const workbook = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(workbook, worksheet, "Price List");
+  const excelBuffer = XLSX.write(workbook, { bookType: "xlsx", type: "array", cellStyles: true });
+  const blob = new Blob([excelBuffer], {
+    type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  });
+
+  // Generate unique timestamp filename (Date + Time)
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, "0");
+  const day = String(now.getDate()).padStart(2, "0");
+  const hours = String(now.getHours()).padStart(2, "0");
+  const minutes = String(now.getMinutes()).padStart(2, "0");
+  const seconds = String(now.getSeconds()).padStart(2, "0");
+
+  const timestamp = `${year}-${month}-${day}_${hours}-${minutes}-${seconds}`;
+  saveAs(blob, `Feed_Price_List_${timestamp}.xlsx`);
+}
+
+
 
   const toggleBulkCategory = (cat: string) => {
     setSelectedBulkCategories((prev) => {
