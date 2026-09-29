@@ -129,6 +129,25 @@ export default function EasyDOPage() {
   ] = useState("");
 
   // =========================
+  // PAGE VISIT TRACKING
+  // =========================
+
+  useEffect(() => {
+    async function trackPageVisit() {
+      if (!user?.id) return;
+      const today = new Date().toISOString().split("T")[0];
+      await supabase.from("page_visits").insert([
+        {
+          user_id: user.id,
+          page_name: "EasyDO Page 2",
+          visit_date: today,
+        },
+      ]);
+    }
+    trackPageVisit();
+  }, [user?.id]);
+
+  // =========================
   // INITIAL LOAD
   // =========================
 
@@ -3416,7 +3435,7 @@ const styles: Record<
   letterSpacing: "-0.01em",
   lineHeight: 1.2,
   color: "#0f172a",
-  textShadow: "0px 2px 4px rgba(0, 0, 0, 0.08)", // লাল দাগ চলে যাবে
+  textShadow: "0px 2px 4px rgba(0, 0, 0, 0.08)",
 },
 
   subtitle: {

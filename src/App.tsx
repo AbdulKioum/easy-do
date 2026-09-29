@@ -14,6 +14,7 @@ import SavedDOPage from "./pages/do/SavedDOPage";
 import PriceListPage from "./pages/PriceListPage";
 import TransportationPage from "./pages/TransportationPage";
 import UpazilaPage from "./pages/UpazilaPage";
+import VisitStatusPage from "./pages/admin/VisitStatusPage"; // VisitStatusPage import kora holo
 
 import LoginPage from "./pages/auth/LoginPage";
 import ProtectedRoute from "./components/auth/ProtectedRoute";
@@ -74,7 +75,8 @@ function canAccessPage(
     return false;
   }
 
-  if (page === "user-management") {
+  // user-management ebong visit-status shudhu super_admin access korte parbe
+  if (page === "user-management" || page === "visit-status") {
     return role === "super_admin";
   }
 
@@ -148,6 +150,12 @@ function MainApp() {
 
       case "upazila":
         return <UpazilaPage />;
+
+      case "visit-status":
+        if (role !== "super_admin") {
+          return <EasyDOFormat1 />;
+        }
+        return <VisitStatusPage />;
 
       case "user-management":
         if (role !== "super_admin") {

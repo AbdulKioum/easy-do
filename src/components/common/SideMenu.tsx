@@ -108,12 +108,20 @@ export default function SideMenu({
           />
 
           {role === "super_admin" && (
-            <MenuItem
-              icon="👥"
-              label="User Management"
-              active={currentPage === "user-management"}
-              onClick={() => navigate("user-management")}
-            />
+            <>
+              <MenuItem
+                icon="📊"
+                label="Visit Status"
+                active={currentPage === "visit-status"}
+                onClick={() => navigate("visit-status")}
+              />
+              <MenuItem
+                icon="👥"
+                label="User Management"
+                active={currentPage === "user-management"}
+                onClick={() => navigate("user-management")}
+              />
+            </>
           )}
 
         </div>

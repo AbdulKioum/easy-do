@@ -78,6 +78,22 @@ export default function EasyDOFormat1() {
   ]);
   const [generatedMessage, setGeneratedMessage] = useState("");
 
+  // PAGE VISIT TRACKING EFFECT
+  useEffect(() => {
+    async function trackPageVisit() {
+      if (!user?.id) return;
+      const today = new Date().toISOString().split("T")[0];
+      await supabase.from("page_visits").insert([
+        {
+          user_id: user.id,
+          page_name: "EasyDO Page 1",
+          visit_date: today,
+        },
+      ]);
+    }
+    trackPageVisit();
+  }, [user?.id]);
+
   // INITIAL LOAD
   useEffect(() => {
     const navigationEntry = performance.getEntriesByType("navigation")[0] as
@@ -594,114 +610,129 @@ export default function EasyDOFormat1() {
                   </tr>
                 </thead>
                 <tbody>
-                  {displayedPriceList.map((item) => {
-                    const bags = bagQuantities[item.id] ?? "";
-                    const isSelected = selectedItemIds.includes(item.id) || Number(bags) > 0;
-                    const rate = getTransportRate(item.category);
-                    const transportPerBag = Number(item.kg_per_bag) * rate;
-                    const itemWeight = Number(item.kg_per_bag) * (Number(bags) || 0);
-                    const tpTotal = Number(item.tp_per_bag) * (Number(bags) || 0);
-                    const transportTotal = itemWeight * rate;
-                    const rowTotal = transportMode === "with" ? tpTotal : tpTotal - transportTotal;
+                  {(() => {
+                    let lastCategory = "";
+                    return displayedPriceList.map((item, index) => {
+                      const showCategoryHeader = selectedCategory === "All" && item.category !== lastCategory;
+                      lastCategory = item.category;
 
-                    const rowBg = getRowBgColor(item.category, isSelected);
+                      const bags = bagQuantities[item.id] ?? "";
+                      const isSelected = selectedItemIds.includes(item.id) || Number(bags) > 0;
+                      const rate = getTransportRate(item.category);
+                      const transportPerBag = Number(item.kg_per_bag) * rate;
+                      const itemWeight = Number(item.kg_per_bag) * (Number(bags) || 0);
+                      const tpTotal = Number(item.tp_per_bag) * (Number(bags) || 0);
+                      const transportTotal = itemWeight * rate;
+                      const rowTotal = transportMode === "with" ? tpTotal : tpTotal - transportTotal;
 
-                    return (
-                      <tr
-                        key={item.id}
-                        style={{
-                          ...styles.tr,
-                          background: rowBg,
-                          ...(isSelected ? styles.trActive : {}),
-                        }}
-                      >
-                        {/* STICKY TICK MARK */}
-                        <td
-                          style={{
-                            ...styles.td,
-                            ...styles.stickyCol1,
-                            left: 0,
-                            background: rowBg,
-                          }}
-                        >
-                          <input
-                            type="checkbox"
-                            checked={isSelected}
-                            onChange={() => toggleItemSelect(item.id)}
-                            style={styles.checkbox}
-                          />
-                        </td>
+                      const rowBg = getRowBgColor(item.category, isSelected);
 
-                        {/* ITEM NAME */}
-                        <td
-                          style={{
-                            ...styles.td,
-                            background: rowBg,
-                          }}
-                        >
-                          <div
-                            style={{
-                              ...styles.itemNameText,
-                              ...(isSelected ? styles.itemNameActive : {}),
-                            }}
-                          >
-                            {item.item_name}
-                          </div>
-                          <div style={styles.itemCategorySub}>
-                            {item.category} • {item.kg_per_bag}kg
-                          </div>
-                        </td>
-
-                        {/* BAG INPUT */}
-                        <td style={styles.td}>
-                          <input
-                            type="number"
-                            min="0"
-                            step="1"
-                            value={bags === 0 ? "" : bags}
-                            onChange={(e) =>
-                              handleBagChange(
-                                item.id,
-                                e.target.value === "" ? 0 : Number(e.target.value)
-                              )
-                            }
-                            placeholder="0"
-                            style={{
-                              ...styles.bagInput,
-                              ...(isSelected ? styles.bagInputActive : {}),
-                            }}
-                          />
-                        </td>
-
-                        {/* TP PRICE */}
-                        <td style={styles.td}>
-                          <div style={styles.cellMainText}>৳ {money(Number(item.tp_per_bag))}</div>
-                        </td>
-
-                        {/* TRANSPORT */}
-                        <td style={styles.td}>
-                          <div style={styles.cellMainText}>
-                            {selectedTransport ? `৳ ${transportPerBag.toFixed(2)}` : "—"}
-                          </div>
-                          {selectedTransport && (
-                            <div style={styles.cellSubText}>৳ {rate.toFixed(2)}/kg</div>
+                      return (
+                        <>
+                          {showCategoryHeader && (
+                            <tr key={`cat-header-${item.category}-${index}`}>
+                              <td colSpan={6} style={styles.categoryHeaderCell}>
+                                {item.category}
+                              </td>
+                            </tr>
                           )}
-                        </td>
-
-                        {/* ROW TOTAL */}
-                        <td style={styles.td}>
-                          <div
+                          <tr
+                            key={item.id}
                             style={{
-                              ...styles.rowTotalText,
-                              ...(isSelected ? styles.rowTotalActive : {}),
+                              ...styles.tr,
+                              background: rowBg,
+                              ...(isSelected ? styles.trActive : {}),
                             }}
                           >
-                            {Number(bags) > 0 ? `৳ ${money(rowTotal)}` : "—"}
-                          </div>
-                        </td>
-                      </tr>
-                    );
-                  })}
+                            {/* STICKY TICK MARK */}
+                            <td
+                              style={{
+                                ...styles.td,
+                                ...styles.stickyCol1,
+                                left: 0,
+                                background: rowBg,
+                              }}
+                            >
+                              <input
+                                type="checkbox"
+                                checked={isSelected}
+                                onChange={() => toggleItemSelect(item.id)}
+                                style={styles.checkbox}
+                              />
+                            </td>
+
+                            {/* ITEM NAME */}
+                            <td
+                              style={{
+                                ...styles.td,
+                                background: rowBg,
+                              }}
+                            >
+                              <div
+                                style={{
+                                  ...styles.itemNameText,
+                                  ...(isSelected ? styles.itemNameActive : {}),
+                                }}
+                              >
+                                {item.item_name}
+                              </div>
+                              <div style={styles.itemCategorySub}>
+                                {item.category} • {item.kg_per_bag}kg
+                              </div>
+                            </td>
+
+                            {/* BAG INPUT */}
+                            <td style={styles.td}>
+                              <input
+                                type="number"
+                                min="0"
+                                step="1"
+                                value={bags === 0 ? "" : bags}
+                                onChange={(e) =>
+                                  handleBagChange(
+                                    item.id,
+                                    e.target.value === "" ? 0 : Number(e.target.value)
+                                  )
+                                }
+                                placeholder="0"
+                                style={{
+                                  ...styles.bagInput,
+                                  ...(isSelected ? styles.bagInputActive : {}),
+                                }}
+                              />
+                            </td>
+
+                            {/* TP PRICE */}
+                            <td style={styles.td}>
+                              <div style={styles.cellMainText}>৳ {money(Number(item.tp_per_bag))}</div>
+                            </td>
+
+                            {/* TRANSPORT */}
+                            <td style={styles.td}>
+                              <div style={styles.cellMainText}>
+                                {selectedTransport ? `৳ ${transportPerBag.toFixed(2)}` : "—"}
+                              </div>
+                              {selectedTransport && (
+                                <div style={styles.cellSubText}>৳ {rate.toFixed(2)}/kg</div>
+                              )}
+                            </td>
+
+                            {/* ROW TOTAL */}
+                            <td style={styles.td}>
+                              <div
+                                style={{
+                                  ...styles.rowTotalText,
+                                  ...(isSelected ? styles.rowTotalActive : {}),
+                                }}
+                              >
+                                {Number(bags) > 0 ? `৳ ${money(rowTotal)}` : "—"}
+                              </div>
+                            </td>
+                          </tr>
+                        </>
+                      );
+                    });
+                  })()}
                 </tbody>
               </table>
             </div>
@@ -1106,6 +1137,15 @@ const styles: Record<string, React.CSSProperties> = {
     fontWeight: 700,
     color: "#334155",
     whiteSpace: "nowrap",
+  },
+  categoryHeaderCell: {
+    padding: "2px 12px",
+    background: "#e2e8f0",
+    fontWeight: 800,
+    color: "#1e293b",
+    fontSize: 12,
+    letterSpacing: "0.02em",
+    textAlign: "left",
   },
   tr: {
     borderBottom: "1px solid #e2e8f0",

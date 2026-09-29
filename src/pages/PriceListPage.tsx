@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import * as XLSX from "xlsx";
+import * as XLSX from "xlsx-js-style";
 import { saveAs } from "file-saver";
 import { supabase } from "../lib/supabase";
 import { useAuth } from "../context/AuthContext";
@@ -33,6 +33,26 @@ const categories = [
   "Fish Sinking",
 ];
 
+// Category wise soft colors for UI table
+const CATEGORY_COLORS: Record<string, string> = {
+  Broiler: "#fef2f2",      // halka lal
+  Layer: "#fefce8",        // halka yellow
+  Sonali: "#f0fdf4",       // halka sobuj
+  Cattle: "#faf5ff",       // halka purple
+  "Fish Floating": "#f0f9ff", // halka blue
+  "Fish Sinking": "#f9fafb",  // halka gray
+};
+
+// Excel Category Colors (Hex without #)
+const EXCEL_CATEGORY_COLORS: Record<string, string> = {
+  Broiler: "FEE2E2",
+  Layer: "FEF3C7",
+  Sonali: "DCFCE7",
+  Cattle: "F3E8FF",
+  "Fish Floating": "E0F2FE",
+  "Fish Sinking": "F3F4F6",
+};
+
 const emptyForm: PriceItem = {
   category: "Broiler",
   item_name: "",
@@ -44,11 +64,7 @@ const emptyForm: PriceItem = {
 };
 
 export default function PriceListPage() {
-  // ==========================================
-  // AUTH / ROLE
-  // ==========================================
-
-  const { role } = useAuth();
+  const { user, role } = useAuth();
   const currentRole = role as UserRole | null;
 
   const canManage =
@@ -59,10 +75,6 @@ export default function PriceListPage() {
     currentRole === "user" ||
     currentRole === "admin" ||
     currentRole === "super_admin";
-
-  // ==========================================
-  // STATE
-  // ==========================================
 
   const [items, setItems] = useState<PriceItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -76,22 +88,31 @@ export default function PriceListPage() {
 
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
-  // ==========================================
-  // BULK UPDATE STATE
-  // ==========================================
-
   const [showBulkModal, setShowBulkModal] = useState(false);
   const [selectedBulkCategories, setSelectedBulkCategories] = useState<string[]>([]);
   const [categoryConfigs, setCategoryConfigs] = useState<Record<string, CategoryConfig>>({});
 
-  // Confirmation Review Modal
   const [showConfirmModal, setShowConfirmModal] = useState(false);
   const [previewItems, setPreviewItems] = useState<any[]>([]);
   const [isUpdating, setIsUpdating] = useState(false);
 
-  // ==========================================
-  // LOAD PRICE LIST
-  // ==========================================
+  // Page Visit Tracking
+  useEffect(() => {
+    async function trackPageVisit() {
+      if (!user?.id) return;
+      const today = new Date().toISOString().split("T")[0];
+      await supabase.from("page_visits").insert([
+        {
+          user_id: user.id,
+          page_name: "Pricelist Page",
+          visit_date: today,
+        },
+      ]);
+    }
+    if (canView) {
+      trackPageVisit();
+    }
+  }, [user?.id, canView]);
 
   useEffect(() => {
     if (canView) {
@@ -120,10 +141,6 @@ export default function PriceListPage() {
 
     setLoading(false);
   }
-
-  // ==========================================
-  // ADD / EDIT FORM HANDLERS
-  // ==========================================
 
   function openAdd() {
     if (!canManage) {
@@ -234,10 +251,6 @@ export default function PriceListPage() {
     await loadPriceList();
   }
 
-  // ==========================================
-  // EXCEL IMPORT / EXPORT
-  // ==========================================
-
   function handleExcelImport(event: React.ChangeEvent<HTMLInputElement>) {
     if (!canManage) {
       alert("Only Admin or Super Admin can import price list.");
@@ -307,42 +320,88 @@ export default function PriceListPage() {
     event.target.value = "";
   }
 
-  function exportExcel() {
+
+  
+   async function exportExcel() {
     if (!filteredItems.length) {
       alert("No data available to export.");
       return;
     }
 
+    if (user?.id) {
+      const today = new Date().toISOString().split("T")[0];
+      await supabase.from("page_visits").insert([
+        {
+          user_id: user.id,
+          page_name: "Pricelist Download",
+          visit_date: today,
+        },
+      ]);
+    }
+
     const exportData = filteredItems.map((item) => ({
       Category: item.category,
       "Item Name": item.item_name,
-      "Short Name": item.short_name || "",
       "KG/Bag": Number(item.kg_per_bag),
       "TP/Bag": Number(item.tp_per_bag),
       "TP/KG": Number(item.kg_per_bag) > 0 ? Number(item.tp_per_bag) / Number(item.kg_per_bag) : 0,
       "MRP/Bag": Number(item.mrp_per_bag),
       "MRP/KG": Number(item.kg_per_bag) > 0 ? Number(item.mrp_per_bag) / Number(item.kg_per_bag) : 0,
-      Status: item.status,
     }));
 
     const worksheet = XLSX.utils.json_to_sheet(exportData);
     worksheet["!cols"] = [
-      { wch: 16 }, { wch: 28 }, { wch: 16 }, { wch: 10 },
-      { wch: 12 }, { wch: 12 }, { wch: 12 }, { wch: 12 }, { wch: 12 },
+      { wch: 16 }, { wch: 28 }, { wch: 10 },
+      { wch: 12 }, { wch: 12 }, { wch: 12 }, { wch: 12 },
     ];
+
+    // Common thin border styling for excel cells
+    const thinBorder = {
+      top: { style: "thin", color: { rgb: "D1D5DB" } },
+      bottom: { style: "thin", color: { rgb: "D1D5DB" } },
+      left: { style: "thin", color: { rgb: "D1D5DB" } },
+      right: { style: "thin", color: { rgb: "D1D5DB" } },
+    };
+
+    const range = XLSX.utils.decode_range(worksheet["!ref"] || "A1");
+    for (let R = range.s.r; R <= range.e.r; ++R) {
+      for (let C = range.s.c; C <= range.e.c; ++C) {
+        const cellAddress = XLSX.utils.encode_cell({ r: R, c: C });
+        if (!worksheet[cellAddress]) continue;
+
+        if (R === 0) {
+          // Header Row Style with Border
+          worksheet[cellAddress].s = {
+            font: { bold: true, color: { rgb: "111827" } },
+            fill: { patternType: "solid", fgColor: { rgb: "E5E7EB" } },
+            alignment: { horizontal: "center", vertical: "center" },
+            border: thinBorder,
+          };
+        } else {
+          const item = filteredItems[R - 1];
+          if (item) {
+            // Full category color for the entire row (No alternating)
+            const hexColor = EXCEL_CATEGORY_COLORS[item.category] || "FFFFFF";
+
+            worksheet[cellAddress].s = {
+              fill: { patternType: "solid", fgColor: { rgb: hexColor } },
+              font: { color: { rgb: "111827" } },
+              alignment: { vertical: "center" },
+              border: thinBorder,
+            };
+          }
+        }
+      }
+    }
 
     const workbook = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(workbook, worksheet, "Price List");
-    const excelBuffer = XLSX.write(workbook, { bookType: "xlsx", type: "array" });
+    const excelBuffer = XLSX.write(workbook, { bookType: "xlsx", type: "array", cellStyles: true });
     const blob = new Blob([excelBuffer], {
       type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     });
     saveAs(blob, "Feed_Price_List.xlsx");
   }
-
-  // ==========================================
-  // BULK UPDATE LOGIC
-  // ==========================================
 
   const toggleBulkCategory = (cat: string) => {
     setSelectedBulkCategories((prev) => {
@@ -399,7 +458,6 @@ export default function PriceListPage() {
       return;
     }
 
-    // Build calculation preview items
     const calculations = targetBulkItems.map((item) => {
       const cfg = categoryConfigs[item.category] || { action: "increase", tpChange: "0", mrpChange: "0" };
       const multiplier = cfg.action === "increase" ? 1 : -1;
@@ -463,7 +521,6 @@ export default function PriceListPage() {
     }
   };
 
-  // Filtered items for display table
   const filteredItems = useMemo(() => {
     const searchText = search.toLowerCase();
     return items.filter((item) => {
@@ -477,10 +534,6 @@ export default function PriceListPage() {
     });
   }, [items, search, categoryFilter]);
 
-  // ==========================================
-  // ACCESS CHECK
-  // ==========================================
-
   if (!canView) {
     return (
       <div style={styles.accessDenied}>
@@ -491,13 +544,8 @@ export default function PriceListPage() {
     );
   }
 
-  // ==========================================
-  // PAGE RENDER
-  // ==========================================
-
   return (
     <div style={styles.page}>
-      {/* HEADER */}
       <div style={styles.header}>
         <div>
           <h1 style={styles.title}>Price List</h1>
@@ -541,7 +589,6 @@ export default function PriceListPage() {
         </div>
       </div>
 
-      {/* SEARCH */}
       <div style={styles.searchBox}>
         <span>🔍</span>
         <input
@@ -552,7 +599,6 @@ export default function PriceListPage() {
         />
       </div>
 
-      {/* CATEGORY FILTER */}
       <div style={styles.categoryScroll}>
         <button
           style={{
@@ -578,7 +624,6 @@ export default function PriceListPage() {
         ))}
       </div>
 
-      {/* TABLE */}
       {loading ? (
         <div style={styles.loading}>Loading...</div>
       ) : (
@@ -599,15 +644,18 @@ export default function PriceListPage() {
               </tr>
             </thead>
             <tbody>
-              {filteredItems.map((item) => {
+              {filteredItems.map((item, index) => {
                 const kgPerBag = Number(item.kg_per_bag);
                 const tpPerBag = Number(item.tp_per_bag);
                 const mrpPerBag = Number(item.mrp_per_bag);
                 const tpKg = kgPerBag > 0 ? tpPerBag / kgPerBag : 0;
                 const mrpKg = kgPerBag > 0 ? mrpPerBag / kgPerBag : 0;
 
+                // Alternating row color: Even index -> category soft color, Odd index -> white
+                const rowBg = index % 2 === 0 ? (CATEGORY_COLORS[item.category] || "#ffffff") : "#ffffff";
+
                 return (
-                  <tr key={item.id} style={styles.tr}>
+                  <tr key={item.id} style={{ ...styles.tr, background: rowBg }}>
                     <td style={styles.td}>
                       <span style={styles.categoryTag}>{item.category}</span>
                     </td>
@@ -651,9 +699,6 @@ export default function PriceListPage() {
         </div>
       )}
 
-      {/* ======================================
-          ADD / EDIT MODAL
-      ====================================== */}
       {showForm && canManage && (
         <div style={styles.overlay}>
           <div style={styles.modal}>
@@ -745,9 +790,6 @@ export default function PriceListPage() {
         </div>
       )}
 
-      {/* ======================================
-          1. BULK UPDATE MODAL
-      ====================================== */}
       {showBulkModal && canManage && (
         <div style={styles.overlay}>
           <div style={{ ...styles.modal, maxWidth: 680 }}>
@@ -761,7 +803,6 @@ export default function PriceListPage() {
               <button style={styles.closeButton} onClick={() => setShowBulkModal(false)}>×</button>
             </div>
 
-            {/* CATEGORY SELECT MULTIPLE */}
             <div style={{ marginTop: 12 }}>
               <label style={styles.label}>1. Select Categories:</label>
               <div style={styles.checkboxGrid}>
@@ -788,7 +829,6 @@ export default function PriceListPage() {
               </div>
             </div>
 
-            {/* PER-CATEGORY CUSTOM PRICE ADJUSTMENTS */}
             {selectedBulkCategories.length > 0 && (
               <div style={{ marginTop: 16 }}>
                 <label style={styles.label}>2. Category-Wise Rate Adjustments (Tk/kg):</label>
@@ -841,7 +881,6 @@ export default function PriceListPage() {
               </div>
             )}
 
-            {/* SELECTED ITEMS REALTIME PREVIEW */}
             <div style={{ marginTop: 16 }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                 <label style={styles.label}>Items Selected ({targetBulkItems.length}):</label>
@@ -872,9 +911,6 @@ export default function PriceListPage() {
         </div>
       )}
 
-      {/* ======================================
-          2. PROFESSIONAL CONFIRMATION POPUP MODAL
-      ====================================== */}
       {showConfirmModal && canManage && (
         <div style={styles.overlay}>
           <div style={{ ...styles.modal, maxWidth: 750 }}>
@@ -957,10 +993,6 @@ export default function PriceListPage() {
     </div>
   );
 }
-
-// ============================================
-// STYLES
-// ============================================
 
 const styles: Record<string, React.CSSProperties> = {
   page: {
