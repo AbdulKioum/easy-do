@@ -1165,7 +1165,8 @@ const styles: Record<string, React.CSSProperties> = {
     minWidth: 42,
     textAlign: "center",
     zIndex: 2,
-    boxShadow: "2px 0 5px rgba(0,0,0,0.03)",
+    boxShadow: "2px 0 5px rgba(0,0,0,0.05)",
+    background: "#f1f5f9",
   },
   checkbox: {
     width: 18,
