@@ -32,15 +32,31 @@ type BankInfo = {
 
 const EASY_DO_STORAGE_KEY = "easydo_format1_current_state_v1";
 
-// Category configuration for icons, names, and background colors
-const CATEGORY_CONFIG: Record<string, { label: string; icon: string; bg: string; activeBg: string }> = {
-  Broiler: { label: "Broiler", icon: "", bg: "#fef2f2", activeBg: "#fee2e2" },
-  Layer: { label: "Layer", icon: "", bg: "#fffbebe6", activeBg: "#fef3c7" },
-  Sonali: { label: "Sonali", icon: "", bg: "#f0fdf4", activeBg: "#dcfce7" },
-  Cattle: { label: "Cattle", icon: "", bg: "#faf5ff", activeBg: "#f3e8ff" },
-  "Fish Floating": { label: "Fish (Fl)", icon: "", bg: "#f0f9ff", activeBg: "#e0f2fe" },
-  "Fish Sinking": { label: "Fish (Snk)", icon: "", bg: "#f0fdfa", activeBg: "#ccfbf1" },
+const CATEGORY_CONFIG: Record<string, { label: string; icon: string; bg: string }> = {
+  Broiler: { label: "Broiler", icon: "", bg: "#fef2f2" },
+  Layer: { label: "Layer", icon: "", bg: "#fffbebe6" },
+  Sonali: { label: "Sonali", icon: "", bg: "#f0fdf4" },
+  Cattle: { label: "Cattle", icon: "", bg: "#faf5ff" },
+  "Fish Floating": { label: "Fish (Fl)", icon: "", bg: "#f0f9ff" },
+  "Fish Sinking": { label: "Fish (Snk)", icon: "", bg: "#f0fdfa" },
 };
+
+const COMPACT_CSS = `
+  .edo-page { min-height: 100vh; background: #f8fafc; padding: 12px; color: #111827; box-sizing: border-box; }
+  .edo-card { background: #fff; border: 1px solid #e2e8f0; border-radius: 12px; padding: 14px; margin-bottom: 12px; text-align: left; box-shadow: 0 2px 8px rgba(0,0,0,0.04); }
+  .edo-filter-btn { padding: 6px 10px; border-radius: 20px; border: 1px solid #cbd5e1; font-size: 11px; font-weight: 600; cursor: pointer; display: flex; align-items: center; gap: 4px; flex-shrink: 0; transition: all 0.15s ease; }
+  .edo-table { width: 100%; border-collapse: collapse; min-width: 540px; font-size: 12px; }
+  .edo-th { padding: 10px; text-align: left; font-weight: 700; color: #334155; white-space: nowrap; background: #f1f5f9; border-bottom: 1px solid #cbd5e1; }
+  .edo-td { padding: 10px 8px; vertical-align: middle; text-align: left; border-bottom: 1px solid #e2e8f0; }
+  .edo-sticky { position: sticky; left: 0; width: 42px; min-width: 42px; text-align: center; z-index: 2; box-shadow: 2px 0 5px rgba(0,0,0,0.05); }
+  .edo-bag-input { width: 65px; padding: 6px 4px; border: 1px solid #cbd5e1; border-radius: 6px; text-align: center; font-size: 13px; font-weight: 700; outline: none; background: #fff; color: #0f172a; }
+  .edo-label { display: block; font-size: 11px; font-weight: 650; color: #334155; margin-bottom: 4px; text-align: left; }
+  .edo-input { width: 100%; box-sizing: border-box; border: 1px solid #cbd5e1; border-radius: 6px; padding: 8px; font-size: 12px; background: #fff; color: #0f172a; }
+  .edo-grid2 { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+  .edo-mode-btn { border: 1px solid #cbd5e1; background: #fff; border-radius: 8px; padding: 10px; cursor: pointer; display: flex; align-items: center; gap: 8px; text-align: left; }
+  .edo-sec { margin-top: 10px; padding: 10px; border: 1px solid #e2e8f0; border-radius: 8px; background: #f8fafc; text-align: left; }
+  .edo-btn-main { display: block; margin: 16px auto 0; width: min(100%, 380px); padding: 14px 18px; border: none; border-radius: 12px; background: linear-gradient(135deg, #2563eb, #1d4ed8); color: #fff; font-size: 14px; font-weight: 800; cursor: pointer; box-shadow: 0 4px 12px rgba(37,99,235,0.35); }
+`;
 
 export default function EasyDOFormat1() {
   const { user } = useAuth();
@@ -50,227 +66,141 @@ export default function EasyDOFormat1() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
 
-  // Category Filter State ("All" means show everything)
   const [selectedCategory, setSelectedCategory] = useState<string>("All");
-
-  // Bag quantities mapped by item ID
   const [bagQuantities, setBagQuantities] = useState<Record<number, number>>({});
-  // Explicitly checked items
   const [selectedItemIds, setSelectedItemIds] = useState<number[]>([]);
 
   const [fromLocation, setFromLocation] = useState("");
   const [upazila, setUpazila] = useState("");
   const [transportMode, setTransportMode] = useState<"with" | "without">("with");
 
-  // DO INFORMATION
   const [showDOInformation, setShowDOInformation] = useState(false);
   const [agentCode, setAgentCode] = useState("");
   const [agentName, setAgentName] = useState("");
   const [vehicleNo, setVehicleNo] = useState("");
   const [banks, setBanks] = useState<BankInfo[]>([
-    {
-      id: Date.now(),
-      bankName: "",
-      branch: "",
-      date: new Date().toISOString().split("T")[0],
-      amount: "",
-    },
+    { id: Date.now(), bankName: "", branch: "", date: new Date().toISOString().split("T")[0], amount: "" },
   ]);
   const [generatedMessage, setGeneratedMessage] = useState("");
 
-  // PAGE VISIT TRACKING EFFECT
   useEffect(() => {
     async function trackPageVisit() {
       if (!user?.id) return;
       const today = new Date().toISOString().split("T")[0];
-      await supabase.from("page_visits").insert([
-        {
-          user_id: user.id,
-          page_name: "EasyDO Page 1",
-          visit_date: today,
-        },
-      ]);
+      await supabase.from("page_visits").insert([{ user_id: user.id, page_name: "EasyDO Page 1", visit_date: today }]);
     }
     trackPageVisit();
   }, [user?.id]);
 
-  // INITIAL LOAD
   useEffect(() => {
-    const navigationEntry = performance.getEntriesByType("navigation")[0] as
-      | PerformanceNavigationTiming
-      | undefined;
-
-    if (navigationEntry?.type === "reload") {
-      sessionStorage.removeItem(EASY_DO_STORAGE_KEY);
-    } else {
-      restoreEasyDOState();
-    }
-
+    const nav = performance.getEntriesByType("navigation")[0] as PerformanceNavigationTiming | undefined;
+    if (nav?.type === "reload") sessionStorage.removeItem(EASY_DO_STORAGE_KEY);
+    else restoreEasyDOState();
     loadData();
   }, []);
 
-  // RELOAD WARNING
   useEffect(() => {
-    function handleBeforeUnload(event: BeforeUnloadEvent) {
-      event.preventDefault();
-      event.returnValue = "";
-    }
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+      e.returnValue = "";
+    };
     window.addEventListener("beforeunload", handleBeforeUnload);
     return () => window.removeEventListener("beforeunload", handleBeforeUnload);
   }, []);
 
-  // RESTORE CURRENT DO STATE
   function restoreEasyDOState() {
     try {
       const saved = sessionStorage.getItem(EASY_DO_STORAGE_KEY);
       if (!saved) return;
-
-      const state = JSON.parse(saved);
-      if (state.bagQuantities) setBagQuantities(state.bagQuantities);
-      if (Array.isArray(state.selectedItemIds)) setSelectedItemIds(state.selectedItemIds);
-      setFromLocation(state.fromLocation || "");
-      setUpazila(state.upazila || "");
-      setTransportMode(state.transportMode === "without" ? "without" : "with");
-      setAgentCode(state.agentCode || "");
-      setAgentName(state.agentName || "");
-      setVehicleNo(state.vehicleNo || "");
-      if (Array.isArray(state.banks) && state.banks.length > 0) setBanks(state.banks);
-      setShowDOInformation(Boolean(state.showDOInformation));
-      setGeneratedMessage(state.generatedMessage || "");
-    } catch (error) {
-      console.error("EasyDO Format 1 restore failed:", error);
+      const s = JSON.parse(saved);
+      if (s.bagQuantities) setBagQuantities(s.bagQuantities);
+      if (Array.isArray(s.selectedItemIds)) setSelectedItemIds(s.selectedItemIds);
+      setFromLocation(s.fromLocation || "");
+      setUpazila(s.upazila || "");
+      setTransportMode(s.transportMode === "without" ? "without" : "with");
+      setAgentCode(s.agentCode || "");
+      setAgentName(s.agentName || "");
+      setVehicleNo(s.vehicleNo || "");
+      if (Array.isArray(s.banks) && s.banks.length > 0) setBanks(s.banks);
+      setShowDOInformation(Boolean(s.showDOInformation));
+      setGeneratedMessage(s.generatedMessage || "");
+    } catch (e) {
+      console.error("Restore failed:", e);
       sessionStorage.removeItem(EASY_DO_STORAGE_KEY);
     }
   }
 
-  // AUTO SAVE CURRENT DO STATE
   useEffect(() => {
     if (loading) return;
-
-    const state = {
-      bagQuantities,
-      selectedItemIds,
-      fromLocation,
-      upazila,
-      transportMode,
-      agentCode,
-      agentName,
-      vehicleNo,
-      banks,
-      showDOInformation,
-      generatedMessage,
-    };
-
     try {
-      sessionStorage.setItem(EASY_DO_STORAGE_KEY, JSON.stringify(state));
-    } catch (error) {
-      console.error("EasyDO Format 1 state save failed:", error);
+      sessionStorage.setItem(
+        EASY_DO_STORAGE_KEY,
+        JSON.stringify({
+          bagQuantities,
+          selectedItemIds,
+          fromLocation,
+          upazila,
+          transportMode,
+          agentCode,
+          agentName,
+          vehicleNo,
+          banks,
+          showDOInformation,
+          generatedMessage,
+        })
+      );
+    } catch (e) {
+      console.error("Save state failed:", e);
     }
-  }, [
-    loading,
-    bagQuantities,
-    selectedItemIds,
-    fromLocation,
-    upazila,
-    transportMode,
-    agentCode,
-    agentName,
-    vehicleNo,
-    banks,
-    showDOInformation,
-    generatedMessage,
-  ]);
+  }, [loading, bagQuantities, selectedItemIds, fromLocation, upazila, transportMode, agentCode, agentName, vehicleNo, banks, showDOInformation, generatedMessage]);
 
-  // LOAD DATA FROM SUPABASE
   async function loadData() {
     setLoading(true);
-
-    const [priceResponse, transportResponse] = await Promise.all([
-      supabase
-        .from("feed_price_list")
-        .select("id, category, item_name, short_name, kg_per_bag, tp_per_bag, mrp_per_bag, status")
-        .eq("status", "Active")
-        .order("sort_order", { ascending: true }),
-
-      supabase
-        .from("transportation")
-        .select("id, from_location, to_upazila, floating_cattle_rate_per_kg, sinking_broiler_layer_sonali_rate_per_kg, status")
-        .eq("status", "Active")
-        .order("to_upazila", { ascending: true }),
+    const [priceRes, transRes] = await Promise.all([
+      supabase.from("feed_price_list").select("id, category, item_name, short_name, kg_per_bag, tp_per_bag, mrp_per_bag, status").eq("status", "Active").order("sort_order", { ascending: true }),
+      supabase.from("transportation").select("id, from_location, to_upazila, floating_cattle_rate_per_kg, sinking_broiler_layer_sonali_rate_per_kg, status").eq("status", "Active").order("to_upazila", { ascending: true }),
     ]);
+    if (priceRes.error) alert("Price list load failed.");
+    else setPriceList(priceRes.data || []);
 
-    if (priceResponse.error) {
-      console.error(priceResponse.error);
-      alert("Price list load failed.");
-    } else {
-      setPriceList(priceResponse.data || []);
-    }
-
-    if (transportResponse.error) {
-      console.error(transportResponse.error);
-      alert("Transportation load failed.");
-    } else {
-      setTransportList(transportResponse.data || []);
-    }
-
+    if (transRes.error) alert("Transportation load failed.");
+    else setTransportList(transRes.data || []);
     setLoading(false);
   }
 
-  // CHECKBOX HANDLER
   function toggleItemSelect(itemId: number) {
-    const isCurrentlySelected = selectedItemIds.includes(itemId) || (bagQuantities[itemId] || 0) > 0;
-
-    if (isCurrentlySelected) {
+    const isSel = selectedItemIds.includes(itemId) || (bagQuantities[itemId] || 0) > 0;
+    if (isSel) {
       setSelectedItemIds((prev) => prev.filter((id) => id !== itemId));
-      setBagQuantities((prev) => ({
-        ...prev,
-        [itemId]: 0,
-      }));
+      setBagQuantities((prev) => ({ ...prev, [itemId]: 0 }));
     } else {
       setSelectedItemIds((prev) => [...prev, itemId]);
-      setBagQuantities((prev) => ({
-        ...prev,
-        [itemId]: prev[itemId] || 0,
-      }));
+      setBagQuantities((prev) => ({ ...prev, [itemId]: prev[itemId] || 0 }));
     }
   }
 
-  // BAG INPUT HANDLER
   function handleBagChange(itemId: number, bags: number) {
-    const validBags = bags < 0 ? 0 : bags;
-    setBagQuantities((prev) => ({
-      ...prev,
-      [itemId]: validBags,
-    }));
-
-    if (validBags > 0) {
-      if (!selectedItemIds.includes(itemId)) {
-        setSelectedItemIds((prev) => [...prev, itemId]);
-      }
+    const valid = bags < 0 ? 0 : bags;
+    setBagQuantities((prev) => ({ ...prev, [itemId]: valid }));
+    if (valid > 0) {
+      if (!selectedItemIds.includes(itemId)) setSelectedItemIds((prev) => [...prev, itemId]);
     } else {
       setSelectedItemIds((prev) => prev.filter((id) => id !== itemId));
     }
   }
 
-  // SELECTED TRANSPORT
   const selectedTransport = useMemo(() => {
     if (!fromLocation || !upazila) return null;
-    return (
-      transportList.find(
-        (t) => t.from_location === fromLocation && t.to_upazila === upazila
-      ) || null
-    );
+    return transportList.find((t) => t.from_location === fromLocation && t.to_upazila === upazila) || null;
   }, [transportList, fromLocation, upazila]);
 
   function getTransportRate(category: string) {
     if (!selectedTransport) return 0;
-    if (category === "Fish Floating" || category === "Cattle") {
-      return Number(selectedTransport.floating_cattle_rate_per_kg);
-    }
-    return Number(selectedTransport.sinking_broiler_layer_sonali_rate_per_kg);
+    return category === "Fish Floating" || category === "Cattle"
+      ? Number(selectedTransport.floating_cattle_rate_per_kg)
+      : Number(selectedTransport.sinking_broiler_layer_sonali_rate_per_kg);
   }
 
-  // CALCULATIONS FOR ACTIVE ITEMS (Include all selected items regardless of filter)
   const activeOrderList = useMemo(() => {
     return priceList
       .filter((item) => selectedItemIds.includes(item.id) || (bagQuantities[item.id] || 0) > 0)
@@ -278,204 +208,95 @@ export default function EasyDOFormat1() {
         const bags = bagQuantities[item.id] || 0;
         const weight = Number(item.kg_per_bag) * bags;
         const rate = getTransportRate(item.category);
-        const transportPerBag = Number(item.kg_per_bag) * rate;
         const totalTransport = weight * rate;
         const tpTotal = Number(item.tp_per_bag) * bags;
         const rowTotal = transportMode === "with" ? tpTotal : tpTotal - totalTransport;
-
-        return {
-          item,
-          bags,
-          weight,
-          rate,
-          transportPerBag,
-          totalTransport,
-          tpTotal,
-          rowTotal,
-        };
+        return { item, bags, weight, rate, totalTransport, tpTotal, rowTotal };
       });
   }, [priceList, selectedItemIds, bagQuantities, selectedTransport, transportMode]);
 
-  // Filter items for display in table
   const displayedPriceList = useMemo(() => {
     if (selectedCategory === "All") return priceList;
-    return priceList.filter(
-      (item) => item.category.toLowerCase() === selectedCategory.toLowerCase()
-    );
+    return priceList.filter((item) => item.category.toLowerCase() === selectedCategory.toLowerCase());
   }, [priceList, selectedCategory]);
 
-  const totalWeight = useMemo(() => {
-    return activeOrderList.reduce((acc, row) => acc + row.weight, 0);
-  }, [activeOrderList]);
+  const totalWeight = useMemo(() => activeOrderList.reduce((acc, r) => acc + r.weight, 0), [activeOrderList]);
+  const feedPrice = useMemo(() => activeOrderList.reduce((acc, r) => acc + r.tpTotal, 0), [activeOrderList]);
+  const totalTransportAmount = useMemo(() => (!selectedTransport ? 0 : activeOrderList.reduce((acc, r) => acc + r.totalTransport, 0)), [activeOrderList, selectedTransport]);
+  const totalAmount = useMemo(() => activeOrderList.reduce((acc, r) => acc + r.rowTotal, 0), [activeOrderList]);
 
-  const feedPrice = useMemo(() => {
-    return activeOrderList.reduce((acc, row) => acc + row.tpTotal, 0);
-  }, [activeOrderList]);
-
-  const totalTransportAmount = useMemo(() => {
-    if (!selectedTransport) return 0;
-    return activeOrderList.reduce((acc, row) => acc + row.totalTransport, 0);
-  }, [activeOrderList, selectedTransport]);
-
-  const totalAmount = useMemo(() => {
-    return activeOrderList.reduce((acc, row) => acc + row.rowTotal, 0);
-  }, [activeOrderList]);
-
-  const fromLocations = useMemo(() => {
-    return Array.from(new Set(transportList.map((item) => item.from_location).filter(Boolean)));
-  }, [transportList]);
-
+  const fromLocations = useMemo(() => Array.from(new Set(transportList.map((i) => i.from_location).filter(Boolean))), [transportList]);
   const upazilas = useMemo(() => {
-    const filtered = fromLocation
-      ? transportList.filter((item) => item.from_location === fromLocation)
-      : transportList;
-    return Array.from(new Set(filtered.map((item) => item.to_upazila).filter(Boolean)));
+    const filtered = fromLocation ? transportList.filter((i) => i.from_location === fromLocation) : transportList;
+    return Array.from(new Set(filtered.map((i) => i.to_upazila).filter(Boolean)));
   }, [transportList, fromLocation]);
 
-  // BANK FUNCTIONS
   function addBank() {
-    setBanks((prev) => [
-      ...prev,
-      {
-        id: Date.now() + Math.random(),
-        bankName: "",
-        branch: "",
-        date: new Date().toISOString().split("T")[0],
-        amount: "",
-      },
-    ]);
+    setBanks((prev) => [...prev, { id: Date.now() + Math.random(), bankName: "", branch: "", date: new Date().toISOString().split("T")[0], amount: "" }]);
   }
-
   function removeBank(id: number) {
-    setBanks((prev) => prev.filter((bank) => bank.id !== id));
+    setBanks((prev) => prev.filter((b) => b.id !== id));
   }
-
   function updateBank(id: number, field: keyof BankInfo, value: string) {
-    setBanks((prev) =>
-      prev.map((bank) => (bank.id === id ? { ...bank, [field]: value } : bank))
-    );
+    setBanks((prev) => prev.map((b) => (b.id === id ? { ...b, [field]: value } : b)));
   }
 
-  function getFeedShortName(item: FeedPrice) {
-    return item.short_name?.trim() ? item.short_name.trim() : item.item_name;
+  function money(val: number) {
+    return Number(val).toLocaleString("en-BD", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   }
 
-  // GENERATE MESSAGE
   function buildDOMessage() {
     const finalAgentCode = agentCode.trim() || "[Agent Code]";
     const finalAgentName = agentName.trim() || "[Agent Name]";
     const finalVehicle = vehicleNo.trim() || "[Vehicle No]";
+    const validBanks = banks.filter((b) => b.bankName.trim() || b.branch.trim() || b.date.trim() || b.amount.trim());
 
-    const validBanks = banks.filter(
-      (b) => b.bankName.trim() || b.branch.trim() || b.date.trim() || b.amount.trim()
-    );
-
-    let bankText = "";
-    if (!validBanks.length) {
-      bankText = "[Bank Details]";
-    } else {
-      bankText = validBanks
-        .map((bank) => {
-          const bankName = bank.bankName.trim() || "[Bank Name]";
-          const branch = bank.branch.trim() || "[Branch]";
-          const date = bank.date.trim() || "[Date]";
-          const amount = bank.amount.trim()
-            ? `৳ ${Number(bank.amount).toLocaleString("en-BD", {
-                minimumFractionDigits: 2,
-                maximumFractionDigits: 2,
-              })}`
-            : "[Bank Amount]";
-          return `${bankName}\n${branch}\n${date}\n${amount}`;
-        })
-        .join("\n\n");
-    }
+    const bankText = !validBanks.length
+      ? "[Bank Details]"
+      : validBanks
+          .map((b) => `${b.bankName.trim() || "[Bank Name]"}\n${b.branch.trim() || "[Branch]"}\n${b.date.trim() || "[Date]"}\n${b.amount.trim() ? `৳ ${money(Number(b.amount))}` : "[Bank Amount]"}`)
+          .join("\n\n");
 
     const validRows = activeOrderList.filter((r) => r.bags > 0);
-    let feedText = "";
-    if (!validRows.length) {
-      feedText = "[Feed Details]";
-    } else {
-      feedText = validRows
-        .map((r) => `${getFeedShortName(r.item)} - ${r.bags} bag${r.bags !== 1 ? "s" : ""}`)
-        .join("\n");
-    }
+    const feedText = !validRows.length
+      ? "[Feed Details]"
+      : validRows.map((r) => `${r.item.short_name?.trim() || r.item.item_name} - ${r.bags} bag${r.bags !== 1 ? "s" : ""}`).join("\n");
 
-    const finalFrom = fromLocation.trim() || "[Feed Mill / Depot]";
-
-    return `Code: ${finalAgentCode}, ${finalAgentName}\n\n${bankText}\n\n${feedText}\n\nVehicle No: ${finalVehicle}\nFrom: ${finalFrom}`;
+    return `Code: ${finalAgentCode}, ${finalAgentName}\n\n${bankText}\n\n${feedText}\n\nVehicle No: ${finalVehicle}\nFrom: ${fromLocation.trim() || "[Feed Mill / Depot]"}`;
   }
 
   function openDOInformation() {
     setShowDOInformation(true);
     setGeneratedMessage(buildDOMessage());
-    setTimeout(() => {
-      const element = document.getElementById("do-information-section");
-      if (element) {
-        element.scrollIntoView({ behavior: "smooth", block: "start" });
-      }
-    }, 100);
+    setTimeout(() => document.getElementById("do-information-section")?.scrollIntoView({ behavior: "smooth", block: "start" }), 100);
   }
 
   useEffect(() => {
-    if (!showDOInformation) return;
-    setGeneratedMessage(buildDOMessage());
-  }, [
-    showDOInformation,
-    agentCode,
-    agentName,
-    vehicleNo,
-    banks,
-    activeOrderList,
-    fromLocation,
-    upazila,
-    transportMode,
-  ]);
+    if (showDOInformation) setGeneratedMessage(buildDOMessage());
+  }, [showDOInformation, agentCode, agentName, vehicleNo, banks, activeOrderList, fromLocation, upazila, transportMode]);
 
   async function copyMessage() {
     if (!generatedMessage) return;
     try {
       await navigator.clipboard.writeText(generatedMessage);
       alert("DO Message copied.");
-    } catch (error) {
-      console.error(error);
+    } catch {
       alert("Copy failed.");
     }
   }
 
-  // SAVE DO TO SUPABASE
   async function saveDO() {
     if (saving) return;
-    if (!user) {
-      alert("You are not logged in.");
-      return;
-    }
+    if (!user) return alert("You are not logged in.");
 
     const validRows = activeOrderList.filter((r) => r.bags > 0);
-    if (validRows.length === 0) {
-      alert("Please select feed item and enter bags.");
-      return;
-    }
+    if (!validRows.length) return alert("Please select feed item and enter bags.");
 
     setSaving(true);
-
     try {
-      const validBanks = banks.filter(
-        (b) => b.bankName.trim() || b.branch.trim() || b.date.trim() || b.amount.trim()
-      );
-
+      const validBanks = banks.filter((b) => b.bankName.trim() || b.branch.trim() || b.date.trim() || b.amount.trim());
       const bankDetails = validBanks
-        .map((b) => {
-          return `${b.bankName || "[Bank Name]"}\n${b.branch || "[Branch]"}\n${
-            b.date || "[Date]"
-          }\n${
-            b.amount
-              ? `৳ ${Number(b.amount).toLocaleString("en-BD", {
-                  minimumFractionDigits: 2,
-                  maximumFractionDigits: 2,
-                })}`
-              : "[Bank Amount]"
-          }`;
-        })
+        .map((b) => `${b.bankName || "[Bank Name]"}\n${b.branch || "[Branch]"}\n${b.date || "[Date]"}\n${b.amount ? `৳ ${money(Number(b.amount))}` : "[Bank Amount]"}`)
         .join("\n\n");
 
       const orderItems = validRows.map((r) => ({
@@ -491,13 +312,10 @@ export default function EasyDOFormat1() {
         total: r.rowTotal,
       }));
 
-      const firstBank = validBanks.length > 0 ? validBanks[0] : null;
-      const finalMessage = generatedMessage || buildDOMessage();
-
+      const firstBank = validBanks[0] || null;
       const payload = {
         user_id: user.id,
-        agent_info:
-          `${agentCode.trim()}, ${agentName.trim()}`.replace(/^,\s*|\s*,\s*$/g, "") || null,
+        agent_info: `${agentCode.trim()}, ${agentName.trim()}`.replace(/^,\s*|\s*,\s*$/g, "") || null,
         vehicle_number: vehicleNo.trim() || null,
         bank_details: bankDetails || null,
         from_location: fromLocation || null,
@@ -513,77 +331,59 @@ export default function EasyDOFormat1() {
         bank_branch: firstBank?.branch.trim() || null,
         bank_amount: firstBank?.amount ? Number(firstBank.amount) : 0,
         banks: validBanks,
-        message_text: finalMessage,
+        message_text: generatedMessage || buildDOMessage(),
       };
 
       const { error } = await supabase.from("saved_dos").insert([payload]);
-
-      if (error) {
-        console.error("Save DO error:", error);
-        alert(`Save DO failed: ${error.message}`);
-        return;
-      }
-
+      if (error) return alert(`Save DO failed: ${error.message}`);
       alert("DO saved successfully.");
-    } catch (error) {
-      console.error(error);
+    } catch {
       alert("Something went wrong while saving DO.");
     } finally {
       setSaving(false);
     }
   }
 
-  function money(value: number) {
-    return Number(value).toLocaleString("en-BD", {
-      minimumFractionDigits: 2,
-      maximumFractionDigits: 2,
-    });
-  }
-
-  // Get Row color based on item category
-  function getRowBgColor(category: string, isSelected: boolean) {
-    if (isSelected) return "#dbeafe"; // Highlighted selection color
-    const config = CATEGORY_CONFIG[category];
-    return config ? config.bg : "#ffffff";
-  }
-
   return (
-    <div style={styles.page}>
-      {/* HEADER (Centered) */}
-      <div style={styles.header}>
-        <h1 style={styles.title}>Create D/O (Format 1)</h1>
-        <p style={styles.subtitle}>Direct feed order entry table</p>
+    <div className="edo-page">
+      <style>{COMPACT_CSS}</style>
+
+      {/* HEADER */}
+      <div style={{ marginBottom: 12, textAlign: "center" }}>
+        <h1 style={{ margin: 0, fontSize: 18, fontWeight: 800, color: "#0f172a" }}>Create D/O (Format 1)</h1>
+        <p style={{ margin: "3px 0 0", fontSize: 12, color: "#64748b" }}>Direct feed order entry table</p>
       </div>
 
       {loading ? (
-        <div style={styles.loading}>Loading price list...</div>
+        <div className="edo-card" style={{ padding: 40, textAlign: "center", color: "#475569" }}>Loading price list...</div>
       ) : (
         <>
-          {/* COMPACT CATEGORY FILTER BAR FOR MOBILE */}
-          <div style={styles.filterBarContainer}>
-            <div style={styles.filterBar}>
+          {/* CATEGORY FILTER */}
+          <div style={{ marginBottom: 8, overflowX: "auto", paddingBottom: 4 }}>
+            <div style={{ display: "flex", gap: 6, whiteSpace: "nowrap" }}>
               <button
                 onClick={() => setSelectedCategory("All")}
+                className="edo-filter-btn"
                 style={{
-                  ...styles.filterBtn,
-                  ...(selectedCategory === "All" ? styles.filterBtnActive : {}),
+                  background: selectedCategory === "All" ? "#2563eb" : "#fff",
+                  color: selectedCategory === "All" ? "#fff" : "#334155",
+                  borderColor: selectedCategory === "All" ? "#2563eb" : "#cbd5e1",
                 }}
               >
                 <span>🌐</span> All
               </button>
-
               {Object.keys(CATEGORY_CONFIG).map((cat) => {
                 const conf = CATEGORY_CONFIG[cat];
-                const isActive = selectedCategory.toLowerCase() === cat.toLowerCase();
+                const active = selectedCategory.toLowerCase() === cat.toLowerCase();
                 return (
                   <button
                     key={cat}
                     onClick={() => setSelectedCategory(cat)}
+                    className="edo-filter-btn"
                     style={{
-                      ...styles.filterBtn,
-                      background: isActive ? "#2563eb" : conf.bg,
-                      color: isActive ? "#ffffff" : "#334155",
-                      borderColor: isActive ? "#2563eb" : "#cbd5e1",
+                      background: active ? "#2563eb" : conf.bg,
+                      color: active ? "#fff" : "#334155",
+                      borderColor: active ? "#2563eb" : "#cbd5e1",
                     }}
                   >
                     <span>{conf.icon}</span> {conf.label}
@@ -593,140 +393,94 @@ export default function EasyDOFormat1() {
             </div>
           </div>
 
-          {/* ITEM LIST TABLE CONTAINER */}
-          <div style={styles.tableCard}>
-            <div style={styles.tableWrapper}>
-              <table style={styles.table}>
+          {/* ITEM LIST TABLE */}
+          <div className="edo-card" style={{ padding: 0, overflow: "hidden" }}>
+            <div style={{ overflowX: "auto" }}>
+              <table className="edo-table">
                 <thead>
-                  <tr style={styles.theadRow}>
-                    <th style={{ ...styles.th, ...styles.stickyCol1, left: 0, zIndex: 12 }}>
-                      Select
-                    </th>
-                    <th style={styles.th}>Item Name</th>
-                    <th style={styles.th}>Bag Amount</th>
-                    <th style={styles.th}>TP / Bag</th>
-                    <th style={styles.th}>Transport</th>
-                    <th style={styles.th}>Total Price</th>
+                  <tr>
+                    <th className="edo-th edo-sticky" style={{ zIndex: 12 }}>Select</th>
+                    <th className="edo-th">Item Name</th>
+                    <th className="edo-th">Bag Amount</th>
+                    <th className="edo-th">Total kg</th>
+                    <th className="edo-th">TP / Bag</th>
+                    <th className="edo-th">Total Price</th>
                   </tr>
                 </thead>
                 <tbody>
                   {(() => {
-                    let lastCategory = "";
-                    return displayedPriceList.map((item, index) => {
-                      const showCategoryHeader = selectedCategory === "All" && item.category !== lastCategory;
-                      lastCategory = item.category;
+                    let lastCat = "";
+                    return displayedPriceList.map((item, idx) => {
+                      const showHeader = selectedCategory === "All" && item.category !== lastCat;
+                      lastCat = item.category;
 
                       const bags = bagQuantities[item.id] ?? "";
-                      const isSelected = selectedItemIds.includes(item.id) || Number(bags) > 0;
+                      const numBags = Number(bags) || 0;
+                      const isSel = selectedItemIds.includes(item.id) || numBags > 0;
                       const rate = getTransportRate(item.category);
-                      const transportPerBag = Number(item.kg_per_bag) * rate;
-                      const itemWeight = Number(item.kg_per_bag) * (Number(bags) || 0);
-                      const tpTotal = Number(item.tp_per_bag) * (Number(bags) || 0);
-                      const transportTotal = itemWeight * rate;
-                      const rowTotal = transportMode === "with" ? tpTotal : tpTotal - transportTotal;
-
-                      const rowBg = getRowBgColor(item.category, isSelected);
+                      const weight = Number(item.kg_per_bag) * numBags;
+                      const tpTotal = Number(item.tp_per_bag) * numBags;
+                      const transTotal = weight * rate;
+                      const rowTotal = transportMode === "with" ? tpTotal : tpTotal - transTotal;
+                      const rowBg = isSel ? "#dbeafe" : CATEGORY_CONFIG[item.category]?.bg || "#fff";
 
                       return (
                         <>
-                          {showCategoryHeader && (
-                            <tr key={`cat-header-${item.category}-${index}`}>
-                              <td colSpan={6} style={styles.categoryHeaderCell}>
+                          {showHeader && (
+                            <tr key={`cat-${item.category}-${idx}`}>
+                              <td colSpan={6} style={{ padding: "2px 12px", background: "#e2e8f0", fontWeight: 800, color: "#1e293b", fontSize: 12 }}>
                                 {item.category}
                               </td>
                             </tr>
                           )}
-                          <tr
-                            key={item.id}
-                            style={{
-                              ...styles.tr,
-                              background: rowBg,
-                              ...(isSelected ? styles.trActive : {}),
-                            }}
-                          >
-                            {/* STICKY TICK MARK */}
-                            <td
-                              style={{
-                                ...styles.td,
-                                ...styles.stickyCol1,
-                                left: 0,
-                                background: rowBg,
-                              }}
-                            >
+                          <tr key={item.id} style={{ background: rowBg, boxShadow: isSel ? "inset 3px 0 0 #2563eb" : undefined }}>
+                            <td className="edo-td edo-sticky" style={{ background: rowBg }}>
                               <input
                                 type="checkbox"
-                                checked={isSelected}
+                                checked={isSel}
                                 onChange={() => toggleItemSelect(item.id)}
-                                style={styles.checkbox}
+                                style={{ width: 18, height: 18, cursor: "pointer", accentColor: "#2563eb" }}
                               />
                             </td>
-
-                            {/* ITEM NAME */}
-                            <td
-                              style={{
-                                ...styles.td,
-                                background: rowBg,
-                              }}
-                            >
-                              <div
-                                style={{
-                                  ...styles.itemNameText,
-                                  ...(isSelected ? styles.itemNameActive : {}),
-                                }}
-                              >
-                                {item.item_name}
-                              </div>
-                              <div style={styles.itemCategorySub}>
-                                {item.category} • {item.kg_per_bag}kg
-                              </div>
+                            <td className="edo-td" style={{ background: rowBg }}>
+                              <div style={{ fontWeight: isSel ? 700 : 600, color: isSel ? "#1d4ed8" : "#1e293b", fontSize: 13 }}>{item.item_name}</div>
+                              <div style={{ fontSize: 10, color: "#64748b", marginTop: 2 }}>{item.category} • {item.kg_per_bag}kg</div>
                             </td>
-
-                            {/* BAG INPUT */}
-                            <td style={styles.td}>
+                            <td className="edo-td">
                               <input
                                 type="number"
                                 min="0"
                                 step="1"
                                 value={bags === 0 ? "" : bags}
-                                onChange={(e) =>
-                                  handleBagChange(
-                                    item.id,
-                                    e.target.value === "" ? 0 : Number(e.target.value)
-                                  )
-                                }
+                                onChange={(e) => handleBagChange(item.id, e.target.value === "" ? 0 : Number(e.target.value))}
                                 placeholder="0"
-                                style={{
-                                  ...styles.bagInput,
-                                  ...(isSelected ? styles.bagInputActive : {}),
-                                }}
+                                className="edo-bag-input"
+                                style={isSel ? { borderColor: "#2563eb", color: "#1d4ed8" } : undefined}
                               />
                             </td>
-
-                            {/* TP PRICE */}
-                            <td style={styles.td}>
-                              <div style={styles.cellMainText}>৳ {money(Number(item.tp_per_bag))}</div>
+                            <td className="edo-td" style={{ fontWeight: isSel ? 700 : 600, color: isSel ? "#1d4ed8" : "#334155", whiteSpace: "nowrap" }}>
+                              {numBags > 0 ? `${weight.toLocaleString("en-BD", { maximumFractionDigits: 2 })} kg` : "—"}
                             </td>
-
-                            {/* TRANSPORT */}
-                            <td style={styles.td}>
-                              <div style={styles.cellMainText}>
-                                {selectedTransport ? `৳ ${transportPerBag.toFixed(2)}` : "—"}
-                              </div>
-                              {selectedTransport && (
-                                <div style={styles.cellSubText}>৳ {rate.toFixed(2)}/kg</div>
+                            <td className="edo-td" style={{ fontWeight: 600, color: "#334155", whiteSpace: "nowrap" }}>
+                              ৳ {money(Number(item.tp_per_bag))}
+                            </td>
+                            <td className="edo-td" style={{ whiteSpace: "nowrap" }}>
+                              {numBags > 0 ? (
+                                <div>
+                                  <div style={{ fontWeight: isSel ? 800 : 700, color: isSel ? "#1d4ed8" : "#0f172a", fontSize: 13 }}>৳ {money(rowTotal)}</div>
+                                  {transportMode === "without" ? (
+                                    selectedTransport ? (
+                                      <div style={{ fontSize: 10, fontWeight: 700, color: "#dc2626", marginTop: 2 }}>- ৳ {money(transTotal)} Transport</div>
+                                    ) : (
+                                      <div style={{ fontSize: 10, fontWeight: 500, color: "#d97706", marginTop: 2 }}>Select area for transport</div>
+                                    )
+                                  ) : (
+                                    <div style={{ fontSize: 10, fontWeight: 600, color: "#059669", marginTop: 2 }}>With Transport</div>
+                                  )}
+                                </div>
+                              ) : (
+                                <strong>—</strong>
                               )}
-                            </td>
-
-                            {/* ROW TOTAL */}
-                            <td style={styles.td}>
-                              <div
-                                style={{
-                                  ...styles.rowTotalText,
-                                  ...(isSelected ? styles.rowTotalActive : {}),
-                                }}
-                              >
-                                {Number(bags) > 0 ? `৳ ${money(rowTotal)}` : "—"}
-                              </div>
                             </td>
                           </tr>
                         </>
@@ -738,264 +492,151 @@ export default function EasyDOFormat1() {
             </div>
           </div>
 
-          {/* TRANSPORTATION SECTION */}
-          <div style={styles.transportCard}>
-            <div style={styles.sectionTitle}>Transportation</div>
-
-            <div style={styles.transportGrid}>
+          {/* TRANSPORTATION */}
+          <div className="edo-card">
+            <div style={{ fontSize: 16, fontWeight: 750, color: "#0f172a" }}>Transportation</div>
+            <div className="edo-grid2" style={{ marginTop: 10 }}>
               <div>
-                <label style={styles.formLabel}>From</label>
-                <select
-                  value={fromLocation}
-                  onChange={(e) => {
-                    setFromLocation(e.target.value);
-                    setUpazila("");
-                  }}
-                  style={styles.select}
-                >
+                <label className="edo-label">From</label>
+                <select value={fromLocation} onChange={(e) => { setFromLocation(e.target.value); setUpazila(""); }} className="edo-input">
                   <option value="">Select From</option>
-                  {fromLocations.map((loc) => (
-                    <option key={loc} value={loc}>
-                      {loc}
-                    </option>
-                  ))}
+                  {fromLocations.map((loc) => <option key={loc} value={loc}>{loc}</option>)}
                 </select>
               </div>
-
               <div>
-                <label style={styles.formLabel}>To / Upazila</label>
-                <select
-                  value={upazila}
-                  onChange={(e) => setUpazila(e.target.value)}
-                  style={styles.select}
-                  disabled={!fromLocation}
-                >
+                <label className="edo-label">To / Upazila</label>
+                <select value={upazila} onChange={(e) => setUpazila(e.target.value)} className="edo-input" disabled={!fromLocation}>
                   <option value="">Select Upazila</option>
-                  {upazilas.map((name) => (
-                    <option key={name} value={name}>
-                      {name}
-                    </option>
-                  ))}
+                  {upazilas.map((name) => <option key={name} value={name}>{name}</option>)}
                 </select>
               </div>
             </div>
 
-            {/* RATE DISPLAY */}
-            <div style={styles.rateBox}>
-              <div style={styles.rateTitle}>Transportation Rate</div>
+            <div className="edo-sec">
+              <div style={{ fontSize: 12, fontWeight: 750, color: "#0f172a" }}>Transportation Rate</div>
               {selectedTransport ? (
                 <>
-                  <div style={styles.rateLine}>
-                    Floating / Cattle: <strong>৳{Number(selectedTransport.floating_cattle_rate_per_kg).toFixed(2)}/kg</strong>
-                  </div>
-                  <div style={styles.rateLine}>
-                    Sinking / Broiler / Layer / Sonali: <strong>৳{Number(selectedTransport.sinking_broiler_layer_sonali_rate_per_kg).toFixed(2)}/kg</strong>
-                  </div>
+                  <div style={{ fontSize: 11, color: "#475569", marginTop: 3 }}>Floating / Cattle: <strong>৳{Number(selectedTransport.floating_cattle_rate_per_kg).toFixed(2)}/kg</strong></div>
+                  <div style={{ fontSize: 11, color: "#475569", marginTop: 3 }}>Sinking / Broiler / Layer / Sonali: <strong>৳{Number(selectedTransport.sinking_broiler_layer_sonali_rate_per_kg).toFixed(2)}/kg</strong></div>
                 </>
               ) : (
-                <div style={styles.noRate}>Select From and Upazila to see rate.</div>
+                <div style={{ fontSize: 11, color: "#94a3b8" }}>Select From and Upazila to see rate.</div>
               )}
             </div>
 
-            {/* MODE SWITCH */}
-            <div style={styles.modeSection}>
-              <div style={styles.formLabel}>Price Type</div>
-              <div style={styles.modeGrid}>
-                <button
-                  onClick={() => setTransportMode("with")}
-                  style={{
-                    ...styles.modeButton,
-                    ...(transportMode === "with" ? styles.modeActive : {}),
-                  }}
-                >
-                  <span
-                    style={{
-                      ...styles.radio,
-                      ...(transportMode === "with" ? styles.radioActive : {}),
-                    }}
-                  >
-                    {transportMode === "with" ? "✓" : ""}
-                  </span>
-                  <div>
-                    <div style={styles.modeTitle}>With Transportation</div>
-                    <div style={styles.modeHint}>TP price as it is</div>
-                  </div>
-                </button>
-
-                <button
-                  onClick={() => setTransportMode("without")}
-                  style={{
-                    ...styles.modeButton,
-                    ...(transportMode === "without" ? styles.modeActive : {}),
-                  }}
-                >
-                  <span
-                    style={{
-                      ...styles.radio,
-                      ...(transportMode === "without" ? styles.radioActive : {}),
-                    }}
-                  >
-                    {transportMode === "without" ? "✓" : ""}
-                  </span>
-                  <div>
-                    <div style={styles.modeTitle}>Without Transportation</div>
-                    <div style={styles.modeHint}>Transport cost deducted</div>
-                  </div>
-                </button>
+            <div style={{ marginTop: 12 }}>
+              <label className="edo-label">Price Type</label>
+              <div className="edo-grid2">
+                {(["with", "without"] as const).map((mode) => {
+                  const active = transportMode === mode;
+                  return (
+                    <button
+                      key={mode}
+                      onClick={() => setTransportMode(mode)}
+                      className="edo-mode-btn"
+                      style={active ? { border: "2px solid #2563eb", background: "#eff6ff" } : undefined}
+                    >
+                      <span style={{ width: 20, height: 20, borderRadius: "50%", border: "1px solid #cbd5e1", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, fontWeight: 800, ...(active ? { background: "#2563eb", color: "#fff", borderColor: "#2563eb" } : {}) }}>
+                        {active ? "✓" : ""}
+                      </span>
+                      <div>
+                        <div style={{ fontSize: 11, fontWeight: 750, color: "#0f172a" }}>{mode === "with" ? "With Transportation" : "Without Transportation"}</div>
+                        <div style={{ fontSize: 9, color: "#64748b" }}>{mode === "with" ? "TP price as it is" : "Transport cost deducted"}</div>
+                      </div>
+                    </button>
+                  );
+                })}
               </div>
             </div>
           </div>
 
           {/* SUMMARY */}
-          <div style={styles.summaryCard}>
-            <div style={styles.summaryRow}>
+          <div className="edo-card" style={{ background: "#0f172a", color: "#fff", padding: 16 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", padding: "4px 0", fontSize: 12, color: "#cbd5e1" }}>
               <span>Total Weight</span>
               <strong>{totalWeight.toLocaleString("en-BD", { maximumFractionDigits: 2 })} kg</strong>
             </div>
-
-            <div style={styles.summaryRow}>
+            <div style={{ display: "flex", justifyContent: "space-between", padding: "4px 0", fontSize: 12, color: "#cbd5e1" }}>
               <span>Feed Price</span>
               <strong>৳ {money(feedPrice)}</strong>
             </div>
-
-            <div style={styles.summaryRow}>
+            <div style={{ display: "flex", justifyContent: "space-between", padding: "4px 0", fontSize: 12, color: "#cbd5e1" }}>
               <span>Transportation</span>
-              <strong>
-                {transportMode === "with"
-                  ? "Included in TP"
-                  : selectedTransport
-                  ? `- ৳ ${money(totalTransportAmount)}`
-                  : "—"}
-              </strong>
+              <strong>{transportMode === "with" ? "Included in TP" : selectedTransport ? `- ৳ ${money(totalTransportAmount)}` : "—"}</strong>
             </div>
-
-            <div style={styles.divider} />
-
-            <div style={styles.grandTotalRow}>
+            <div style={{ height: 1, background: "#334155", margin: "8px 0" }} />
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
               <div>
-                <div style={styles.grandTotalLabel}>Grand Total</div>
-                <div style={styles.grandTotalHint}>
-                  {transportMode === "with"
-                    ? "TP includes transportation"
-                    : "Transportation deducted from TP"}
-                </div>
+                <div style={{ fontSize: 15, fontWeight: 800 }}>Grand Total</div>
+                <div style={{ fontSize: 9, color: "#94a3b8" }}>{transportMode === "with" ? "TP includes transportation" : "Transportation deducted from TP"}</div>
               </div>
-              <div style={styles.grandTotalValue}>৳ {money(totalAmount)}</div>
+              <div style={{ fontSize: 20, fontWeight: 850, color: "#38bdf8" }}>৳ {money(totalAmount)}</div>
             </div>
-
-            <div style={{ display: "flex", justifyContent: "center", alignItems: "center" }}>
-              <button style={styles.generateMessageBtn} onClick={openDOInformation}>
-                📝 Generate DO Message
-              </button>
-            </div>
+            <button className="edo-btn-main" onClick={openDOInformation}>
+              📝 Generate DO Message / 💾 Save
+            </button>
           </div>
 
           {/* DO INFORMATION SECTION */}
           {showDOInformation && (
-            <div id="do-information-section" style={styles.doInformationCard}>
-              <div style={styles.doInformationHeader}>
+            <div id="do-information-section" className="edo-card">
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 12 }}>
                 <div>
-                  <div style={styles.doInformationTitle}>DO Information</div>
-                  <div style={styles.doInformationSubtitle}>
-                    Enter optional information. Message will update automatically.
-                  </div>
+                  <div style={{ fontSize: 17, fontWeight: 800, color: "#0f172a" }}>DO Information</div>
+                  <div style={{ fontSize: 10, color: "#64748b" }}>Enter optional information. Message will update automatically.</div>
                 </div>
-                <button
-                  style={styles.closeDOInformationButton}
-                  onClick={() => setShowDOInformation(false)}
-                >
+                <button onClick={() => setShowDOInformation(false)} style={{ width: 30, height: 30, border: "none", borderRadius: "50%", background: "#f1f5f9", color: "#475569", fontSize: 18, cursor: "pointer" }}>
                   ×
                 </button>
               </div>
 
-              {/* AGENT */}
-              <div style={styles.formSection}>
-                <div style={styles.formSectionTitle}>Agent Information</div>
-                <div style={styles.formGrid}>
+              <div className="edo-sec">
+                <div style={{ fontSize: 12, fontWeight: 800, color: "#334155", marginBottom: 8 }}>Agent Information</div>
+                <div className="edo-grid2">
                   <div>
-                    <label style={styles.formLabel}>Agent Code</label>
-                    <input
-                      value={agentCode}
-                      onChange={(e) => setAgentCode(e.target.value)}
-                      placeholder="Optional"
-                      style={styles.input}
-                    />
+                    <label className="edo-label">Agent Code</label>
+                    <input value={agentCode} onChange={(e) => setAgentCode(e.target.value)} placeholder="Optional" className="edo-input" />
                   </div>
                   <div>
-                    <label style={styles.formLabel}>Agent Name</label>
-                    <input
-                      value={agentName}
-                      onChange={(e) => setAgentName(e.target.value)}
-                      placeholder="Optional"
-                      style={styles.input}
-                    />
+                    <label className="edo-label">Agent Name</label>
+                    <input value={agentName} onChange={(e) => setAgentName(e.target.value)} placeholder="Optional" className="edo-input" />
                   </div>
                 </div>
               </div>
 
-              {/* BANK DETAILS */}
-              <div style={styles.formSection}>
-                <div style={styles.bankHeader}>
-                  <div style={styles.formSectionTitle}>Bank Details</div>
-                  <button style={styles.addBankButton} onClick={addBank}>
+              <div className="edo-sec">
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                  <div style={{ fontSize: 12, fontWeight: 800, color: "#334155" }}>Bank Details</div>
+                  <button onClick={addBank} style={{ border: "none", background: "#2563eb", color: "#fff", borderRadius: 6, padding: "6px 8px", fontSize: 10, fontWeight: 700, cursor: "pointer" }}>
                     + Add Bank
                   </button>
                 </div>
-
-                {banks.map((bank, index) => (
-                  <div key={bank.id} style={styles.bankCard}>
-                    <div style={styles.bankNumber}>Bank {index + 1}</div>
-                    <div style={styles.formGrid}>
+                {banks.map((bank, idx) => (
+                  <div key={bank.id} style={{ marginTop: 8, background: "#fff", border: "1px solid #e2e8f0", borderRadius: 8, padding: 8 }}>
+                    <div style={{ fontSize: 10, color: "#64748b", fontWeight: 700, marginBottom: 6 }}>Bank {idx + 1}</div>
+                    <div className="edo-grid2" style={{ marginBottom: 8 }}>
                       <div>
-                        <label style={styles.formLabel}>Bank Name</label>
-                        <input
-                          value={bank.bankName}
-                          onChange={(e) => updateBank(bank.id, "bankName", e.target.value)}
-                          placeholder="Optional"
-                          style={styles.input}
-                        />
+                        <label className="edo-label">Bank Name</label>
+                        <input value={bank.bankName} onChange={(e) => updateBank(bank.id, "bankName", e.target.value)} placeholder="Optional" className="edo-input" />
                       </div>
                       <div>
-                        <label style={styles.formLabel}>Branch</label>
-                        <input
-                          value={bank.branch}
-                          onChange={(e) => updateBank(bank.id, "branch", e.target.value)}
-                          placeholder="Optional"
-                          style={styles.input}
-                        />
+                        <label className="edo-label">Branch</label>
+                        <input value={bank.branch} onChange={(e) => updateBank(bank.id, "branch", e.target.value)} placeholder="Optional" className="edo-input" />
                       </div>
                     </div>
-
-                    <div style={styles.formGrid}>
+                    <div className="edo-grid2">
                       <div>
-                        <label style={styles.formLabel}>Date</label>
-                        <input
-                          type="date"
-                          value={bank.date}
-                          onChange={(e) => updateBank(bank.id, "date", e.target.value)}
-                          style={styles.input}
-                        />
+                        <label className="edo-label">Date</label>
+                        <input type="date" value={bank.date} onChange={(e) => updateBank(bank.id, "date", e.target.value)} className="edo-input" />
                       </div>
                       <div>
-                        <label style={styles.formLabel}>Amount Tk</label>
-                        <input
-                          type="number"
-                          min="0"
-                          step="0.01"
-                          value={bank.amount}
-                          onChange={(e) => updateBank(bank.id, "amount", e.target.value)}
-                          placeholder="Optional"
-                          style={styles.input}
-                        />
+                        <label className="edo-label">Amount Tk</label>
+                        <input type="number" min="0" step="0.01" value={bank.amount} onChange={(e) => updateBank(bank.id, "amount", e.target.value)} placeholder="Optional" className="edo-input" />
                       </div>
                     </div>
-
                     {banks.length > 1 && (
-                      <div style={{ marginTop: 9, textAlign: "right" }}>
-                        <button
-                          style={styles.removeBankButton}
-                          onClick={() => removeBank(bank.id)}
-                        >
+                      <div style={{ marginTop: 8, textAlign: "right" }}>
+                        <button onClick={() => removeBank(bank.id)} style={{ border: "none", background: "#fef2f2", color: "#dc2626", borderRadius: 6, padding: 6, fontSize: 10, fontWeight: 700, cursor: "pointer" }}>
                           Remove
                         </button>
                       </div>
@@ -1004,38 +645,22 @@ export default function EasyDOFormat1() {
                 ))}
               </div>
 
-              {/* VEHICLE */}
-              <div style={styles.formSection}>
-                <label style={styles.formLabel}>Vehicle No</label>
-                <input
-                  value={vehicleNo}
-                  onChange={(e) => setVehicleNo(e.target.value)}
-                  placeholder="Optional"
-                  style={styles.input}
-                />
+              <div className="edo-sec">
+                <label className="edo-label">Vehicle No</label>
+                <input value={vehicleNo} onChange={(e) => setVehicleNo(e.target.value)} placeholder="Optional" className="edo-input" />
               </div>
 
-              {/* GENERATED MESSAGE */}
-              <div style={styles.generatedSection}>
-                <div style={styles.generatedHeader}>
-                  <div style={styles.formSectionTitle}>Generated Message</div>
-                  <button style={styles.copyButton} onClick={copyMessage}>
+              <div className="edo-sec" style={{ borderColor: "#cbd5e1" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+                  <div style={{ fontSize: 12, fontWeight: 800, color: "#334155" }}>Generated Message</div>
+                  <button onClick={copyMessage} style={{ border: "none", background: "#0f172a", color: "#fff", borderRadius: 6, padding: "6px 8px", fontSize: 10, fontWeight: 700, cursor: "pointer" }}>
                     📋 Copy
                   </button>
                 </div>
-                <textarea
-                  value={generatedMessage}
-                  onChange={(e) => setGeneratedMessage(e.target.value)}
-                  style={styles.messageTextarea}
-                />
+                <textarea value={generatedMessage} onChange={(e) => setGeneratedMessage(e.target.value)} className="edo-input" style={{ minHeight: 220, lineHeight: 1.5, fontFamily: "Arial, sans-serif" }} />
               </div>
 
-              {/* SAVE BUTTON */}
-              <button
-                style={{ ...styles.generateModalButton, marginTop: 12 }}
-                onClick={saveDO}
-                disabled={saving}
-              >
+              <button onClick={saveDO} disabled={saving} style={{ width: "100%", marginTop: 12, border: "none", background: "#2563eb", color: "#fff", borderRadius: 8, padding: 12, fontSize: 13, fontWeight: 800, cursor: "pointer" }}>
                 {saving ? "Saving..." : "💾 Save this DO"}
               </button>
             </div>
@@ -1045,503 +670,3 @@ export default function EasyDOFormat1() {
     </div>
   );
 }
-
-/* =====================================================
-   STYLES
-===================================================== */
-
-const styles: Record<string, React.CSSProperties> = {
-  page: {
-    minHeight: "100vh",
-    background: "#f8fafc",
-    padding: 12,
-    color: "#111827",
-    boxSizing: "border-box",
-  },
-  header: {
-    marginBottom: 12,
-    textAlign: "center",
-  },
-  title: {
-    margin: 0,
-    fontSize: 18,
-    fontWeight: 800,
-    textAlign: "center",
-    fontFamily: "'Outfit', 'Poppins', -apple-system, BlinkMacSystemFont, sans-serif",
-    letterSpacing: "-0.01em",
-    lineHeight: 1.2,
-    color: "#0f172a",
-  },
-  subtitle: {
-    margin: "3px 0 0",
-    fontSize: 12,
-    color: "#64748b",
-    textAlign: "center",
-  },
-  filterBarContainer: {
-    marginBottom: 8,
-    overflowX: "auto",
-    WebkitOverflowScrolling: "touch",
-    paddingBottom: 4,
-  },
-  filterBar: {
-    display: "flex",
-    gap: 6,
-    whiteSpace: "nowrap",
-  },
-  filterBtn: {
-    padding: "6px 10px",
-    borderRadius: 20,
-    border: "1px solid #cbd5e1",
-    background: "#ffffff",
-    color: "#334155",
-    fontSize: 11,
-    fontWeight: 600,
-    cursor: "pointer",
-    display: "flex",
-    alignItems: "center",
-    gap: 4,
-    flexShrink: 0,
-    transition: "all 0.15s ease",
-  },
-  filterBtnActive: {
-    background: "#2563eb",
-    color: "#ffffff",
-    borderColor: "#2563eb",
-  },
-  tableCard: {
-    background: "#ffffff",
-    border: "1px solid #e2e8f0",
-    borderRadius: 12,
-    boxShadow: "0 2px 8px rgba(0,0,0,0.04)",
-    overflow: "hidden",
-    marginBottom: 12,
-  },
-  tableWrapper: {
-    overflowX: "auto",
-    WebkitOverflowScrolling: "touch",
-  },
-  table: {
-    width: "100%",
-    borderCollapse: "collapse",
-    minWidth: 540,
-    fontSize: 12,
-  },
-  theadRow: {
-    background: "#f1f5f9",
-    borderBottom: "1px solid #cbd5e1",
-  },
-  th: {
-    padding: "10px 10px",
-    textAlign: "left",
-    fontWeight: 700,
-    color: "#334155",
-    whiteSpace: "nowrap",
-  },
-  categoryHeaderCell: {
-    padding: "2px 12px",
-    background: "#e2e8f0",
-    fontWeight: 800,
-    color: "#1e293b",
-    fontSize: 12,
-    letterSpacing: "0.02em",
-    textAlign: "left",
-  },
-  tr: {
-    borderBottom: "1px solid #e2e8f0",
-    transition: "all 0.15s ease",
-  },
-  trActive: {
-    boxShadow: "inset 3px 0 0 #2563eb",
-  },
-  td: {
-    padding: "10px 8px",
-    verticalAlign: "middle",
-    textAlign: "left",
-  },
-  stickyCol1: {
-    position: "sticky",
-    width: 42,
-    minWidth: 42,
-    textAlign: "center",
-    zIndex: 2,
-    boxShadow: "2px 0 5px rgba(0,0,0,0.05)",
-    background: "#f1f5f9",
-  },
-  checkbox: {
-    width: 18,
-    height: 18,
-    cursor: "pointer",
-    accentColor: "#2563eb",
-  },
-  itemNameText: {
-    fontWeight: 600,
-    color: "#1e293b",
-    fontSize: 13,
-    lineHeight: 1.2,
-    cursor: "default",
-    textAlign: "left",
-  },
-  itemNameActive: {
-    fontWeight: 700,
-    color: "#1d4ed8",
-  },
-  itemCategorySub: {
-    fontSize: 10,
-    color: "#64748b",
-    marginTop: 2,
-    textAlign: "left",
-  },
-  bagInput: {
-    width: 65,
-    padding: "6px 4px",
-    border: "1px solid #cbd5e1",
-    borderRadius: 6,
-    textAlign: "center",
-    fontSize: 13,
-    fontWeight: 700,
-    outline: "none",
-    background: "#ffffff",
-    color: "#0f172a",
-  },
-  bagInputActive: {
-    borderColor: "#2563eb",
-    color: "#1d4ed8",
-    background: "#ffffff",
-  },
-  cellMainText: {
-    fontWeight: 600,
-    color: "#334155",
-    fontSize: 12,
-    textAlign: "left",
-  },
-  cellSubText: {
-    fontSize: 10,
-    color: "#64748b",
-    textAlign: "left",
-  },
-  rowTotalText: {
-    fontWeight: 700,
-    color: "#0f172a",
-    fontSize: 13,
-    textAlign: "left",
-  },
-  rowTotalActive: {
-    color: "#1d4ed8",
-    fontWeight: 800,
-  },
-  transportCard: {
-    background: "#ffffff",
-    border: "1px solid #e2e8f0",
-    borderRadius: 12,
-    padding: 14,
-    marginBottom: 12,
-    textAlign: "left",
-  },
-  sectionTitle: {
-    fontSize: 16,
-    fontWeight: 750,
-    color: "#0f172a",
-    textAlign: "left",
-  },
-  transportGrid: {
-    display: "grid",
-    gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
-    gap: 10,
-    marginTop: 10,
-  },
-  formLabel: {
-    display: "block",
-    fontSize: 11,
-    fontWeight: 650,
-    color: "#334155",
-    marginBottom: 4,
-    textAlign: "left",
-  },
-  select: {
-    width: "100%",
-    border: "1px solid #cbd5e1",
-    borderRadius: 8,
-    padding: "8px",
-    fontSize: 12,
-    background: "#ffffff",
-    color: "#0f172a",
-  },
-  rateBox: {
-    marginTop: 10,
-    padding: 10,
-    background: "#f8fafc",
-    border: "1px solid #e2e8f0",
-    borderRadius: 8,
-    textAlign: "left",
-  },
-  rateTitle: {
-    fontSize: 12,
-    fontWeight: 750,
-    color: "#0f172a",
-  },
-  rateLine: {
-    fontSize: 11,
-    color: "#475569",
-    marginTop: 3,
-  },
-  noRate: {
-    fontSize: 11,
-    color: "#94a3b8",
-  },
-  modeSection: {
-    marginTop: 12,
-    textAlign: "left",
-  },
-  modeGrid: {
-    display: "grid",
-    gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
-    gap: 8,
-  },
-  modeButton: {
-    border: "1px solid #cbd5e1",
-    background: "#ffffff",
-    borderRadius: 8,
-    padding: 10,
-    cursor: "pointer",
-    display: "flex",
-    alignItems: "center",
-    gap: 8,
-    textAlign: "left",
-  },
-  modeActive: {
-    border: "2px solid #2563eb",
-    background: "#eff6ff",
-  },
-  radio: {
-    width: 20,
-    height: 20,
-    borderRadius: "50%",
-    border: "1px solid #cbd5e1",
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    fontSize: 11,
-    fontWeight: 800,
-  },
-  radioActive: {
-    background: "#2563eb",
-    color: "#ffffff",
-    borderColor: "#2563eb",
-  },
-  modeTitle: {
-    fontSize: 11,
-    fontWeight: 750,
-    color: "#0f172a",
-  },
-  modeHint: {
-    fontSize: 9,
-    color: "#64748b",
-  },
-  summaryCard: {
-    background: "#0f172a",
-    color: "#ffffff",
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 12,
-    textAlign: "left",
-  },
-  summaryRow: {
-    display: "flex",
-    justifyContent: "space-between",
-    padding: "4px 0",
-    fontSize: 12,
-    color: "#cbd5e1",
-  },
-  divider: {
-    height: 1,
-    background: "#334155",
-    margin: "8px 0",
-  },
-  grandTotalRow: {
-    display: "flex",
-    justifyContent: "space-between",
-    alignItems: "center",
-  },
-  grandTotalLabel: {
-    fontSize: 15,
-    fontWeight: 800,
-  },
-  grandTotalHint: {
-    fontSize: 9,
-    color: "#94a3b8",
-  },
-  grandTotalValue: {
-    fontSize: 20,
-    fontWeight: 850,
-    color: "#38bdf8",
-  },
-  generateMessageBtn: {
-    display: "block",
-    margin: "16px auto 0",
-    width: "min(100%, 360px)",
-    padding: "14px 20px",
-    border: "none",
-    borderRadius: "12px",
-    background: "#2563eb",
-    color: "#ffffff",
-    fontSize: 15,
-    fontWeight: 800,
-    cursor: "pointer",
-    boxShadow: "0 4px 12px rgba(37, 99, 235, 0.3)",
-  },
-  doInformationCard: {
-    background: "#ffffff",
-    border: "1px solid #e2e8f0",
-    borderRadius: 12,
-    padding: 14,
-    boxShadow: "0 4px 12px rgba(0,0,0,0.05)",
-    textAlign: "left",
-  },
-  doInformationHeader: {
-    display: "flex",
-    justifyContent: "space-between",
-    alignItems: "flex-start",
-    marginBottom: 12,
-  },
-  doInformationTitle: {
-    fontSize: 17,
-    fontWeight: 800,
-    color: "#0f172a",
-  },
-  doInformationSubtitle: {
-    fontSize: 10,
-    color: "#64748b",
-  },
-  closeDOInformationButton: {
-    width: 30,
-    height: 30,
-    border: "none",
-    borderRadius: "50%",
-    background: "#f1f5f9",
-    color: "#475569",
-    fontSize: 18,
-    cursor: "pointer",
-  },
-  formSection: {
-    marginTop: 10,
-    padding: 10,
-    border: "1px solid #e2e8f0",
-    borderRadius: 8,
-    background: "#f8fafc",
-    textAlign: "left",
-  },
-  formSectionTitle: {
-    fontSize: 12,
-    fontWeight: 800,
-    color: "#334155",
-  },
-  formGrid: {
-    display: "grid",
-    gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
-    gap: 8,
-    marginTop: 8,
-  },
-  input: {
-    width: "100%",
-    boxSizing: "border-box",
-    border: "1px solid #cbd5e1",
-    borderRadius: 6,
-    padding: 8,
-    fontSize: 12,
-    background: "#ffffff",
-    color: "#0f172a",
-  },
-  bankHeader: {
-    display: "flex",
-    justifyContent: "space-between",
-    alignItems: "center",
-  },
-  addBankButton: {
-    border: "none",
-    background: "#2563eb",
-    color: "#ffffff",
-    borderRadius: 6,
-    padding: "6px 8px",
-    fontSize: 10,
-    fontWeight: 700,
-    cursor: "pointer",
-  },
-  bankCard: {
-    marginTop: 8,
-    background: "#ffffff",
-    border: "1px solid #e2e8f0",
-    borderRadius: 8,
-    padding: 8,
-  },
-  bankNumber: {
-    fontSize: 10,
-    color: "#64748b",
-    fontWeight: 700,
-  },
-  removeBankButton: {
-    border: "none",
-    background: "#fef2f2",
-    color: "#dc2626",
-    borderRadius: 6,
-    padding: 6,
-    fontSize: 10,
-    fontWeight: 700,
-    cursor: "pointer",
-  },
-  generatedSection: {
-    marginTop: 10,
-    padding: 10,
-    border: "1px solid #cbd5e1",
-    borderRadius: 8,
-    background: "#f8fafc",
-    textAlign: "left",
-  },
-  generatedHeader: {
-    display: "flex",
-    justifyContent: "space-between",
-    alignItems: "center",
-    marginBottom: 6,
-  },
-  copyButton: {
-    border: "none",
-    background: "#0f172a",
-    color: "#ffffff",
-    borderRadius: 6,
-    padding: "6px 8px",
-    fontSize: 10,
-    fontWeight: 700,
-    cursor: "pointer",
-  },
-  messageTextarea: {
-    width: "100%",
-    minHeight: 220,
-    boxSizing: "border-box",
-    border: "1px solid #cbd5e1",
-    borderRadius: 6,
-    padding: 8,
-    fontSize: 12,
-    lineHeight: 1.5,
-    fontFamily: "Arial, sans-serif",
-    background: "#ffffff",
-    color: "#0f172a",
-  },
-  generateModalButton: {
-    width: "100%",
-    border: "none",
-    background: "#2563eb",
-    color: "#ffffff",
-    borderRadius: 8,
-    padding: 12,
-    fontSize: 13,
-    fontWeight: 800,
-    cursor: "pointer",
-  },
-  loading: {
-    background: "#ffffff",
-    borderRadius: 12,
-    padding: 40,
-    textAlign: "center",
-    color: "#475569",
-  },
-};
