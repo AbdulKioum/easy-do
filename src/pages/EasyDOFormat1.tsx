@@ -30,7 +30,7 @@ type BankInfo = {
   amount: string;
 };
 
-const EASY_DO_STORAGE_KEY = "easydo_format1_persistent_state_v2";
+const EASY_DO_STORAGE_KEY = "easydo_format1_persistent_state_v3";
 const PRICE_CACHE_KEY = "easydo_format1_price_cache_v1";
 const TRANSPORT_CACHE_KEY = "easydo_format1_transport_cache_v1";
 
@@ -62,6 +62,15 @@ const COMPACT_CSS = `
 
 function getSavedState() {
   try {
+    const navEntry = performance.getEntriesByType("navigation")[0] as PerformanceNavigationTiming | undefined;
+    const isReload = navEntry?.type === "reload";
+
+    // If it's a manual browser reload, clear saved state so it resets
+    if (isReload) {
+      localStorage.removeItem(EASY_DO_STORAGE_KEY);
+      return null;
+    }
+
     const raw = localStorage.getItem(EASY_DO_STORAGE_KEY);
     return raw ? JSON.parse(raw) : null;
   } catch {
@@ -121,7 +130,7 @@ export default function EasyDOFormat1() {
   useEffect(() => {
     function handleBeforeUnload(event: BeforeUnloadEvent) {
       event.preventDefault();
-      event.returnValue = "Apni ki page-ti reload korte chan? Apnar current hisab-niwash auto-save kora ache.";
+      event.returnValue = "Apni ki page-ti reload korte chan? Reload korle current hisab reset hoye jabe.";
       return event.returnValue;
     }
     window.addEventListener("beforeunload", handleBeforeUnload);
