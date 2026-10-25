@@ -30,7 +30,9 @@ type BankInfo = {
   amount: string;
 };
 
-const EASY_DO_STORAGE_KEY = "easydo_format1_current_state_v1";
+const EASY_DO_STORAGE_KEY = "easydo_format1_persistent_state_v2";
+const PRICE_CACHE_KEY = "easydo_format1_price_cache_v1";
+const TRANSPORT_CACHE_KEY = "easydo_format1_transport_cache_v1";
 
 const CATEGORY_CONFIG: Record<string, { label: string; icon: string; bg: string }> = {
   Broiler: { label: "Broiler", icon: "", bg: "#fef2f2" },
@@ -58,84 +60,95 @@ const COMPACT_CSS = `
   .edo-btn-main { display: block; margin: 16px auto 0; width: min(100%, 380px); padding: 14px 18px; border: none; border-radius: 12px; background: linear-gradient(135deg, #2563eb, #1d4ed8); color: #fff; font-size: 14px; font-weight: 800; cursor: pointer; box-shadow: 0 4px 12px rgba(37,99,235,0.35); }
 `;
 
+function getSavedState() {
+  try {
+    const raw = localStorage.getItem(EASY_DO_STORAGE_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+}
+
 export default function EasyDOFormat1() {
   const { user } = useAuth();
+  const initialSaved = useMemo(() => getSavedState(), []);
 
-  const [priceList, setPriceList] = useState<FeedPrice[]>([]);
-  const [transportList, setTransportList] = useState<Transport[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [priceList, setPriceList] = useState<FeedPrice[]>(() => {
+    try {
+      const cached = localStorage.getItem(PRICE_CACHE_KEY);
+      return cached ? JSON.parse(cached) : [];
+    } catch {
+      return [];
+    }
+  });
+
+  const [transportList, setTransportList] = useState<Transport[]>(() => {
+    try {
+      const cached = localStorage.getItem(TRANSPORT_CACHE_KEY);
+      return cached ? JSON.parse(cached) : [];
+    } catch {
+      return [];
+    }
+  });
+
+  const [loading, setLoading] = useState(() => priceList.length === 0);
   const [saving, setSaving] = useState(false);
 
-  const [selectedCategory, setSelectedCategory] = useState<string>("All");
-  const [bagQuantities, setBagQuantities] = useState<Record<number, number>>({});
-  const [selectedItemIds, setSelectedItemIds] = useState<number[]>([]);
+  const [selectedCategory, setSelectedCategory] = useState<string>(initialSaved?.selectedCategory || "All");
+  const [bagQuantities, setBagQuantities] = useState<Record<number, number>>(initialSaved?.bagQuantities || {});
+  const [selectedItemIds, setSelectedItemIds] = useState<number[]>(
+    Array.isArray(initialSaved?.selectedItemIds) ? initialSaved.selectedItemIds : []
+  );
 
-  const [fromLocation, setFromLocation] = useState("");
-  const [upazila, setUpazila] = useState("");
-  const [transportMode, setTransportMode] = useState<"with" | "without">("with");
+  const [fromLocation, setFromLocation] = useState<string>(initialSaved?.fromLocation || "");
+  const [upazila, setUpazila] = useState<string>(initialSaved?.upazila || "");
+  const [transportMode, setTransportMode] = useState<"with" | "without">(
+    initialSaved?.transportMode === "without" ? "without" : "with"
+  );
 
-  const [showDOInformation, setShowDOInformation] = useState(false);
-  const [agentCode, setAgentCode] = useState("");
-  const [agentName, setAgentName] = useState("");
-  const [vehicleNo, setVehicleNo] = useState("");
-  const [banks, setBanks] = useState<BankInfo[]>([
-    { id: Date.now(), bankName: "", branch: "", date: new Date().toISOString().split("T")[0], amount: "" },
-  ]);
-  const [generatedMessage, setGeneratedMessage] = useState("");
+  const [showDOInformation, setShowDOInformation] = useState<boolean>(Boolean(initialSaved?.showDOInformation));
+  const [agentCode, setAgentCode] = useState<string>(initialSaved?.agentCode || "");
+  const [agentName, setAgentName] = useState<string>(initialSaved?.agentName || "");
+  const [vehicleNo, setVehicleNo] = useState<string>(initialSaved?.vehicleNo || "");
+  const [banks, setBanks] = useState<BankInfo[]>(() =>
+    Array.isArray(initialSaved?.banks) && initialSaved.banks.length > 0
+      ? initialSaved.banks
+      : [{ id: Date.now(), bankName: "", branch: "", date: new Date().toISOString().split("T")[0], amount: "" }]
+  );
+  const [generatedMessage, setGeneratedMessage] = useState<string>(initialSaved?.generatedMessage || "");
+
+  // RELOAD WARNING CONFIRMATION
+  useEffect(() => {
+    function handleBeforeUnload(event: BeforeUnloadEvent) {
+      event.preventDefault();
+      event.returnValue = "Apni ki page-ti reload korte chan? Apnar current hisab-niwash auto-save kora ache.";
+      return event.returnValue;
+    }
+    window.addEventListener("beforeunload", handleBeforeUnload);
+    return () => window.removeEventListener("beforeunload", handleBeforeUnload);
+  }, []);
 
   useEffect(() => {
     async function trackPageVisit() {
-      if (!user?.id) return;
-      const today = new Date().toISOString().split("T")[0];
-      await supabase.from("page_visits").insert([{ user_id: user.id, page_name: "EasyDO Page 1", visit_date: today }]);
+      if (!user?.id || !navigator.onLine) return;
+      try {
+        const today = new Date().toISOString().split("T")[0];
+        await supabase.from("page_visits").insert([{ user_id: user.id, page_name: "EasyDO Page 1", visit_date: today }]);
+      } catch {}
     }
     trackPageVisit();
   }, [user?.id]);
 
   useEffect(() => {
-    const nav = performance.getEntriesByType("navigation")[0] as PerformanceNavigationTiming | undefined;
-    if (nav?.type === "reload") sessionStorage.removeItem(EASY_DO_STORAGE_KEY);
-    else restoreEasyDOState();
     loadData();
   }, []);
 
   useEffect(() => {
-    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
-      e.preventDefault();
-      e.returnValue = "";
-    };
-    window.addEventListener("beforeunload", handleBeforeUnload);
-    return () => window.removeEventListener("beforeunload", handleBeforeUnload);
-  }, []);
-
-  function restoreEasyDOState() {
     try {
-      const saved = sessionStorage.getItem(EASY_DO_STORAGE_KEY);
-      if (!saved) return;
-      const s = JSON.parse(saved);
-      if (s.bagQuantities) setBagQuantities(s.bagQuantities);
-      if (Array.isArray(s.selectedItemIds)) setSelectedItemIds(s.selectedItemIds);
-      setFromLocation(s.fromLocation || "");
-      setUpazila(s.upazila || "");
-      setTransportMode(s.transportMode === "without" ? "without" : "with");
-      setAgentCode(s.agentCode || "");
-      setAgentName(s.agentName || "");
-      setVehicleNo(s.vehicleNo || "");
-      if (Array.isArray(s.banks) && s.banks.length > 0) setBanks(s.banks);
-      setShowDOInformation(Boolean(s.showDOInformation));
-      setGeneratedMessage(s.generatedMessage || "");
-    } catch (e) {
-      console.error("Restore failed:", e);
-      sessionStorage.removeItem(EASY_DO_STORAGE_KEY);
-    }
-  }
-
-  useEffect(() => {
-    if (loading) return;
-    try {
-      sessionStorage.setItem(
+      localStorage.setItem(
         EASY_DO_STORAGE_KEY,
         JSON.stringify({
+          selectedCategory,
           bagQuantities,
           selectedItemIds,
           fromLocation,
@@ -152,20 +165,51 @@ export default function EasyDOFormat1() {
     } catch (e) {
       console.error("Save state failed:", e);
     }
-  }, [loading, bagQuantities, selectedItemIds, fromLocation, upazila, transportMode, agentCode, agentName, vehicleNo, banks, showDOInformation, generatedMessage]);
+  }, [
+    selectedCategory,
+    bagQuantities,
+    selectedItemIds,
+    fromLocation,
+    upazila,
+    transportMode,
+    agentCode,
+    agentName,
+    vehicleNo,
+    banks,
+    showDOInformation,
+    generatedMessage,
+  ]);
 
   async function loadData() {
-    setLoading(true);
-    const [priceRes, transRes] = await Promise.all([
-      supabase.from("feed_price_list").select("id, category, item_name, short_name, kg_per_bag, tp_per_bag, mrp_per_bag, status").eq("status", "Active").order("sort_order", { ascending: true }),
-      supabase.from("transportation").select("id, from_location, to_upazila, floating_cattle_rate_per_kg, sinking_broiler_layer_sonali_rate_per_kg, status").eq("status", "Active").order("to_upazila", { ascending: true }),
-    ]);
-    if (priceRes.error) alert("Price list load failed.");
-    else setPriceList(priceRes.data || []);
+    if (priceList.length === 0) setLoading(true);
+    try {
+      const [priceRes, transRes] = await Promise.all([
+        supabase
+          .from("feed_price_list")
+          .select("id, category, item_name, short_name, kg_per_bag, tp_per_bag, mrp_per_bag, status")
+          .eq("status", "Active")
+          .order("sort_order", { ascending: true }),
+        supabase
+          .from("transportation")
+          .select("id, from_location, to_upazila, floating_cattle_rate_per_kg, sinking_broiler_layer_sonali_rate_per_kg, status")
+          .eq("status", "Active")
+          .order("to_upazila", { ascending: true }),
+      ]);
 
-    if (transRes.error) alert("Transportation load failed.");
-    else setTransportList(transRes.data || []);
-    setLoading(false);
+      if (!priceRes.error && priceRes.data) {
+        setPriceList(priceRes.data);
+        localStorage.setItem(PRICE_CACHE_KEY, JSON.stringify(priceRes.data));
+      }
+
+      if (!transRes.error && transRes.data) {
+        setTransportList(transRes.data);
+        localStorage.setItem(TRANSPORT_CACHE_KEY, JSON.stringify(transRes.data));
+      }
+    } catch (e) {
+      console.warn("Using offline cached data:", e);
+    } finally {
+      setLoading(false);
+    }
   }
 
   function toggleItemSelect(itemId: number) {
@@ -288,6 +332,7 @@ export default function EasyDOFormat1() {
   async function saveDO() {
     if (saving) return;
     if (!user) return alert("You are not logged in.");
+    if (!navigator.onLine) return alert("Internet connection nei! Connection asle abar Save-e click korun.");
 
     const validRows = activeOrderList.filter((r) => r.bags > 0);
     if (!validRows.length) return alert("Please select feed item and enter bags.");
@@ -337,6 +382,8 @@ export default function EasyDOFormat1() {
       const { error } = await supabase.from("saved_dos").insert([payload]);
       if (error) return alert(`Save DO failed: ${error.message}`);
       alert("DO saved successfully.");
+      
+      localStorage.removeItem(EASY_DO_STORAGE_KEY);
     } catch {
       alert("Something went wrong while saving DO.");
     } finally {
