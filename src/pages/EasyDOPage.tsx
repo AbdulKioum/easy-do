@@ -58,81 +58,73 @@ const categories = [
   "Fish Sinking",
 ];
 
-const EASY_DO_STORAGE_KEY =
-  "easydo_current_state_v2";
+const EASY_DO_STORAGE_KEY = "easydo_page2_persistent_state_v2";
+const PRICE_CACHE_KEY = "easydo_page2_price_cache_v1";
+const TRANSPORT_CACHE_KEY = "easydo_page2_transport_cache_v1";
+
+function getSavedState() {
+  try {
+    const navEntry = performance.getEntriesByType("navigation")[0] as PerformanceNavigationTiming | undefined;
+    const isReload = navEntry?.type === "reload";
+    if (isReload) {
+      localStorage.removeItem(EASY_DO_STORAGE_KEY);
+      return null;
+    }
+    const raw = localStorage.getItem(EASY_DO_STORAGE_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+}
 
 export default function EasyDOPage() {
   const { user, role } = useAuth();
+  const initialSaved = useMemo(() => getSavedState(), []);
 
-  const [priceList, setPriceList] =
-    useState<FeedPrice[]>([]);
+  const [priceList, setPriceList] = useState<FeedPrice[]>(() => {
+    try {
+      const cached = localStorage.getItem(PRICE_CACHE_KEY);
+      return cached ? JSON.parse(cached) : [];
+    } catch {
+      return [];
+    }
+  });
 
-  const [transportList, setTransportList] =
-    useState<Transport[]>([]);
+  const [transportList, setTransportList] = useState<Transport[]>(() => {
+    try {
+      const cached = localStorage.getItem(TRANSPORT_CACHE_KEY);
+      return cached ? JSON.parse(cached) : [];
+    } catch {
+      return [];
+    }
+  });
 
-  const [upazilaList, setUpazilaList] =
-    useState<Upazila[]>([]);
+  const [upazilaList, setUpazilaList] = useState<Upazila[]>([]);
+  const [userProfile, setUserProfile] = useState<any>(null);
 
-  const [userProfile, setUserProfile] =
-    useState<any>(null);
+  const [loading, setLoading] = useState(() => priceList.length === 0);
+  const [saving, setSaving] = useState(false);
 
-  const [loading, setLoading] =
-    useState(true);
+  const [rows, setRows] = useState<OrderRow[]>(initialSaved?.rows || []);
+  const [fromLocation, setFromLocation] = useState<string>(initialSaved?.fromLocation || "");
+  const [upazila, setUpazila] = useState<string>(initialSaved?.upazila || "");
+  const [transportMode, setTransportMode] = useState<"with" | "without">(
+    initialSaved?.transportMode === "without" ? "without" : "with"
+  );
 
-  const [saving, setSaving] =
-    useState(false);
+  const [openDropdownRowId, setOpenDropdownRowId] = useState<number | null>(null);
+  const dropdownRef = useRef<HTMLDivElement | null>(null);
 
-  const [rows, setRows] =
-    useState<OrderRow[]>([]);
-
-  const [fromLocation, setFromLocation] =
-    useState("");
-
-  const [upazila, setUpazila] =
-    useState("");
-
-  const [transportMode, setTransportMode] =
-    useState<"with" | "without">("with");
-
-  const [
-    openDropdownRowId,
-    setOpenDropdownRowId,
-  ] = useState<number | null>(null);
-
-  const dropdownRef =
-    useRef<HTMLDivElement | null>(null);
-
-  const [
-    showDOInformation,
-    setShowDOInformation,
-  ] = useState(false);
-
-  const [agentCode, setAgentCode] =
-    useState("");
-
-  const [agentName, setAgentName] =
-    useState("");
-
-  const [vehicleNo, setVehicleNo] =
-    useState("");
-
-  const [banks, setBanks] =
-    useState<BankInfo[]>([
-      {
-        id: Date.now(),
-        bankName: "",
-        branch: "",
-        date: new Date()
-          .toISOString()
-          .split("T")[0],
-        amount: "",
-      },
-    ]);
-
-  const [
-    generatedMessage,
-    setGeneratedMessage,
-  ] = useState("");
+  const [showDOInformation, setShowDOInformation] = useState<boolean>(Boolean(initialSaved?.showDOInformation));
+  const [agentCode, setAgentCode] = useState<string>(initialSaved?.agentCode || "");
+  const [agentName, setAgentName] = useState<string>(initialSaved?.agentName || "");
+  const [vehicleNo, setVehicleNo] = useState<string>(initialSaved?.vehicleNo || "");
+  const [banks, setBanks] = useState<BankInfo[]>(() =>
+    Array.isArray(initialSaved?.banks) && initialSaved.banks.length > 0
+      ? initialSaved.banks
+      : [{ id: Date.now(), bankName: "", branch: "", date: new Date().toISOString().split("T")[0], amount: "" }]
+  );
+  const [generatedMessage, setGeneratedMessage] = useState<string>(initialSaved?.generatedMessage || "");
 
   const isSuperAdmin = role === "super_admin";
 
@@ -155,27 +147,44 @@ export default function EasyDOPage() {
     if (user?.id) {
       loadUserProfile();
     }
-
-    const navigationEntry =
-      performance.getEntriesByType(
-        "navigation"
-      )[0] as
-        | PerformanceNavigationTiming
-        | undefined;
-
-    const isReload =
-      navigationEntry?.type === "reload";
-
-    if (isReload) {
-      sessionStorage.removeItem(
-        EASY_DO_STORAGE_KEY
-      );
-    } else {
-      restoreEasyDOState();
-    }
-
     loadData();
   }, [user?.id]);
+
+  // PERSIST STATE TO LOCALSTORAGE ON CHANGE
+  useEffect(() => {
+    if (loading) return;
+    try {
+      localStorage.setItem(
+        EASY_DO_STORAGE_KEY,
+        JSON.stringify({
+          rows,
+          fromLocation,
+          upazila,
+          transportMode,
+          agentCode,
+          agentName,
+          vehicleNo,
+          banks,
+          showDOInformation,
+          generatedMessage,
+        })
+      );
+    } catch (e) {
+      console.error("Save state failed:", e);
+    }
+  }, [
+    loading,
+    rows,
+    fromLocation,
+    upazila,
+    transportMode,
+    agentCode,
+    agentName,
+    vehicleNo,
+    banks,
+    showDOInformation,
+    generatedMessage,
+  ]);
 
   async function loadUserProfile() {
     const { data } = await supabase.from("profiles").select("*").eq("id", user?.id).single();
@@ -198,966 +207,305 @@ export default function EasyDOPage() {
   }, [isSuperAdmin, userProfile]);
 
   useEffect(() => {
-    function handleBeforeUnload(
-      event: BeforeUnloadEvent
-    ) {
+    function handleBeforeUnload(event: BeforeUnloadEvent) {
       event.preventDefault();
-      event.returnValue = "";
+      event.returnValue = "Apni ki page-ti reload korte chan? Reload korle current hisab reset hoye jabe.";
+      return event.returnValue;
     }
-
-    window.addEventListener(
-      "beforeunload",
-      handleBeforeUnload
-    );
-
-    return () => {
-      window.removeEventListener(
-        "beforeunload",
-        handleBeforeUnload
-      );
-    };
+    window.addEventListener("beforeunload", handleBeforeUnload);
+    return () => window.removeEventListener("beforeunload", handleBeforeUnload);
   }, []);
 
   useEffect(() => {
-    function handleOutsideClick(
-      event: MouseEvent
-    ) {
-      if (!dropdownRef.current) {
-        return;
-      }
-
-      if (
-        !dropdownRef.current.contains(
-          event.target as Node
-        )
-      ) {
+    function handleOutsideClick(event: MouseEvent) {
+      if (!dropdownRef.current) return;
+      if (!dropdownRef.current.contains(event.target as Node)) {
         setOpenDropdownRowId(null);
       }
     }
-
-    document.addEventListener(
-      "mousedown",
-      handleOutsideClick
-    );
-
-    return () => {
-      document.removeEventListener(
-        "mousedown",
-        handleOutsideClick
-      );
-    };
+    document.addEventListener("mousedown", handleOutsideClick);
+    return () => document.removeEventListener("mousedown", handleOutsideClick);
   }, []);
 
-  function restoreEasyDOState() {
-    try {
-      const saved =
-        sessionStorage.getItem(
-          EASY_DO_STORAGE_KEY
-        );
-
-      if (!saved) {
-        return;
-      }
-
-      const state =
-        JSON.parse(saved);
-
-      if (
-        Array.isArray(state.rows)
-      ) {
-        setRows(state.rows);
-      }
-
-      setFromLocation(
-        state.fromLocation || ""
-      );
-
-      setUpazila(
-        state.upazila || ""
-      );
-
-      setTransportMode(
-        state.transportMode ===
-          "without"
-          ? "without"
-          : "with"
-      );
-
-      setAgentCode(
-        state.agentCode || ""
-      );
-
-      setAgentName(
-        state.agentName || ""
-      );
-
-      setVehicleNo(
-        state.vehicleNo || ""
-      );
-
-      if (
-        Array.isArray(
-          state.banks
-        ) &&
-        state.banks.length > 0
-      ) {
-        setBanks(state.banks);
-      }
-
-      setShowDOInformation(
-        Boolean(
-          state.showDOInformation
-        )
-      );
-
-      setGeneratedMessage(
-        state.generatedMessage || ""
-      );
-    } catch (error) {
-      console.error(
-        "EasyDO restore failed:",
-        error
-      );
-
-      sessionStorage.removeItem(
-        EASY_DO_STORAGE_KEY
-      );
-    }
-  }
-
-  useEffect(() => {
-    if (loading) {
-      return;
-    }
-
-    const state = {
-      rows,
-      fromLocation,
-      upazila,
-      transportMode,
-      agentCode,
-      agentName,
-      vehicleNo,
-      banks,
-      showDOInformation,
-      generatedMessage,
-    };
-
-    try {
-      sessionStorage.setItem(
-        EASY_DO_STORAGE_KEY,
-        JSON.stringify(state)
-      );
-    } catch (error) {
-      console.error(
-        "EasyDO state save failed:",
-        error
-      );
-    }
-  }, [
-    loading,
-    rows,
-    fromLocation,
-    upazila,
-    transportMode,
-    agentCode,
-    agentName,
-    vehicleNo,
-    banks,
-    showDOInformation,
-    generatedMessage,
-  ]);
-
   async function loadData() {
-    setLoading(true);
+    if (priceList.length === 0) setLoading(true);
+    try {
+      const [priceResponse, transportResponse, upazilaResponse] = await Promise.all([
+        supabase
+          .from("feed_price_list")
+          .select("id, category, item_name, short_name, kg_per_bag, tp_per_bag, mrp_per_bag, status")
+          .eq("status", "Active")
+          .order("sort_order", { ascending: true }),
+        supabase
+          .from("transportation")
+          .select("id, from_location, to_upazila, floating_cattle_rate_per_kg, sinking_broiler_layer_sonali_rate_per_kg, status")
+          .eq("status", "Active")
+          .order("to_upazila", { ascending: true }),
+        supabase
+          .from("upazilas")
+          .select("*")
+          .eq("status", "Active"),
+      ]);
 
-    const [
-      priceResponse,
-      transportResponse,
-      upazilaResponse,
-    ] = await Promise.all([
-      supabase
-        .from("feed_price_list")
-        .select(
-          "id, category, item_name, short_name, kg_per_bag, tp_per_bag, mrp_per_bag, status"
-        )
-        .eq("status", "Active")
-        .order("sort_order", {
-          ascending: true,
-        }),
+      if (!priceResponse.error && priceResponse.data) {
+        setPriceList(priceResponse.data);
+        localStorage.setItem(PRICE_CACHE_KEY, JSON.stringify(priceResponse.data));
+      }
 
-      supabase
-        .from("transportation")
-        .select(
-          "id, from_location, to_upazila, floating_cattle_rate_per_kg, sinking_broiler_layer_sonali_rate_per_kg, status"
-        )
-        .eq("status", "Active")
-        .order("to_upazila", {
-          ascending: true,
-        }),
+      if (!transportResponse.error && transportResponse.data) {
+        setTransportList(transportResponse.data);
+        localStorage.setItem(TRANSPORT_CACHE_KEY, JSON.stringify(transportResponse.data));
+      }
 
-      supabase
-        .from("upazilas")
-        .select("*")
-        .eq("status", "Active"),
-    ]);
-
-    if (priceResponse.error) {
-      console.error(
-        priceResponse.error
-      );
-      alert("Price list load failed.");
-    } else {
-      setPriceList(
-        priceResponse.data || []
-      );
+      if (!upazilaResponse.error && upazilaResponse.data) {
+        setUpazilaList(upazilaResponse.data);
+      }
+    } catch (e) {
+      console.warn("Using offline cached data:", e);
+    } finally {
+      setLoading(false);
     }
-
-    if (transportResponse.error) {
-      console.error(
-        transportResponse.error
-      );
-      alert("Transportation load failed.");
-    } else {
-      setTransportList(
-        transportResponse.data || []
-      );
-    }
-
-    if (upazilaResponse.error) {
-      console.error(upazilaResponse.error);
-    } else {
-      setUpazilaList(upazilaResponse.data || []);
-    }
-
-    setLoading(false);
   }
 
-  function addCategory(
-    category: string
-  ) {
-    const availableItems =
-      priceList.filter(
-        (item) =>
-          item.category ===
-            category &&
-          !rows.some(
-            (row) =>
-              row.category ===
-                category &&
-              row.item?.id ===
-                item.id
-          )
-      );
+  function addCategory(category: string) {
+    const availableItems = priceList.filter(
+      (item) =>
+        item.category === category &&
+        !rows.some((row) => row.category === category && row.item?.id === item.id)
+    );
 
-    if (
-      availableItems.length === 0
-    ) {
-      alert(
-        `All ${category} items have already been added.`
-      );
+    if (availableItems.length === 0) {
+      alert(`All ${category} items have already been added.`);
       return;
     }
 
     const newRow: OrderRow = {
-      id:
-        Date.now() +
-        Math.random(),
+      id: Date.now() + Math.random(),
       category,
       item: null,
       bags: 0,
     };
 
-    setRows((prev) => [
-      ...prev,
-      newRow,
-    ]);
-
+    setRows((prev) => [...prev, newRow]);
     setTimeout(() => {
-      setOpenDropdownRowId(
-        newRow.id
-      );
+      setOpenDropdownRowId(newRow.id);
     }, 50);
   }
 
-  function removeRow(
-    rowId: number
-  ) {
-    setRows((prev) =>
-      prev.filter(
-        (row) =>
-          row.id !== rowId
-      )
-    );
-
-    if (
-      openDropdownRowId ===
-      rowId
-    ) {
+  function removeRow(rowId: number) {
+    setRows((prev) => prev.filter((row) => row.id !== rowId));
+    if (openDropdownRowId === rowId) {
       setOpenDropdownRowId(null);
     }
   }
 
-  const [
-    pendingSelections,
-    setPendingSelections,
-  ] = useState<
-    Record<number, number[]>
-  >({});
+  const [pendingSelections, setPendingSelections] = useState<Record<number, number[]>>({});
 
-  function getPendingSelection(
-    rowId: number
-  ) {
-    return (
-      pendingSelections[
-        rowId
-      ] || []
-    );
+  function getPendingSelection(rowId: number) {
+    return pendingSelections[rowId] || [];
   }
 
-  function togglePendingItem(
-    rowId: number,
-    itemId: number
-  ) {
-    setPendingSelections(
-      (prev) => {
-        const current =
-          prev[rowId] || [];
-
-        const exists =
-          current.includes(
-            itemId
-          );
-
-        return {
-          ...prev,
-          [rowId]: exists
-            ? current.filter(
-                (id) =>
-                  id !== itemId
-              )
-            : [
-                ...current,
-                itemId,
-              ],
-        };
-      }
-    );
+  function togglePendingItem(rowId: number, itemId: number) {
+    setPendingSelections((prev) => {
+      const current = prev[rowId] || [];
+      const exists = current.includes(itemId);
+      return {
+        ...prev,
+        [rowId]: exists ? current.filter((id) => id !== itemId) : [...current, itemId],
+      };
+    });
   }
 
-  function confirmMultipleItems(
-    rowId: number
-  ) {
-    const currentRow =
-      rows.find(
-        (row) =>
-          row.id === rowId
-      );
+  function confirmMultipleItems(rowId: number) {
+    const currentRow = rows.find((row) => row.id === rowId);
+    if (!currentRow) return;
 
-    if (!currentRow) {
-      return;
-    }
+    const selectedIds = getPendingSelection(rowId);
+    if (selectedIds.length === 0) return;
 
-    const selectedIds =
-      getPendingSelection(
-        rowId
-      );
-
-    if (
-      selectedIds.length === 0
-    ) {
-      return;
-    }
-
-    const selectedItems =
-      selectedIds
-        .map((id) =>
-          priceList.find(
-            (item) =>
-              item.id === id
-          )
-        )
-        .filter(
-          (
-            item
-          ): item is FeedPrice =>
-            Boolean(item)
-        );
+    const selectedItems = selectedIds
+      .map((id) => priceList.find((item) => item.id === id))
+      .filter((item): item is FeedPrice => Boolean(item));
 
     setRows((prev) => {
-      const index =
-        prev.findIndex(
-          (row) =>
-            row.id === rowId
-        );
+      const index = prev.findIndex((row) => row.id === rowId);
+      if (index === -1) return prev;
 
-      if (index === -1) {
-        return prev;
-      }
+      const before = prev.slice(0, index);
+      const after = prev.slice(index + 1);
 
-      const before =
-        prev.slice(
-          0,
-          index
-        );
+      const newRows = selectedItems.map((item, itemIndex) => ({
+        id: itemIndex === 0 ? rowId : Date.now() + Math.random() + itemIndex,
+        category: currentRow.category,
+        item,
+        bags: 0,
+      }));
 
-      const after =
-        prev.slice(
-          index + 1
-        );
-
-      const newRows =
-        selectedItems.map(
-          (
-            item,
-            itemIndex
-          ) => ({
-            id:
-              itemIndex ===
-              0
-                ? rowId
-                : Date.now() +
-                  Math.random() +
-                  itemIndex,
-            category:
-              currentRow.category,
-            item,
-            bags: 0,
-          })
-        );
-
-      return [
-        ...before,
-        ...newRows,
-        ...after,
-      ];
+      return [...before, ...newRows, ...after];
     });
 
-    setPendingSelections(
-      (prev) => {
-        const copy = {
-          ...prev,
-        };
-        delete copy[rowId];
-        return copy;
-      }
-    );
+    setPendingSelections((prev) => {
+      const copy = { ...prev };
+      delete copy[rowId];
+      return copy;
+    });
 
-    setOpenDropdownRowId(
-      null
-    );
+    setOpenDropdownRowId(null);
   }
 
-  function updateBags(
-    rowId: number,
-    bags: number
-  ) {
+  function updateBags(rowId: number, bags: number) {
     setRows((prev) =>
-      prev.map((row) =>
-        row.id === rowId
-          ? {
-              ...row,
-              bags:
-                bags < 0
-                  ? 0
-                  : bags,
-            }
-          : row
-      )
+      prev.map((row) => (row.id === rowId ? { ...row, bags: bags < 0 ? 0 : bags } : row))
     );
   }
 
-  const selectedTransport =
-    useMemo(() => {
-      if (
-        !fromLocation ||
-        !upazila
-      ) {
-        return null;
-      }
+  const selectedTransport = useMemo(() => {
+    if (!fromLocation || !upazila) return null;
+    return transportList.find((transport) => transport.from_location === fromLocation && transport.to_upazila === upazila) || null;
+  }, [transportList, fromLocation, upazila]);
 
-      return (
-        transportList.find(
-          (transport) =>
-            transport.from_location ===
-              fromLocation &&
-            transport.to_upazila ===
-              upazila
-        ) || null
-      );
-    }, [
-      transportList,
-      fromLocation,
-      upazila,
-    ]);
-
-  function getTransportRate(
-    category: string
-  ) {
-    if (!selectedTransport) {
-      return 0;
-    }
-
-    if (
-      category ===
-        "Fish Floating" ||
-      category === "Cattle"
-    ) {
-      return Number(
-        selectedTransport
-          .floating_cattle_rate_per_kg
-      );
-    }
-
-    return Number(
-      selectedTransport
-        .sinking_broiler_layer_sonali_rate_per_kg
-    );
+  function getTransportRate(category: string) {
+    if (!selectedTransport) return 0;
+    return category === "Fish Floating" || category === "Cattle"
+      ? Number(selectedTransport.floating_cattle_rate_per_kg)
+      : Number(selectedTransport.sinking_broiler_layer_sonali_rate_per_kg);
   }
 
-  function getRowWeight(
-    row: OrderRow
-  ) {
-    if (
-      !row.item ||
-      !row.bags
-    ) {
-      return 0;
-    }
-
-    return (
-      Number(
-        row.item.kg_per_bag
-      ) *
-      Number(row.bags)
-    );
+  function getRowWeight(row: OrderRow) {
+    if (!row.item || !row.bags) return 0;
+    return Number(row.item.kg_per_bag) * Number(row.bags);
   }
 
-  function getRowTransport(
-    row: OrderRow
-  ) {
-    if (
-      transportMode !==
-        "without" ||
-      !row.item ||
-      !row.bags ||
-      !selectedTransport
-    ) {
-      return 0;
-    }
-
-    const weight =
-      getRowWeight(row);
-
-    const rate =
-      getTransportRate(
-        row.category
-      );
-
+  function getRowTransport(row: OrderRow) {
+    if (transportMode !== "without" || !row.item || !row.bags || !selectedTransport) return 0;
+    const weight = getRowWeight(row);
+    const rate = getTransportRate(row.category);
     return weight * rate;
   }
 
-  function getRowTotal(
-    row: OrderRow
-  ) {
-    if (
-      !row.item ||
-      !row.bags
-    ) {
-      return 0;
-    }
-
-    const tpTotal =
-      Number(
-        row.item.tp_per_bag
-      ) *
-      Number(row.bags);
-
-    if (
-      transportMode ===
-      "with"
-    ) {
-      return tpTotal;
-    }
-
-    return (
-      tpTotal -
-      getRowTransport(row)
-    );
+  function getRowTotal(row: OrderRow) {
+    if (!row.item || !row.bags) return 0;
+    const tpTotal = Number(row.item.tp_per_bag) * Number(row.bags);
+    if (transportMode === "with") return tpTotal;
+    return tpTotal - getRowTransport(row);
   }
 
-  const totalTransportAmount =
-    useMemo(() => {
-      if (
-        !selectedTransport
-      ) {
-        return 0;
-      }
+  const totalTransportAmount = useMemo(() => {
+    if (!selectedTransport) return 0;
+    return rows.reduce((total, row) => {
+      if (!row.item || !row.bags) return total;
+      return total + getRowWeight(row) * getTransportRate(row.category);
+    }, 0);
+  }, [rows, selectedTransport]);
 
-      return rows.reduce(
-        (total, row) => {
-          if (
-            !row.item ||
-            !row.bags
-          ) {
-            return total;
-          }
+  const totalWeight = useMemo(() => {
+    return rows.reduce((total, row) => total + getRowWeight(row), 0);
+  }, [rows]);
 
-          return (
-            total +
-            getRowWeight(
-              row
-            ) *
-              getTransportRate(
-                row.category
-              )
-          );
-        },
-        0
-      );
-    }, [
-      rows,
-      selectedTransport,
-    ]);
+  const feedPrice = useMemo(() => {
+    return rows.reduce((total, row) => total + (row.item ? Number(row.item.tp_per_bag) * Number(row.bags) : 0), 0);
+  }, [rows]);
 
-  const totalWeight =
-    useMemo(() => {
-      return rows.reduce(
-        (total, row) =>
-          total +
-          getRowWeight(row),
-        0
-      );
-    }, [rows]);
+  const totalAmount = useMemo(() => {
+    return rows.reduce((total, row) => total + getRowTotal(row), 0);
+  }, [rows, transportMode, selectedTransport]);
 
-  const feedPrice =
-    useMemo(() => {
-      return rows.reduce(
-        (total, row) =>
-          total +
-          (row.item
-            ? Number(
-                row.item
-                  .tp_per_bag
-              ) *
-              Number(
-                row.bags
-              )
-            : 0),
-        0
-      );
-    }, [rows]);
+  const fromLocations = useMemo(() => {
+    const dbLocs = Array.from(new Set(transportList.map((item) => item.from_location).filter(Boolean)));
+    if (isSuperAdmin || assignedFromLocations.length === 0) return dbLocs;
+    return dbLocs.filter((loc) => assignedFromLocations.includes(loc));
+  }, [transportList, isSuperAdmin, assignedFromLocations]);
 
-  const totalAmount =
-    useMemo(() => {
-      return rows.reduce(
-        (total, row) =>
-          total +
-          getRowTotal(row),
-        0
-      );
-    }, [
-      rows,
-      transportMode,
-      selectedTransport,
-    ]);
+  const upazilas = useMemo(() => {
+    const filtered = fromLocation ? transportList.filter((item) => item.from_location === fromLocation) : transportList;
+    const allUpazilas = Array.from(new Set(filtered.map((item) => item.to_upazila).filter(Boolean)));
 
-  const fromLocations =
-    useMemo(() => {
-      const dbLocs = Array.from(
-        new Set(
-          transportList
-            .map(
-              (item) =>
-                item.from_location
-            )
-            .filter(Boolean)
-        )
-      );
+    if (isSuperAdmin || assignedDistricts.length === 0) return allUpazilas;
 
-      if (isSuperAdmin || assignedFromLocations.length === 0) {
-        return dbLocs;
-      }
+    const allowedUpazilaNames = upazilaList
+      .filter((u) => assignedDistricts.includes(u.district))
+      .map((u) => u.upazila_name);
 
-      return dbLocs.filter((loc) => assignedFromLocations.includes(loc));
-    }, [transportList, isSuperAdmin, assignedFromLocations]);
-
-  const upazilas =
-    useMemo(() => {
-      const filtered =
-        fromLocation
-          ? transportList.filter(
-              (item) =>
-                item.from_location ===
-                fromLocation
-            )
-          : transportList;
-
-      const allUpazilas = Array.from(
-        new Set(
-          filtered
-            .map(
-              (item) =>
-                item.to_upazila
-            )
-            .filter(Boolean)
-        )
-      );
-
-      if (isSuperAdmin || assignedDistricts.length === 0) {
-        return allUpazilas;
-      }
-
-      const allowedUpazilaNames = upazilaList
-        .filter((u) => assignedDistricts.includes(u.district))
-        .map((u) => u.upazila_name);
-
-      return allUpazilas.filter((name) => allowedUpazilaNames.includes(name));
-    }, [
-      transportList,
-      fromLocation,
-      isSuperAdmin,
-      assignedDistricts,
-      upazilaList,
-    ]);
+    return allUpazilas.filter((name) => allowedUpazilaNames.includes(name));
+  }, [transportList, fromLocation, isSuperAdmin, assignedDistricts, upazilaList]);
 
   function addBank() {
     setBanks((prev) => [
       ...prev,
-      {
-        id:
-          Date.now() +
-          Math.random(),
-        bankName: "",
-        branch: "",
-        date: new Date()
-          .toISOString()
-          .split("T")[0],
-        amount: "",
-      },
+      { id: Date.now() + Math.random(), bankName: "", branch: "", date: new Date().toISOString().split("T")[0], amount: "" },
     ]);
   }
 
-  function removeBank(
-    id: number
-  ) {
-    setBanks((prev) =>
-      prev.filter(
-        (bank) =>
-          bank.id !== id
-      )
-    );
+  function removeBank(id: number) {
+    setBanks((prev) => prev.filter((bank) => bank.id !== id));
   }
 
-  function updateBank(
-    id: number,
-    field: keyof BankInfo,
-    value: string
-  ) {
-    setBanks((prev) =>
-      prev.map((bank) =>
-        bank.id === id
-          ? {
-              ...bank,
-              [field]:
-                value,
-            }
-          : bank
-      )
-    );
+  function updateBank(id: number, field: keyof BankInfo, value: string) {
+    setBanks((prev) => prev.map((bank) => (bank.id === id ? { ...bank, [field]: value } : bank)));
   }
 
-  function getFeedShortName(
-    item: FeedPrice
-  ) {
-    if (
-      item.short_name?.trim()
-    ) {
-      return item.short_name.trim();
-    }
-
+  function getFeedShortName(item: FeedPrice) {
+    if (item.short_name?.trim()) return item.short_name.trim();
     return item.item_name;
   }
 
   function buildDOMessage() {
-    const finalAgentCode =
-      agentCode.trim() ||
-      "[Agent Code]";
-
-    const finalAgentName =
-      agentName.trim() ||
-      "[Agent Name]";
-
-    const finalVehicle =
-      vehicleNo.trim() ||
-      "[Vehicle No]";
-
-    const validBanks =
-      banks.filter(
-        (bank) =>
-          bank.bankName.trim() ||
-          bank.branch.trim() ||
-          bank.date.trim() ||
-          bank.amount.trim()
-      );
+    const finalAgentCode = agentCode.trim() || "[Agent Code]";
+    const finalAgentName = agentName.trim() || "[Agent Name]";
+    const finalVehicle = vehicleNo.trim() || "[Vehicle No]";
+    const validBanks = banks.filter((bank) => bank.bankName.trim() || bank.branch.trim() || bank.date.trim() || bank.amount.trim());
 
     let bankText = "";
-
-    if (
-      !validBanks.length
-    ) {
-      bankText =
-        "[Bank Details]";
+    if (!validBanks.length) {
+      bankText = "[Bank Details]";
     } else {
-      bankText =
-        validBanks
-          .map((bank) => {
-            const bankName =
-              bank.bankName.trim() ||
-              "[Bank Name]";
-
-            const branch =
-              bank.branch.trim() ||
-              "[Branch]";
-
-            const date =
-              bank.date.trim() ||
-              "[Date]";
-
-            const amount =
-              bank.amount.trim()
-                ? `৳ ${Number(
-                    bank.amount
-                  ).toLocaleString(
-                    "en-BD",
-                    {
-                      minimumFractionDigits: 2,
-                      maximumFractionDigits: 2,
-                    }
-                  )}`
-                : "[Bank Amount]";
-
-            return `${bankName}
-${branch}
-${date}
-${amount}`;
-          })
-          .join("\n\n");
+      bankText = validBanks
+        .map((bank) => {
+          const bankName = bank.bankName.trim() || "[Bank Name]";
+          const branch = bank.branch.trim() || "[Branch]";
+          const date = bank.date.trim() || "[Date]";
+          const amount = bank.amount.trim() ? `৳ ${Number(bank.amount).toLocaleString("en-BD", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : "[Bank Amount]";
+          return `${bankName}\n${branch}\n${date}\n${amount}`;
+        })
+        .join("\n\n");
     }
 
-    const validRows =
-      rows.filter(
-        (
-          row
-        ): row is OrderRow & {
-          item: FeedPrice;
-        } =>
-          row.item !==
-            null &&
-          row.item !==
-            undefined &&
-          Number(row.bags) >
-            0
-      );
+    const validRows = rows.filter((row): row is OrderRow & { item: FeedPrice } => row.item !== null && row.item !== undefined && Number(row.bags) > 0);
 
     let feedText = "";
-
-    if (
-      !validRows.length
-    ) {
-      feedText =
-        "[Feed Details]";
+    if (!validRows.length) {
+      feedText = "[Feed Details]";
     } else {
-      feedText =
-        validRows
-          .map((row) => {
-            const name =
-              getFeedShortName(
-                row.item
-              );
-
-            return `${name} - ${row.bags} bag${
-              row.bags !== 1
-                ? "s"
-                : ""
-            }`;
-          })
-          .join("\n");
+      feedText = validRows
+        .map((row) => {
+          const name = getFeedShortName(row.item);
+          return `${name} - ${row.bags} bag${row.bags !== 1 ? "s" : ""}`;
+        })
+        .join("\n");
     }
 
-    const finalFrom =
-      fromLocation.trim() ||
-      "[Feed Mill / Depot]";
-
-    return `Code: ${finalAgentCode}, ${finalAgentName}
-
-${bankText}
-
-${feedText}
-
-Vehicle No: ${finalVehicle}
-From: ${finalFrom}`;
+    const finalFrom = fromLocation.trim() || "[Feed Mill / Depot]";
+    return `Code: ${finalAgentCode}, ${finalAgentName}\n\n${bankText}\n\n${feedText}\n\nVehicle No: ${finalVehicle}\nFrom: ${finalFrom}`;
   }
 
   function openDOInformation() {
     setShowDOInformation(true);
-
-    setGeneratedMessage(
-      buildDOMessage()
-    );
-
+    setGeneratedMessage(buildDOMessage());
     setTimeout(() => {
-      const element =
-        document.getElementById(
-          "do-information-section"
-        );
-
-      if (element) {
-        element.scrollIntoView({
-          behavior: "smooth",
-          block: "start",
-        });
-      }
+      document.getElementById("do-information-section")?.scrollIntoView({ behavior: "smooth", block: "start" });
     }, 100);
   }
 
   useEffect(() => {
-    if (
-      !showDOInformation
-    ) {
-      return;
-    }
-
-    setGeneratedMessage(
-      buildDOMessage()
-    );
-  }, [
-    showDOInformation,
-    agentCode,
-    agentName,
-    vehicleNo,
-    banks,
-    rows,
-    fromLocation,
-    upazila,
-    transportMode,
-  ]);
+    if (!showDOInformation) return;
+    setGeneratedMessage(buildDOMessage());
+  }, [showDOInformation, agentCode, agentName, vehicleNo, banks, rows, fromLocation, upazila, transportMode]);
 
   async function copyMessage() {
-    if (
-      !generatedMessage
-    ) {
-      return;
-    }
-
+    if (!generatedMessage) return;
     try {
-      await navigator.clipboard.writeText(
-        generatedMessage
-      );
-
-      alert(
-        "DO Message copied."
-      );
+      await navigator.clipboard.writeText(generatedMessage);
+      alert("DO Message copied.");
     } catch (error) {
       console.error(error);
       alert("Copy failed.");
@@ -1165,1530 +513,450 @@ From: ${finalFrom}`;
   }
 
   async function saveDO() {
-    if (saving) {
-      return;
-    }
-
+    if (saving) return;
     if (!user) {
-      alert(
-        "You are not logged in."
-      );
+      alert("You are not logged in.");
       return;
     }
 
     if (rows.length === 0) {
-      alert(
-        "Please add at least one feed item."
-      );
+      alert("Please add at least one feed item.");
       return;
     }
 
-    const validRows: OrderRow[] =
-      rows.filter(
-        (row: OrderRow) =>
-          row.item !== null &&
-          row.bags > 0
-      );
-
-    if (
-      validRows.length === 0
-    ) {
-      alert(
-        "Please select feed item and enter bags."
-      );
+    const validRows: OrderRow[] = rows.filter((row: OrderRow) => row.item !== null && row.bags > 0);
+    if (validRows.length === 0) {
+      alert("Please select feed item and enter bags.");
       return;
     }
 
     setSaving(true);
-
     try {
-      const validBanks =
-        banks.filter(
-          (bank) =>
-            bank.bankName.trim() ||
-            bank.branch.trim() ||
-            bank.date.trim() ||
-            bank.amount.trim()
-        );
+      const validBanks = banks.filter((bank) => bank.bankName.trim() || bank.branch.trim() || bank.date.trim() || bank.amount.trim());
+      const bankDetails = validBanks
+        .map((bank) => {
+          return `${bank.bankName || "[Bank Name]"}\n${bank.branch || "[Branch]"}\n${bank.date || "[Date]"}\n${bank.amount ? `৳ ${Number(bank.amount).toLocaleString("en-BD", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : "[Bank Amount]"}`;
+        })
+        .join("\n\n");
 
-      const bankDetails =
-        validBanks
-          .map((bank) => {
-            return `${bank.bankName || "[Bank Name]"}
-${bank.branch || "[Branch]"}
-${bank.date || "[Date]"}
-${
-  bank.amount
-    ? `৳ ${Number(
-        bank.amount
-      ).toLocaleString(
-        "en-BD",
-        {
-          minimumFractionDigits: 2,
-          maximumFractionDigits: 2,
-        }
-      )}`
-    : "[Bank Amount]"
-}`;
-          })
-          .join("\n\n");
+      const orderItems = validRows.map((row) => ({
+        category: row.category,
+        item_id: row.item?.id || null,
+        item_name: row.item?.item_name || "",
+        short_name: row.item?.short_name || "",
+        bags: Number(row.bags),
+        kg_per_bag: Number(row.item?.kg_per_bag || 0),
+        tp_per_bag: Number(row.item?.tp_per_bag || 0),
+        weight: getRowWeight(row),
+        transport: getRowTransport(row),
+        total: getRowTotal(row),
+      }));
 
-      const orderItems =
-        validRows.map(
-          (row) => ({
-            category:
-              row.category,
-            item_id:
-              row.item?.id ||
-              null,
-            item_name:
-              row.item
-                ?.item_name ||
-              "",
-            short_name:
-              row.item
-                ?.short_name ||
-              "",
-            bags:
-              Number(
-                row.bags
-              ),
-            kg_per_bag:
-              Number(
-                row.item
-                  ?.kg_per_bag ||
-                  0
-              ),
-            tp_per_bag:
-              Number(
-                row.item
-                  ?.tp_per_bag ||
-                  0
-              ),
-            weight:
-              getRowWeight(
-                row
-              ),
-            transport:
-              getRowTransport(
-                row
-              ),
-            total:
-              getRowTotal(
-                row
-              ),
-          })
-        );
-
-      const firstBank =
-        validBanks.length >
-        0
-          ? validBanks[0]
-          : null;
-
-      const finalMessage =
-        generatedMessage ||
-        buildDOMessage();
+      const firstBank = validBanks.length > 0 ? validBanks[0] : null;
+      const finalMessage = generatedMessage || buildDOMessage();
 
       const payload = {
-        user_id:
-          user.id,
-        agent_info:
-          `${agentCode.trim()}, ${agentName.trim()}`
-            .replace(
-              /^,\s*|\s*,\s*$/g,
-              ""
-            ) || null,
-        vehicle_number:
-          vehicleNo.trim() ||
-          null,
-        bank_details:
-          bankDetails ||
-          null,
-        from_location:
-          fromLocation ||
-          null,
-        to_upazila:
-          upazila ||
-          null,
-        transport_mode:
-          transportMode,
-        total_weight:
-          Number(
-            totalWeight.toFixed(
-              2
-            )
-          ),
-        total_amount:
-          Number(
-            totalAmount.toFixed(
-              2
-            )
-          ),
-        order_items:
-          orderItems,
-        agent_code:
-          agentCode.trim() ||
-          null,
-        agent_name:
-          agentName.trim() ||
-          null,
-        vehicle_no:
-          vehicleNo.trim() ||
-          null,
-        bank_name:
-          firstBank?.bankName.trim() ||
-          null,
-        bank_branch:
-          firstBank?.branch.trim() ||
-          null,
-        bank_amount:
-          firstBank?.amount
-            ? Number(
-                firstBank.amount
-              )
-            : 0,
-        banks:
-          validBanks,
-        message_text:
-          finalMessage,
+        user_id: user.id,
+        agent_info: `${agentCode.trim()}, ${agentName.trim()}`.replace(/^,\s*|\s*,\s*$/g, "") || null,
+        vehicle_number: vehicleNo.trim() || null,
+        bank_details: bankDetails || null,
+        from_location: fromLocation || null,
+        to_upazila: upazila || null,
+        transport_mode: transportMode,
+        total_weight: Number(totalWeight.toFixed(2)),
+        total_amount: Number(totalAmount.toFixed(2)),
+        order_items: orderItems,
+        agent_code: agentCode.trim() || null,
+        agent_name: agentName.trim() || null,
+        vehicle_no: vehicleNo.trim() || null,
+        bank_name: firstBank?.bankName.trim() || null,
+        bank_branch: firstBank?.branch.trim() || null,
+        bank_amount: firstBank?.amount ? Number(firstBank.amount) : 0,
+        banks: validBanks,
+        message_text: finalMessage,
       };
 
-      const { error } =
-        await supabase
-          .from("saved_dos")
-          .insert([
-            payload,
-          ]);
-
+      const { error } = await supabase.from("saved_dos").insert([payload]);
       if (error) {
-        console.error(
-          "Save DO error:",
-          error
-        );
-        alert(
-          `Save DO failed: ${error.message}`
-        );
+        alert(`Save DO failed: ${error.message}`);
         return;
       }
 
-      alert(
-        "DO saved successfully."
-      );
+      alert("DO saved successfully.");
+      localStorage.removeItem(EASY_DO_STORAGE_KEY);
     } catch (error) {
       console.error(error);
-      alert(
-        "Something went wrong while saving DO."
-      );
+      alert("Something went wrong while saving DO.");
     } finally {
       setSaving(false);
     }
   }
 
-  function money(
-    value: number
-  ) {
-    return Number(
-      value
-    ).toLocaleString(
-      "en-BD",
-      {
-        minimumFractionDigits: 2,
-        maximumFractionDigits: 2,
-      }
-    );
+  function money(value: number) {
+    return Number(value).toLocaleString("en-BD", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   }
 
   return (
-    <div
-      style={styles.page}
-    >
-      <div
-        style={styles.header}
-      >
+    <div style={styles.page}>
+      <div style={styles.header}>
         <div>
-          <h1
-            style={styles.title}
-          >
-            Create D/O (Format 2)
-          </h1>
-
-          <p
-            style={
-              styles.subtitle
-            }
-          >
-            Feed order entry with restriction
-          </p>
+          <h1 style={styles.title}>Create D/O (Format 2)</h1>
+          <p style={styles.subtitle}>Feed order entry with auto-save & restriction</p>
         </div>
       </div>
 
       {loading ? (
-        <div
-          style={styles.loading}
-        >
-          Loading...
-        </div>
+        <div style={styles.loading}>Loading...</div>
       ) : (
         <>
-          <div
-            style={
-              styles.categoryCard
-            }
-          >
-            <div
-              style={
-                styles.sectionTitle
-              }
-            >
-              Add Feed Item
-            </div>
-
-            <div
-              style={
-                styles.categoryGrid
-              }
-            >
-              {categories.map(
-                (category) => (
-                  <button
-                    key={
-                      category
-                    }
-                    style={
-                      styles.categoryButton
-                    }
-                    onClick={() =>
-                      addCategory(
-                        category
-                      )
-                    }
-                  >
-                    <span
-                      style={
-                        styles.categoryIcon
-                      }
-                    >
-                      +
-                    </span>
-
-                    {category}
-                  </button>
-                )
-              )}
+          <div style={styles.categoryCard}>
+            <div style={styles.sectionTitle}>Add Feed Item</div>
+            <div style={styles.categoryGrid}>
+              {categories.map((category) => (
+                <button key={category} style={styles.categoryButton} onClick={() => addCategory(category)}>
+                  <span style={styles.categoryIcon}>+</span>
+                  {category}
+                </button>
+              ))}
             </div>
           </div>
 
-          <div
-            style={
-              styles.orderCard
-            }
-          >
-            <div
-              style={
-                styles.sectionHeader
-              }
-            >
+          <div style={styles.orderCard}>
+            <div style={styles.sectionHeader}>
               <div>
-                <div
-                  style={
-                    styles.sectionTitle
-                  }
-                >
-                  Order Items
-                </div>
-
-                <div
-                  style={
-                    styles.sectionHint
-                  }
-                >
-                  Select item and enter
-                  number of bags
-                </div>
+                <div style={styles.sectionTitle}>Order Items</div>
+                <div style={styles.sectionHint}>Select item and enter number of bags</div>
               </div>
-
-              <div
-                style={
-                  styles.itemCount
-                }
-              >
-                {
-                  rows.filter(
-                    (row) =>
-                      row.item
-                  ).length
-                }{" "}
-                item
-                {
-                  rows.filter(
-                    (row) =>
-                      row.item
-                  ).length !==
-                  1
-                    ? "s"
-                    : ""
-                }
+              <div style={styles.itemCount}>
+                {rows.filter((row) => row.item).length} item{rows.filter((row) => row.item).length !== 1 ? "s" : ""}
               </div>
             </div>
 
             {rows.length === 0 ? (
-              <div
-                style={
-                  styles.emptyState
-                }
-              >
-                <div
-                  style={
-                    styles.emptyIcon
-                  }
-                >
-                  +
-                </div>
-
-                <div
-                  style={
-                    styles.emptyTitle
-                  }
-                >
-                  No items added
-                </div>
-
-                <div
-                  style={
-                    styles.emptyText
-                  }
-                >
-                  Select a feed category
-                  above to add an item.
-                </div>
+              <div style={styles.emptyState}>
+                <div style={styles.emptyIcon}>+</div>
+                <div style={styles.emptyTitle}>No items added</div>
+                <div style={styles.emptyText}>Select a feed category above to add an item.</div>
               </div>
             ) : (
-              <div
-                style={
-                  styles.rows
-                }
-              >
-                {rows.map(
-                  (
-                    row,
-                    index
-                  ) => {
-                    const selectedItemIds =
-                      rows
-                        .filter(
-                          (
-                            existingRow
-                          ) =>
-                            existingRow.category ===
-                              row.category &&
-                            existingRow.item
-                        )
-                        .map(
-                          (
-                            existingRow
-                          ) =>
-                            existingRow
-                              .item!
-                              .id
-                        );
+              <div style={styles.rows}>
+                {rows.map((row, index) => {
+                  const selectedItemIds = rows
+                    .filter((existingRow) => existingRow.category === row.category && existingRow.item)
+                    .map((existingRow) => existingRow.item!.id);
 
-                    const items =
-                      priceList.filter(
-                        (item) =>
-                          item.category ===
-                            row.category &&
-                          !selectedItemIds.includes(
-                            item.id
-                          )
-                      );
+                  const items = priceList.filter(
+                    (item) => item.category === row.category && !selectedItemIds.includes(item.id)
+                  );
 
-                    const pending =
-                      getPendingSelection(
-                        row.id
-                      );
+                  const pending = getPendingSelection(row.id);
+                  const rowWeight = getRowWeight(row);
+                  const rate = getTransportRate(row.category);
+                  const transportPerBag = row.item ? Number(row.item.kg_per_bag) * rate : 0;
+                  const currentTotal = getRowTotal(row);
 
-                    const rowWeight =
-                      getRowWeight(
-                        row
-                      );
-
-                    const rate =
-                      getTransportRate(
-                        row.category
-                      );
-
-                    const transportPerBag =
-                      row.item
-                        ? Number(
-                            row.item
-                              .kg_per_bag
-                          ) *
-                          rate
-                        : 0;
-
-                    const currentTotal =
-                      getRowTotal(
-                        row
-                      );
-
-                    if (
-                      !row.item
-                    ) {
-                      return (
-                        <div
-                          key={
-                            row.id
-                          }
-                          style={{
-                            ...styles.orderRow,
-                            background:
-                              index %
-                                2 ===
-                              0
-                                ? "#ffffff"
-                                : "#f1f5f9",
-                          }}
-                          className="easy-do-order-row"
-                        >
-                          <div
-                            style={
-                              styles.rowNumber
-                            }
-                          >
-                            {index +
-                              1}
-                          </div>
-
-                          <div
-                            style={{
-                              ...styles.categoryColumn,
-                              gridColumn:
-                                "2 / -1",
-                            }}
-                          >
-                            <div
-                              style={
-                                styles.categoryLabel
-                              }
-                            >
-                              {
-                                row.category
-                              }
-                            </div>
-
-                            <div
-                              ref={
-                                openDropdownRowId ===
-                                row.id
-                                  ? dropdownRef
-                                  : null
-                              }
-                              style={{
-                                position:
-                                  "relative",
-                              }}
-                            >
-                              <button
-                                type="button"
-                                onClick={() =>
-                                  setOpenDropdownRowId(
-                                    openDropdownRowId ===
-                                      row.id
-                                      ? null
-                                      : row.id
-                                  )
-                                }
-                                style={{
-                                  ...styles.selectButton,
-                                  width:
-                                    "100%",
-                                }}
-                              >
-                                <span>
-                                  {pending.length >
-                                  0
-                                    ? `${pending.length} item${
-                                        pending.length !==
-                                        1
-                                          ? "s"
-                                          : ""
-                                      } selected`
-                                    : `Select ${row.category} items`}
-                                </span>
-
-                                <span
-                                  style={
-                                    styles.dropdownArrow
-                                  }
-                                >
-                                  {openDropdownRowId ===
-                                  row.id
-                                    ? "▲"
-                                    : "▼"}
-                                </span>
-                              </button>
-
-                              {openDropdownRowId ===
-                                row.id && (
-                                <div
-                                  style={
-                                    styles.multiDropdown
-                                  }
-                                >
-                                  <div
-                                    style={
-                                      styles.multiDropdownHeader
-                                    }
-                                  >
-                                    <span>
-                                      Select{" "}
-                                      {
-                                        row.category
-                                      }{" "}
-                                      items
-                                    </span>
-
-                                    <span
-                                      style={
-                                        styles.multiCount
-                                      }
-                                    >
-                                      {
-                                        pending.length
-                                      }{" "}
-                                      selected
-                                    </span>
-                                  </div>
-
-                                  <div
-                                    style={
-                                      styles.multiOptions
-                                    }
-                                  >
-                                    {items.length ===
-                                    0 ? (
-                                      <div
-                                        style={
-                                          styles.noItems
-                                        }
-                                      >
-                                        No more items
-                                        available.
-                                      </div>
-                                    ) : (
-                                      items.map(
-                                        (
-                                          item
-                                        ) => {
-                                          const checked =
-                                            pending.includes(
-                                              item.id
-                                            );
-
-                                          return (
-                                            <label
-                                              key={
-                                                item.id
-                                              }
-                                              style={{
-                                                ...styles.multiOption,
-                                                ...(checked
-                                                  ? styles.multiOptionChecked
-                                                  : {}),
-                                              }}
-                                            >
-                                              <input
-                                                type="checkbox"
-                                                checked={
-                                                  checked
-                                                }
-                                                onChange={() =>
-                                                  togglePendingItem(
-                                                    row.id,
-                                                    item.id
-                                                  )
-                                                }
-                                                style={
-                                                  styles.checkbox
-                                                }
-                                              />
-
-                                              <span
-                                                style={
-                                                  styles.multiItemName
-                                                }
-                                              >
-                                                {
-                                                  item.item_name
-                                                }
-                                              </span>
-                                            </label>
-                                          );
-                                        }
-                                      )
-                                    )}
-                                  </div>
-
-                                  <div
-                                    style={
-                                      styles.multiDropdownFooter
-                                    }
-                                  >
-                                    <button
-                                      type="button"
-                                      onClick={() => {
-                                        setPendingSelections(
-                                          (
-                                            prev
-                                          ) => {
-                                            const copy =
-                                              {
-                                                ...prev,
-                                              };
-                                            delete copy[
-                                              row.id
-                                            ];
-                                            return copy;
-                                          }
-                                        );
-                                        setOpenDropdownRowId(
-                                          null
-                                        );
-                                      }}
-                                      style={
-                                        styles.cancelSelectButton
-                                      }
-                                    >
-                                      Cancel
-                                    </button>
-
-                                    <button
-                                      type="button"
-                                      disabled={
-                                        pending.length ===
-                                        0
-                                      }
-                                      onClick={() =>
-                                        confirmMultipleItems(
-                                          row.id
-                                        )
-                                      }
-                                      style={{
-                                        ...styles.confirmSelectButton,
-                                        opacity:
-                                          pending.length ===
-                                          0
-                                            ? 0.5
-                                            : 1,
-                                      }}
-                                    >
-                                      Add Selected
-                                    </button>
-                                  </div>
-                                </div>
-                              )}
-                            </div>
-
-                            <div
-                              style={
-                                styles.selectHelp
-                              }
-                            >
-                              You can select
-                              multiple items at
-                              once.
-                            </div>
-                          </div>
-
-                          <button
-                            style={
-                              styles.removeButton
-                            }
-                            onClick={() =>
-                              removeRow(
-                                row.id
-                              )
-                            }
-                          >
-                            ×
-                          </button>
-                        </div>
-                      );
-                    }
-
+                  if (!row.item) {
                     return (
                       <div
-                        key={
-                          row.id
-                        }
-                        style={{
-                          ...styles.orderRow,
-                          background:
-                            index %
-                              2 ===
-                            0
-                              ? "#ffffff"
-                              : "#f1f5f9",
-                        }}
+                        key={row.id}
+                        style={{ ...styles.orderRow, background: index % 2 === 0 ? "#ffffff" : "#f1f5f9" }}
                         className="easy-do-order-row"
                       >
-                        <div
-                          style={
-                            styles.rowNumber
-                          }
-                        >
-                          {index +
-                            1}
-                        </div>
-
-                        <div
-                          style={
-                            styles.categoryColumn
-                          }
-                        >
-                          <div
-                            style={
-                              styles.categoryLabel
-                            }
-                          >
-                            {
-                              row.category
-                            }
-                          </div>
-
-                          <div
-                            style={
-                              styles.selectedItemBox
-                            }
-                          >
-                            {
-                              row.item
-                                .item_name
-                            }
-                          </div>
-                        </div>
-
-                        <div
-                          style={
-                            styles.priceColumn
-                          }
-                        >
-                          <div
-                            style={
-                              styles.fieldLabel
-                            }
-                          >
-                            TP / Bag
-                          </div>
-
-                          <div
-                            style={
-                              styles.priceValue
-                            }
-                          >
-                            {row.item
-                              ? `৳ ${money(
-                                  Number(
-                                    row.item
-                                      .tp_per_bag
-                                  )
-                                )}`
-                              : "—"}
-                          </div>
-
-                          {row.item && (
-                            <div
-                              style={
-                                styles.kgText
-                              }
+                        <div style={styles.rowNumber}>{index + 1}</div>
+                        <div style={{ ...styles.categoryColumn, gridColumn: "2 / -1" }}>
+                          <div style={styles.categoryLabel}>{row.category}</div>
+                          <div ref={openDropdownRowId === row.id ? dropdownRef : null} style={{ position: "relative" }}>
+                            <button
+                              type="button"
+                              onClick={() => setOpenDropdownRowId(openDropdownRowId === row.id ? null : row.id)}
+                              style={{ ...styles.selectButton, width: "100%" }}
                             >
-                              {
-                                row.item
-                                  .kg_per_bag
-                              }{" "}
-                              kg/bag
-                            </div>
-                          )}
-                        </div>
+                              <span>
+                                {pending.length > 0
+                                  ? `${pending.length} item${pending.length !== 1 ? "s" : ""} selected`
+                                  : `Select ${row.category} items`}
+                              </span>
+                              <span style={styles.dropdownArrow}>{openDropdownRowId === row.id ? "▲" : "▼"}</span>
+                            </button>
 
-                        <div
-                          style={
-                            styles.bagColumn
-                          }
-                        >
-                          <div
-                            style={
-                              styles.fieldLabel
-                            }
-                          >
-                            Bags
-                          </div>
-
-                          {!row.item ? (
-                            <div
-                              style={
-                                styles.selectItemsHint
-                              }
-                            >
-                              Select items
-                            </div>
-                          ) : (
-                            <input
-                              type="number"
-                              min="0"
-                              step="1"
-                              value={
-                                row.bags ||
-                                ""
-                              }
-                              onChange={(
-                                e
-                              ) =>
-                                updateBags(
-                                  row.id,
-                                  Number(
-                                    e
-                                      .target
-                                      .value
-                                  )
-                                )
-                              }
-                              placeholder="Add bag amount"
-                              style={
-                                styles.bagInput
-                              }
-                            />
-                          )}
-                        </div>
-
-                        <div
-                          style={
-                            styles.transportColumn
-                          }
-                        >
-                          <div
-                            style={
-                              styles.fieldLabel
-                            }
-                          >
-                            Transport
-                          </div>
-
-                          <div
-                            style={
-                              styles.transportValue
-                            }
-                          >
-                            {selectedTransport &&
-                            row.item
-                              ? `৳ ${transportPerBag.toFixed(
-                                  2
-                                )}/bag`
-                              : "—"}
-                          </div>
-
-                          {row.item &&
-                            selectedTransport && (
-                              <div
-                                style={
-                                  styles.kgText
-                                }
-                              >
-                                ৳{" "}
-                                {rate.toFixed(
-                                  2
-                                )}
-                                /kg
+                            {openDropdownRowId === row.id && (
+                              <div style={styles.multiDropdown}>
+                                <div style={styles.multiDropdownHeader}>
+                                  <span>Select {row.category} items</span>
+                                  <span style={styles.multiCount}>{pending.length} selected</span>
+                                </div>
+                                <div style={styles.multiOptions}>
+                                  {items.length === 0 ? (
+                                    <div style={styles.noItems}>No more items available.</div>
+                                  ) : (
+                                    items.map((item) => {
+                                      const checked = pending.includes(item.id);
+                                      return (
+                                        <label
+                                          key={item.id}
+                                          style={{ ...styles.multiOption, ...(checked ? styles.multiOptionChecked : {}) }}
+                                        >
+                                          <input
+                                            type="checkbox"
+                                            checked={checked}
+                                            onChange={() => togglePendingItem(row.id, item.id)}
+                                            style={styles.checkbox}
+                                          />
+                                          <span style={styles.multiItemName}>{item.item_name}</span>
+                                        </label>
+                                      );
+                                    })
+                                  )}
+                                </div>
+                                <div style={styles.multiDropdownFooter}>
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setPendingSelections((prev) => {
+                                        const copy = { ...prev };
+                                        delete copy[row.id];
+                                        return copy;
+                                      });
+                                      setOpenDropdownRowId(null);
+                                    }}
+                                    style={styles.cancelSelectButton}
+                                  >
+                                    Cancel
+                                  </button>
+                                  <button
+                                    type="button"
+                                    disabled={pending.length === 0}
+                                    onClick={() => confirmMultipleItems(row.id)}
+                                    style={{ ...styles.confirmSelectButton, opacity: pending.length === 0 ? 0.5 : 1 }}
+                                  >
+                                    Add Selected
+                                  </button>
+                                </div>
                               </div>
                             )}
-                        </div>
-
-                        <div
-                          style={
-                            styles.totalColumn
-                          }
-                        >
-                          <div
-                            style={
-                              styles.fieldLabel
-                            }
-                          >
-                            Total
                           </div>
-
-                          <div
-                            style={
-                              styles.rowTotal
-                            }
-                          >
-                            {!row.item ? (
-                              <span
-                                style={
-                                  styles.selectItemsHint
-                                }
-                              >
-                                Select items
-                              </span>
-                            ) : row.bags <=
-                              0 ? (
-                              <span
-                                style={
-                                  styles.addBagAmountText
-                                }
-                              >
-                                Add bag amount
-                              </span>
-                            ) : (
-                              <>
-                                ৳{" "}
-                                {money(
-                                  currentTotal
-                                )}
-                              </>
-                            )}
-                          </div>
-
-                          {transportMode ===
-                            "without" &&
-                            row.item &&
-                            row.bags >
-                              0 &&
-                            selectedTransport && (
-                              <div
-                                style={
-                                  styles.withoutText
-                                }
-                              >
-                                Transport
-                                deducted
-                              </div>
-                            )}
+                          <div style={styles.selectHelp}>You can select multiple items at once.</div>
                         </div>
-
-                        <button
-                          style={
-                            styles.removeButton
-                          }
-                          onClick={() =>
-                            removeRow(
-                              row.id
-                            )
-                          }
-                        >
-                          ×
-                        </button>
-
-                        {row.item &&
-                          row.bags > 0 && (
-                            <div
-                              style={
-                                styles.weightInfo
-                              }
-                            >
-                              Total weight:{" "}
-                              {rowWeight.toLocaleString(
-                                "en-BD",
-                                {
-                                  maximumFractionDigits: 2,
-                                }
-                              )}{" "}
-                              kg
-                            </div>
-                          )}
+                        <button style={styles.removeButton} onClick={() => removeRow(row.id)}>×</button>
                       </div>
                     );
                   }
-                )}
+
+                  return (
+                    <div
+                      key={row.id}
+                      style={{ ...styles.orderRow, background: index % 2 === 0 ? "#ffffff" : "#f1f5f9" }}
+                      className="easy-do-order-row"
+                    >
+                      <div style={styles.rowNumber}>{index + 1}</div>
+
+                      <div style={styles.categoryColumn}>
+                        <div style={styles.categoryLabel}>{row.category}</div>
+                        <div style={styles.selectedItemBox}>{row.item.item_name}</div>
+                      </div>
+
+                      <div style={styles.priceColumn}>
+                        <div style={styles.fieldLabel}>TP / Bag</div>
+                        <div style={styles.priceValue}>
+                          {row.item ? `৳ ${money(Number(row.item.tp_per_bag))}` : "—"}
+                        </div>
+                        {row.item && <div style={styles.kgText}>{row.item.kg_per_bag} kg/bag</div>}
+                      </div>
+
+                      <div style={styles.bagColumn}>
+                        <div style={styles.fieldLabel}>Bags</div>
+                        {!row.item ? (
+                          <div style={styles.selectItemsHint}>Select items</div>
+                        ) : (
+                          <input
+                            type="number"
+                            min="0"
+                            step="1"
+                            value={row.bags || ""}
+                            onChange={(e) => updateBags(row.id, Number(e.target.value))}
+                            placeholder="Add bag amount"
+                            style={styles.bagInput}
+                          />
+                        )}
+                      </div>
+
+                      <div style={styles.transportColumn}>
+                        <div style={styles.fieldLabel}>Transport</div>
+                        <div style={styles.transportValue}>
+                          {selectedTransport && row.item ? `৳ ${transportPerBag.toFixed(2)}/bag` : "—"}
+                        </div>
+                        {row.item && selectedTransport && <div style={styles.kgText}>৳ {rate.toFixed(2)}/kg</div>}
+                      </div>
+
+                      <div style={styles.totalColumn}>
+                        <div style={styles.fieldLabel}>Total</div>
+                        <div style={styles.rowTotal}>
+                          {!row.item ? (
+                            <span style={styles.selectItemsHint}>Select items</span>
+                          ) : row.bags <= 0 ? (
+                            <span style={styles.addBagAmountText}>Add bag amount</span>
+                          ) : (
+                            <>৳ {money(currentTotal)}</>
+                          )}
+                        </div>
+                        {transportMode === "without" && row.item && row.bags > 0 && selectedTransport && (
+                          <div style={styles.withoutText}>Transport deducted</div>
+                        )}
+                      </div>
+
+                      <button style={styles.removeButton} onClick={() => removeRow(row.id)}>×</button>
+
+                      {row.item && row.bags > 0 && (
+                        <div style={styles.weightInfo}>
+                          Total weight: {rowWeight.toLocaleString("en-BD", { maximumFractionDigits: 2 })} kg
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
             )}
           </div>
 
           {rows.length > 0 && (
-            <div
-              style={
-                styles.addAnotherCard
-              }
-            >
-              <div
-                style={
-                  styles.addAnotherTitle
-                }
-              >
-                Add another item
-              </div>
-
-              <div
-                style={
-                  styles.addAnotherGrid
-                }
-              >
-                {categories.map(
-                  (category) => (
-                    <button
-                      key={
-                        category
-                      }
-                      style={
-                        styles.addAnotherButton
-                      }
-                      onClick={() =>
-                        addCategory(
-                          category
-                        )
-                      }
-                    >
-                      + {category}
-                    </button>
-                  )
-                )}
+            <div style={styles.addAnotherCard}>
+              <div style={styles.addAnotherTitle}>Add another item</div>
+              <div style={styles.addAnotherGrid}>
+                {categories.map((category) => (
+                  <button key={category} style={styles.addAnotherButton} onClick={() => addCategory(category)}>
+                    + {category}
+                  </button>
+                ))}
               </div>
             </div>
           )}
 
-          <div
-            style={
-              styles.transportCard
-            }
-          >
-            <div
-              style={
-                styles.sectionTitle
-              }
-            >
-              Transportation
-            </div>
-
-            <div
-              style={
-                styles.transportGrid
-              }
-            >
+          <div style={styles.transportCard}>
+            <div style={styles.sectionTitle}>Transportation</div>
+            <div style={styles.transportGrid}>
               <div>
-                <label
-                  style={
-                    styles.formLabel
-                  }
-                >
-                  From (Assigned Mills/Depots)
-                </label>
-
+                <label style={styles.formLabel}>From (Assigned Mills/Depots)</label>
                 <select
-                  value={
-                    fromLocation
-                  }
+                  value={fromLocation}
                   onChange={(e) => {
-                    setFromLocation(
-                      e.target.value
-                    );
+                    setFromLocation(e.target.value);
                     setUpazila("");
                   }}
-                  style={
-                    styles.select
-                  }
+                  style={styles.select}
                 >
-                  <option value="">
-                    Select From
-                  </option>
-
-                  {fromLocations.map(
-                    (location) => (
-                      <option
-                        key={
-                          location
-                        }
-                        value={
-                          location
-                        }
-                      >
-                        {
-                          location
-                        }
-                      </option>
-                    )
-                  )}
+                  <option value="">Select From</option>
+                  {fromLocations.map((location) => (
+                    <option key={location} value={location}>{location}</option>
+                  ))}
                 </select>
               </div>
 
               <div>
-                <label
-                  style={
-                    styles.formLabel
-                  }
-                >
-                  To / Upazila (Assigned Districts)
-                </label>
-
+                <label style={styles.formLabel}>To / Upazila (Assigned Districts)</label>
                 <select
-                  value={
-                    upazila
-                  }
-                  onChange={(e) =>
-                    setUpazila(
-                      e.target
-                        .value
-                    )
-                  }
-                  style={
-                    styles.select
-                  }
-                  disabled={
-                    !fromLocation
-                  }
+                  value={upazila}
+                  onChange={(e) => setUpazila(e.target.value)}
+                  style={styles.select}
+                  disabled={!fromLocation}
                 >
-                  <option value="">
-                    Select Upazila
-                  </option>
-
-                  {upazilas.map(
-                    (name) => (
-                      <option
-                        key={
-                          name
-                        }
-                        value={
-                          name
-                        }
-                      >
-                        {name}
-                      </option>
-                    )
-                  )}
+                  <option value="">Select Upazila</option>
+                  {upazilas.map((name) => (
+                    <option key={name} value={name}>{name}</option>
+                  ))}
                 </select>
               </div>
             </div>
 
-            <div
-              style={
-                styles.rateBox
-              }
-            >
-              <div
-                style={
-                  styles.rateTitle
-                }
-              >
-                Transportation Rate
-              </div>
-
+            <div style={styles.rateBox}>
+              <div style={styles.rateTitle}>Transportation Rate</div>
               {selectedTransport ? (
                 <>
-                  <div
-                    style={
-                      styles.rateLine
-                    }
-                  >
-                    Floating / Cattle:{" "}
-                    <strong>
-                      ৳
-                      {Number(
-                        selectedTransport
-                          .floating_cattle_rate_per_kg
-                      ).toFixed(
-                        2
-                      )}
-                      /kg
-                    </strong>
+                  <div style={styles.rateLine}>
+                    Floating / Cattle: <strong>৳{Number(selectedTransport.floating_cattle_rate_per_kg).toFixed(2)}/kg</strong>
                   </div>
-
-                  <div
-                    style={
-                      styles.rateLine
-                    }
-                  >
-                    Sinking / Broiler /
-                    Layer / Sonali:{" "}
-                    <strong>
-                      ৳
-                      {Number(
-                        selectedTransport
-                          .sinking_broiler_layer_sonali_rate_per_kg
-                      ).toFixed(
-                        2
-                      )}
-                      /kg
-                    </strong>
+                  <div style={styles.rateLine}>
+                    Sinking / Broiler / Layer / Sonali: <strong>৳{Number(selectedTransport.sinking_broiler_layer_sonali_rate_per_kg).toFixed(2)}/kg</strong>
                   </div>
                 </>
               ) : (
-                <div
-                  style={
-                    styles.noRate
-                  }
-                >
-                  Select From and
-                  Upazila to see rate.
-                </div>
+                <div style={styles.noRate}>Select From and Upazila to see rate.</div>
               )}
             </div>
 
-            <div
-              style={
-                styles.modeSection
-              }
-            >
-              <div
-                style={
-                  styles.formLabel
-                }
-              >
-                Price Type
-              </div>
-
-              <div
-                style={
-                  styles.modeGrid
-                }
-              >
+            <div style={styles.modeSection}>
+              <div style={styles.formLabel}>Price Type</div>
+              <div style={styles.modeGrid}>
                 <button
-                  onClick={() =>
-                    setTransportMode(
-                      "with"
-                    )
-                  }
-                  style={{
-                    ...styles.modeButton,
-                    ...(transportMode ===
-                    "with"
-                      ? styles.modeActive
-                      : {}),
-                  }}
+                  onClick={() => setTransportMode("with")}
+                  style={{ ...styles.modeButton, ...(transportMode === "with" ? styles.modeActive : {}) }}
                 >
-                  <span
-                    style={{
-                      ...styles.radio,
-                      ...(transportMode ===
-                      "with"
-                        ? styles.radioActive
-                        : {}),
-                    }}
-                  >
-                    {transportMode ===
-                    "with"
-                      ? "✓"
-                      : ""}
+                  <span style={{ ...styles.radio, ...(transportMode === "with" ? styles.radioActive : {}) }}>
+                    {transportMode === "with" ? "✓" : ""}
                   </span>
-
                   <div>
-                    <div
-                      style={
-                        styles.modeTitle
-                      }
-                    >
-                      With Transportation
-                    </div>
-
-                    <div
-                      style={
-                        styles.modeHint
-                      }
-                    >
-                      TP price as it is
-                    </div>
+                    <div style={styles.modeTitle}>With Transportation</div>
+                    <div style={styles.modeHint}>TP price as it is</div>
                   </div>
                 </button>
 
                 <button
-                  onClick={() =>
-                    setTransportMode(
-                      "without"
-                    )
-                  }
-                  style={{
-                    ...styles.modeButton,
-                    ...(transportMode ===
-                    "without"
-                      ? styles.modeActive
-                      : {}),
-                  }}
+                  onClick={() => setTransportMode("without")}
+                  style={{ ...styles.modeButton, ...(transportMode === "without" ? styles.modeActive : {}) }}
                 >
-                  <span
-                    style={{
-                      ...styles.radio,
-                      ...(transportMode ===
-                      "without"
-                        ? styles.radioActive
-                        : {}),
-                    }}
-                  >
-                    {transportMode ===
-                    "without"
-                      ? "✓"
-                      : ""}
+                  <span style={{ ...styles.radio, ...(transportMode === "without" ? styles.radioActive : {}) }}>
+                    {transportMode === "without" ? "✓" : ""}
                   </span>
-
                   <div>
-                    <div
-                      style={
-                        styles.modeTitle
-                      }
-                    >
-                      Without Transportation
-                    </div>
-
-                    <div
-                      style={
-                        styles.modeHint
-                      }
-                    >
-                      Transport cost deducted
-                    </div>
+                    <div style={styles.modeTitle}>Without Transportation</div>
+                    <div style={styles.modeHint}>Transport cost deducted</div>
                   </div>
                 </button>
               </div>
             </div>
           </div>
 
-          <div
-            style={
-              styles.summaryCard
-            }
-          >
-            <div
-              style={
-                styles.summaryRow
-              }
-            >
-              <span>
-                Total Weight
-              </span>
-
-              <strong>
-                {totalWeight.toLocaleString(
-                  "en-BD",
-                  {
-                    maximumFractionDigits: 2,
-                  }
-                )}{" "}
-                kg
-              </strong>
+          <div style={styles.summaryCard}>
+            <div style={styles.summaryRow}>
+              <span>Total Weight</span>
+              <strong>{totalWeight.toLocaleString("en-BD", { maximumFractionDigits: 2 })} kg</strong>
             </div>
-
-            <div
-              style={
-                styles.summaryRow
-              }
-            >
-              <span>
-                Feed Price
-              </span>
-
-              <strong>
-                ৳{" "}
-                {money(
-                  feedPrice
-                )}
-              </strong>
+            <div style={styles.summaryRow}>
+              <span>Feed Price</span>
+              <strong>৳ {money(feedPrice)}</strong>
             </div>
-
-            <div
-              style={
-                styles.summaryRow
-              }
-            >
-              <span>
-                Transportation
-              </span>
-
-              <strong>
-                {transportMode ===
-                "with"
-                  ? "Included in TP"
-                  : selectedTransport
-                  ? `- ৳ ${money(
-                      totalTransportAmount
-                    )}`
-                  : "—"}
-              </strong>
+            <div style={styles.summaryRow}>
+              <span>Transportation</span>
+              <strong>{transportMode === "with" ? "Included in TP" : selectedTransport ? `- ৳ ${money(totalTransportAmount)}` : "—"}</strong>
             </div>
-
-            <div
-              style={
-                styles.divider
-              }
-            />
-
-            <div
-              style={
-                styles.grandTotalRow
-              }
-            >
+            <div style={styles.divider} />
+            <div style={styles.grandTotalRow}>
               <div>
-                <div
-                  style={
-                    styles.grandTotalLabel
-                  }
-                >
-                  Grand Total
-                </div>
-
-                <div
-                  style={
-                    styles.grandTotalHint
-                  }
-                >
-                  {transportMode ===
-                  "with"
-                    ? "TP includes transportation"
-                    : "Transportation deducted from TP"}
+                <div style={styles.grandTotalLabel}>Grand Total</div>
+                <div style={styles.grandTotalHint}>
+                  {transportMode === "with" ? "TP includes transportation" : "Transportation deducted from TP"}
                 </div>
               </div>
-
-              <div
-                style={
-                  styles.grandTotalValue
-                }
-              >
-                ৳{" "}
-                {money(
-                  totalAmount
-                )}
-              </div>
+              <div style={styles.grandTotalValue}>৳ {money(totalAmount)}</div>
             </div>
 
-            <div
-              style={{
-                ...styles.actionButtons,
-                display:
-                  "flex",
-                justifyContent:
-                  "center",
-                alignItems:
-                  "center",
-              }}
-            >
+            <div style={{ ...styles.actionButtons, display: "flex", justifyContent: "center", alignItems: "center" }}>
               <button
                 style={{
-                  display:
-                    "block",
-                  margin:
-                    "20px auto",
-                  width:
-                    "min(100%, 360px)",
-                  padding:
-                    "16px 24px",
-                  border:
-                    "none",
-                  borderRadius:
-                    "14px",
-                  background:
-                    "#374151",
-                  color:
-                    "#ffffff",
-                  fontSize:
-                    "16px",
-                  fontWeight:
-                    800,
-                  letterSpacing:
-                    "0.2px",
-                  cursor:
-                    "pointer",
-                  boxShadow:
-                    "0 7px 20px rgba(17, 24, 39, 0.25)",
+                  display: "block",
+                  margin: "20px auto",
+                  width: "min(100%, 360px)",
+                  padding: "16px 24px",
+                  border: "none",
+                  borderRadius: "14px",
+                  background: "#374151",
+                  color: "#ffffff",
+                  fontSize: "16px",
+                  fontWeight: 800,
+                  letterSpacing: "0.2px",
+                  cursor: "pointer",
+                  boxShadow: "0 7px 20px rgba(17, 24, 39, 0.25)",
                 }}
-                onClick={
-                  openDOInformation
-                }
+                onClick={openDOInformation}
               >
                 📝 Generate DO Message
               </button>
@@ -2696,433 +964,82 @@ ${
           </div>
 
           {showDOInformation && (
-            <div
-              id="do-information-section"
-              style={
-                styles.doInformationCard
-              }
-            >
-              <div
-                style={
-                  styles.doInformationHeader
-                }
-              >
+            <div id="do-information-section" style={styles.doInformationCard}>
+              <div style={styles.doInformationHeader}>
                 <div>
-                  <div
-                    style={
-                      styles.doInformationTitle
-                    }
-                  >
-                    DO Information
-                  </div>
-
-                  <div
-                    style={
-                      styles.doInformationSubtitle
-                    }
-                  >
-                    Enter optional information.
-                    Message will update automatically.
-                  </div>
+                  <div style={styles.doInformationTitle}>DO Information</div>
+                  <div style={styles.doInformationSubtitle}>Enter optional information. Message will update automatically.</div>
                 </div>
-
-                <button
-                  style={
-                    styles.closeDOInformationButton
-                  }
-                  onClick={() =>
-                    setShowDOInformation(
-                      false
-                    )
-                  }
-                >
-                  ×
-                </button>
+                <button style={styles.closeDOInformationButton} onClick={() => setShowDOInformation(false)}>×</button>
               </div>
 
-              <div
-                style={
-                  styles.formSection
-                }
-              >
-                <div
-                  style={
-                    styles.formSectionTitle
-                  }
-                >
-                  Agent Information
-                </div>
-
-                <div
-                  style={
-                    styles.formGrid
-                  }
-                >
+              <div style={styles.formSection}>
+                <div style={styles.formSectionTitle}>Agent Information</div>
+                <div style={styles.formGrid}>
                   <div>
-                    <label
-                      style={
-                        styles.formLabel
-                      }
-                    >
-                      Agent Code
-                    </label>
-
-                    <input
-                      value={
-                        agentCode
-                      }
-                      onChange={(e) =>
-                        setAgentCode(
-                          e.target
-                            .value
-                        )
-                      }
-                      placeholder="Optional"
-                      style={
-                        styles.input
-                      }
-                    />
+                    <label style={styles.formLabel}>Agent Code</label>
+                    <input value={agentCode} onChange={(e) => setAgentCode(e.target.value)} placeholder="Optional" style={styles.input} />
                   </div>
-
                   <div>
-                    <label
-                      style={
-                        styles.formLabel
-                      }
-                    >
-                      Agent Name
-                    </label>
-
-                    <input
-                      value={
-                        agentName
-                      }
-                      onChange={(e) =>
-                        setAgentName(
-                          e.target
-                            .value
-                        )
-                      }
-                      placeholder="Optional"
-                      style={
-                        styles.input
-                      }
-                    />
+                    <label style={styles.formLabel}>Agent Name</label>
+                    <input value={agentName} onChange={(e) => setAgentName(e.target.value)} placeholder="Optional" style={styles.input} />
                   </div>
                 </div>
               </div>
 
-              <div
-                style={
-                  styles.formSection
-                }
-              >
-                <div
-                  style={
-                    styles.bankHeader
-                  }
-                >
-                  <div
-                    style={
-                      styles.formSectionTitle
-                    }
-                  >
-                    Bank Details
-                  </div>
-
-                  <button
-                    style={
-                      styles.addBankButton
-                    }
-                    onClick={
-                      addBank
-                    }
-                  >
-                    + Add Bank
-                  </button>
+              <div style={styles.formSection}>
+                <div style={styles.bankHeader}>
+                  <div style={styles.formSectionTitle}>Bank Details</div>
+                  <button style={styles.addBankButton} onClick={addBank}>+ Add Bank</button>
                 </div>
 
-                {banks.map(
-                  (
-                    bank,
-                    index
-                  ) => (
-                    <div
-                      key={
-                        bank.id
-                      }
-                      style={
-                        styles.bankCard
-                      }
-                    >
-                      <div
-                        style={
-                          styles.bankNumber
-                        }
-                      >
-                        Bank{" "}
-                        {index +
-                          1}
+                {banks.map((bank, index) => (
+                  <div key={bank.id} style={styles.bankCard}>
+                    <div style={styles.bankNumber}>Bank {index + 1}</div>
+                    <div style={styles.formGrid}>
+                      <div>
+                        <label style={styles.formLabel}>Bank Name</label>
+                        <input value={bank.bankName} onChange={(e) => updateBank(bank.id, "bankName", e.target.value)} placeholder="Optional" style={styles.input} />
                       </div>
-
-                      <div
-                        style={
-                          styles.formGrid
-                        }
-                      >
-                        <div>
-                          <label
-                            style={
-                              styles.formLabel
-                            }
-                          >
-                            Bank Name
-                          </label>
-
-                          <input
-                            value={
-                              bank.bankName
-                            }
-                            onChange={(
-                              e
-                            ) =>
-                              updateBank(
-                                bank.id,
-                                "bankName",
-                                e
-                                  .target
-                                  .value
-                              )
-                            }
-                            placeholder="Optional"
-                            style={
-                              styles.input
-                            }
-                          />
-                        </div>
-
-                        <div>
-                          <label
-                            style={
-                              styles.formLabel
-                            }
-                          >
-                            Branch
-                          </label>
-
-                          <input
-                            value={
-                              bank.branch
-                            }
-                            onChange={(
-                              e
-                            ) =>
-                              updateBank(
-                                bank.id,
-                                "branch",
-                                e
-                                  .target
-                                  .value
-                              )
-                            }
-                            placeholder="Optional"
-                            style={
-                              styles.input
-                            }
-                          />
-                        </div>
+                      <div>
+                        <label style={styles.formLabel}>Branch</label>
+                        <input value={bank.branch} onChange={(e) => updateBank(bank.id, "branch", e.target.value)} placeholder="Optional" style={styles.input} />
                       </div>
-
-                      <div
-                        style={
-                          styles.formGrid
-                        }
-                      >
-                        <div>
-                          <label
-                            style={
-                              styles.formLabel
-                            }
-                          >
-                            Date
-                          </label>
-
-                          <input
-                            type="date"
-                            value={
-                              bank.date
-                            }
-                            onChange={(
-                              e
-                            ) =>
-                              updateBank(
-                                bank.id,
-                                "date",
-                                e
-                                  .target
-                                  .value
-                              )
-                            }
-                            style={
-                              styles.input
-                            }
-                          />
-                        </div>
-
-                        <div>
-                          <label
-                            style={
-                              styles.formLabel
-                            }
-                          >
-                            Amount Tk
-                          </label>
-
-                          <input
-                            type="number"
-                            min="0"
-                            step="0.01"
-                            value={
-                              bank.amount
-                            }
-                            onChange={(
-                              e
-                            ) =>
-                              updateBank(
-                                bank.id,
-                                "amount",
-                                e
-                                  .target
-                                  .value
-                              )
-                            }
-                            placeholder="Optional"
-                            style={
-                              styles.input
-                            }
-                          />
-                        </div>
-                      </div>
-
-                      {banks.length >
-                        1 && (
-                        <div
-                          style={{
-                            marginTop: 9,
-                            textAlign:
-                              "right",
-                          }}
-                        >
-                          <button
-                            style={
-                              styles.removeBankButton
-                            }
-                            onClick={() =>
-                              removeBank(
-                                bank.id
-                              )
-                            }
-                          >
-                            Remove
-                          </button>
-                        </div>
-                      )}
                     </div>
-                  )
-                )}
-              </div>
-
-              <div
-                style={
-                  styles.formSection
-                }
-              >
-                <label
-                  style={
-                    styles.formLabel
-                  }
-                >
-                  Vehicle No
-                </label>
-
-                <input
-                  value={
-                    vehicleNo
-                  }
-                  onChange={(e) =>
-                    setVehicleNo(
-                      e.target
-                        .value
-                    )
-                  }
-                  placeholder="Optional"
-                  style={
-                    styles.input
-                  }
-                />
-              </div>
-
-              <div
-                style={
-                  styles.generatedSection
-                }
-              >
-                <div
-                  style={
-                    styles.generatedHeader
-                  }
-                >
-                  <div
-                    style={
-                      styles.formSectionTitle
-                    }
-                  >
-                    Generated Message
+                    <div style={styles.formGrid}>
+                      <div>
+                        <label style={styles.formLabel}>Date</label>
+                        <input type="date" value={bank.date} onChange={(e) => updateBank(bank.id, "date", e.target.value)} style={styles.input} />
+                      </div>
+                      <div>
+                        <label style={styles.formLabel}>Amount Tk</label>
+                        <input type="number" min="0" step="0.01" value={bank.amount} onChange={(e) => updateBank(bank.id, "amount", e.target.value)} placeholder="Optional" style={styles.input} />
+                      </div>
+                    </div>
+                    {banks.length > 1 && (
+                      <div style={{ marginTop: 9, textAlign: "right" }}>
+                        <button style={styles.removeBankButton} onClick={() => removeBank(bank.id)}>Remove</button>
+                      </div>
+                    )}
                   </div>
-
-                  <button
-                    style={
-                      styles.copyButton
-                    }
-                    onClick={
-                      copyMessage
-                    }
-                  >
-                    📋 Copy
-                  </button>
-                </div>
-
-                <textarea
-                  value={
-                    generatedMessage
-                  }
-                  onChange={(e) =>
-                    setGeneratedMessage(
-                      e.target
-                        .value
-                    )
-                  }
-                  style={
-                    styles.messageTextarea
-                  }
-                />
+                ))}
               </div>
 
-              <button
-                style={{
-                  ...styles.generateModalButton,
-                  marginTop: 12,
-                }}
-                onClick={
-                  saveDO
-                }
-                disabled={
-                  saving
-                }
-              >
-                {saving
-                  ? "Saving..."
-                  : "💾 Save this DO"}
+              <div style={styles.formSection}>
+                <label style={styles.formLabel}>Vehicle No</label>
+                <input value={vehicleNo} onChange={(e) => setVehicleNo(e.target.value)} placeholder="Optional" style={styles.input} />
+              </div>
+
+              <div style={styles.generatedSection}>
+                <div style={styles.generatedHeader}>
+                  <div style={styles.formSectionTitle}>Generated Message</div>
+                  <button style={styles.copyButton} onClick={copyMessage}>📋 Copy</button>
+                </div>
+                <textarea value={generatedMessage} onChange={(e) => setGeneratedMessage(e.target.value)} style={styles.messageTextarea} />
+              </div>
+
+              <button style={{ ...styles.generateModalButton, marginTop: 12 }} onClick={saveDO} disabled={saving}>
+                {saving ? "Saving..." : "💾 Save this DO"}
               </button>
             </div>
           )}
@@ -3132,45 +1049,22 @@ ${
       <style>
         {`
           @media (max-width: 700px) {
-
             .easy-do-order-row {
               grid-template-columns: 32px 1fr 32px !important;
               gap: 9px !important;
               align-items: start !important;
             }
-
-            .easy-do-order-row > div:nth-child(2) {
-              grid-column: 2;
-            }
-
+            .easy-do-order-row > div:nth-child(2) { grid-column: 2; }
             .easy-do-order-row > div:nth-child(3),
             .easy-do-order-row > div:nth-child(4),
             .easy-do-order-row > div:nth-child(5),
-            .easy-do-order-row > div:nth-child(6) {
-              grid-column: 2;
-            }
-
-            .easy-do-order-row > button {
-              grid-column: 3;
-              grid-row: 1;
-            }
-
-            .easy-do-order-row > div:last-child {
-              grid-column: 2 / -1;
-            }
+            .easy-do-order-row > div:nth-child(6) { grid-column: 2; }
+            .easy-do-order-row > button { grid-column: 3; grid-row: 1; }
+            .easy-do-order-row > div:last-child { grid-column: 2 / -1; }
           }
-
           @media (max-width: 480px) {
-
-            .easy-do-order-row {
-              padding: 9px !important;
-            }
-
-            input,
-            select,
-            button {
-              touch-action: manipulation;
-            }
+            .easy-do-order-row { padding: 9px !important; }
+            input, select, button { touch-action: manipulation; }
           }
         `}
       </style>
@@ -3178,20 +1072,9 @@ ${
   );
 }
 
-const styles: Record<
-  string,
-  React.CSSProperties
-> = {
-  page: {
-    minHeight: "100vh",
-    background: "#f3f4f6",
-    padding: 14,
-    color: "#111827",
-    boxSizing: "border-box",
-  },
-  header: {
-    marginBottom: 14,
-  },
+const styles: Record<string, React.CSSProperties> = {
+  page: { minHeight: "100vh", background: "#f3f4f6", padding: 14, color: "#111827", boxSizing: "border-box" },
+  header: { marginBottom: 14 },
   title: {
     margin: 0,
     fontSize: 18,
@@ -3203,697 +1086,100 @@ const styles: Record<
     color: "#0f172a",
     textShadow: "0px 2px 4px rgba(0, 0, 0, 0.08)",
   },
-  subtitle: {
-    margin: "3px 0 0",
-    fontSize: 12,
-    color: "#6b7280",
-    textAlign: "center",
-  },
-  categoryCard: {
-    background: "#ffffff",
-    border: "1px solid #e5e7eb",
-    borderRadius: 12,
-    padding: 14,
-    marginBottom: 12,
-    boxShadow: "0 1px 3px rgba(0,0,0,.05)",
-  },
-  sectionTitle: {
-    fontSize: 16,
-    fontWeight: 750,
-    color: "#111827",
-  },
-  categoryGrid: {
-    display: "grid",
-    gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
-    gap: 8,
-    marginTop: 12,
-  },
-  categoryButton: {
-    border: "1px solid #d1d5db",
-    background: "#ffffff",
-    color: "#111827",
-    borderRadius: 9,
-    padding: "11px 9px",
-    fontSize: 12,
-    fontWeight: 650,
-    cursor: "pointer",
-    textAlign: "left",
-    display: "flex",
-    alignItems: "center",
-    gap: 7,
-  },
-  categoryIcon: {
-    width: 21,
-    height: 21,
-    borderRadius: 6,
-    background: "#111827",
-    color: "#ffffff",
-    display: "inline-flex",
-    alignItems: "center",
-    justifyContent: "center",
-    fontWeight: 700,
-    flexShrink: 0,
-  },
-  orderCard: {
-    background: "#ffffff",
-    border: "1px solid #e5e7eb",
-    borderRadius: 12,
-    padding: 14,
-    boxShadow: "0 1px 3px rgba(0,0,0,.05)",
-  },
-  sectionHeader: {
-    display: "flex",
-    justifyContent: "space-between",
-    alignItems: "center",
-    gap: 10,
-    marginBottom: 12,
-  },
-  sectionHint: {
-    marginTop: 3,
-    fontSize: 11,
-    color: "#6b7280",
-  },
-  itemCount: {
-    background: "#f3f4f6",
-    color: "#374151",
-    padding: "5px 9px",
-    borderRadius: 7,
-    fontSize: 11,
-    fontWeight: 650,
-    whiteSpace: "nowrap",
-  },
-  emptyState: {
-    border: "1px dashed #d1d5db",
-    borderRadius: 10,
-    padding: "35px 15px",
-    textAlign: "center",
-    background: "#fafafa",
-  },
-  emptyIcon: {
-    margin: "0 auto 8px",
-    width: 35,
-    height: 35,
-    borderRadius: 10,
-    background: "#111827",
-    color: "#ffffff",
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    fontSize: 22,
-  },
-  emptyTitle: {
-    fontSize: 14,
-    fontWeight: 700,
-    color: "#374151",
-  },
-  emptyText: {
-    marginTop: 3,
-    fontSize: 11,
-    color: "#9ca3af",
-  },
-  rows: {
-    display: "flex",
-    flexDirection: "column",
-    gap: 8,
-  },
-  orderRow: {
-    position: "relative",
-    display: "grid",
-    gridTemplateColumns: "32px minmax(180px, 1.8fr) minmax(110px, .9fr) 85px minmax(125px, 1fr) minmax(120px, 1fr) 32px",
-    gap: 9,
-    alignItems: "center",
-    border: "1px solid #e5e7eb",
-    borderRadius: 10,
-    padding: 10,
-    background: "#ffffff",
-  },
-  rowNumber: {
-    width: 27,
-    height: 27,
-    borderRadius: 7,
-    background: "#f3f4f6",
-    color: "#374151",
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    fontSize: 11,
-    fontWeight: 700,
-  },
-  categoryColumn: {
-    minWidth: 0,
-  },
-  categoryLabel: {
-    fontSize: 10,
-    color: "#6b7280",
-    marginBottom: 4,
-    fontWeight: 600,
-  },
-  select: {
-    width: "100%",
-    boxSizing: "border-box",
-    border: "1px solid #cbd5e1",
-    borderRadius: 8,
-    background: "#ffffff",
-    color: "#111827",
-    padding: "9px 8px",
-    fontSize: 12,
-    outline: "none",
-  },
-  selectButton: {
-    border: "1px solid #cbd5e1",
-    borderRadius: 8,
-    background: "#ffffff",
-    color: "#111827",
-    padding: "10px 11px",
-    fontSize: 12,
-    outline: "none",
-    cursor: "pointer",
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "space-between",
-    gap: 10,
-    textAlign: "left",
-  },
-  dropdownArrow: {
-    fontSize: 9,
-    color: "#6b7280",
-    flexShrink: 0,
-  },
-  multiDropdown: {
-    position: "absolute",
-    top: "calc(100% + 5px)",
-    left: 0,
-    right: 0,
-    background: "#ffffff",
-    border: "1px solid #d1d5db",
-    borderRadius: 10,
-    boxShadow: "0 12px 30px rgba(0,0,0,.15)",
-    zIndex: 1000,
-    overflow: "hidden",
-  },
-  multiDropdownHeader: {
-    display: "flex",
-    justifyContent: "space-between",
-    alignItems: "center",
-    gap: 10,
-    padding: "10px 11px",
-    borderBottom: "1px solid #e5e7eb",
-    fontSize: 11,
-    fontWeight: 750,
-    color: "#111827",
-  },
-  multiCount: {
-    fontSize: 9,
-    fontWeight: 650,
-    color: "#6b7280",
-    whiteSpace: "nowrap",
-  },
-  multiOptions: {
-    maxHeight: 240,
-    overflowY: "auto",
-    padding: 5,
-  },
-  multiOption: {
-    display: "flex",
-    alignItems: "center",
-    gap: 8,
-    padding: "9px 8px",
-    borderRadius: 7,
-    cursor: "pointer",
-    fontSize: 11,
-    color: "#374151",
-  },
-  multiOptionChecked: {
-    background: "#f3f4f6",
-  },
-  checkbox: {
-    width: 16,
-    height: 16,
-    margin: 0,
-    accentColor: "#111827",
-    cursor: "pointer",
-    flexShrink: 0,
-  },
-  multiItemName: {
-    flex: 1,
-    minWidth: 0,
-  },
-  multiDropdownFooter: {
-    display: "flex",
-    justifyContent: "flex-end",
-    gap: 7,
-    padding: 8,
-    borderTop: "1px solid #e5e7eb",
-    background: "#fafafa",
-  },
-  cancelSelectButton: {
-    border: "1px solid #d1d5db",
-    background: "#ffffff",
-    color: "#374151",
-    borderRadius: 7,
-    padding: "8px 11px",
-    fontSize: 10,
-    fontWeight: 700,
-    cursor: "pointer",
-  },
-  confirmSelectButton: {
-    border: "none",
-    background: "#111827",
-    color: "#ffffff",
-    borderRadius: 7,
-    padding: "8px 11px",
-    fontSize: 10,
-    fontWeight: 700,
-    cursor: "pointer",
-  },
-  selectHelp: {
-    marginTop: 5,
-    fontSize: 9,
-    color: "#9ca3af",
-  },
-  selectedItemBox: {
-    width: "100%",
-    boxSizing: "border-box",
-    border: "1px solid #cbd5e1",
-    borderRadius: 8,
-    background: "#ffffff",
-    color: "#111827",
-    padding: "9px 8px",
-    fontSize: 12,
-    fontWeight: 600,
-    minHeight: 36,
-    display: "flex",
-    alignItems: "center",
-  },
-  priceColumn: {
-    minWidth: 0,
-  },
-  fieldLabel: {
-    fontSize: 10,
-    color: "#6b7280",
-    marginBottom: 4,
-    fontWeight: 600,
-  },
-  priceValue: {
-    fontSize: 14,
-    fontWeight: 750,
-    color: "#111827",
-  },
-  kgText: {
-    marginTop: 2,
-    fontSize: 9,
-    color: "#9ca3af",
-  },
-  bagColumn: {
-    minWidth: 0,
-  },
-  bagInput: {
-    width: "100%",
-    boxSizing: "border-box",
-    border: "1px solid #cbd5e1",
-    borderRadius: 8,
-    background: "#ffffff",
-    color: "#111827",
-    padding: "9px 7px",
-    fontSize: 13,
-    textAlign: "center",
-    outline: "none",
-  },
-  selectItemsHint: {
-    fontSize: 10,
-    color: "#9ca3af",
-    fontWeight: 600,
-    padding: "8px 3px",
-    whiteSpace: "nowrap",
-  },
-  addBagAmountText: {
-    fontSize: 10,
-    color: "#b45309",
-    fontWeight: 700,
-    whiteSpace: "nowrap",
-  },
-  transportColumn: {
-    minWidth: 0,
-  },
-  transportValue: {
-    fontSize: 12,
-    fontWeight: 750,
-    color: "#374151",
-    whiteSpace: "nowrap",
-  },
-  totalColumn: {
-    minWidth: 0,
-  },
-  rowTotal: {
-    fontSize: 14,
-    fontWeight: 800,
-    color: "#111827",
-    whiteSpace: "nowrap",
-  },
-  withoutText: {
-    marginTop: 2,
-    fontSize: 8,
-    color: "#b45309",
-  },
-  removeButton: {
-    border: "none",
-    background: "#fee2e2",
-    color: "#991b1b",
-    width: 30,
-    height: 30,
-    borderRadius: 7,
-    fontSize: 20,
-    lineHeight: 1,
-    cursor: "pointer",
-  },
-  weightInfo: {
-    gridColumn: "2 / -1",
-    fontSize: 9,
-    color: "#9ca3af",
-    marginTop: -2,
-  },
-  addAnotherCard: {
-    marginTop: 10,
-    background: "#ffffff",
-    border: "1px dashed #cbd5e1",
-    borderRadius: 12,
-    padding: 12,
-  },
-  addAnotherTitle: {
-    fontSize: 12,
-    color: "#6b7280",
-    fontWeight: 650,
-    marginBottom: 8,
-  },
-  addAnotherGrid: {
-    display: "grid",
-    gridTemplateColumns: "repeat(3, minmax(0, 1fr))",
-    gap: 7,
-  },
-  addAnotherButton: {
-    border: "1px solid #e5e7eb",
-    background: "#fafafa",
-    color: "#374151",
-    borderRadius: 8,
-    padding: "8px 6px",
-    fontSize: 10,
-    cursor: "pointer",
-  },
-  transportCard: {
-    marginTop: 12,
-    background: "#ffffff",
-    border: "1px solid #e5e7eb",
-    borderRadius: 12,
-    padding: 14,
-    boxShadow: "0 1px 3px rgba(0,0,0,.05)",
-  },
-  transportGrid: {
-    display: "grid",
-    gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
-    gap: 10,
-    marginTop: 12,
-  },
-  formLabel: {
-    display: "block",
-    fontSize: 11,
-    fontWeight: 650,
-    color: "#374151",
-    marginBottom: 5,
-  },
-  rateBox: {
-    marginTop: 12,
-    padding: 12,
-    background: "#f8fafc",
-    border: "1px solid #e2e8f0",
-    borderRadius: 9,
-  },
-  rateTitle: {
-    fontSize: 12,
-    fontWeight: 750,
-    color: "#111827",
-    marginBottom: 7,
-  },
-  rateLine: {
-    fontSize: 11,
-    color: "#475569",
-    marginTop: 4,
-  },
-  noRate: {
-    fontSize: 11,
-    color: "#9ca3af",
-  },
-  modeSection: {
-    marginTop: 14,
-  },
-  modeGrid: {
-    display: "grid",
-    gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
-    gap: 9,
-  },
-  modeButton: {
-    border: "1px solid #d1d5db",
-    background: "#ffffff",
-    color: "#111827",
-    borderRadius: 10,
-    padding: 12,
-    cursor: "pointer",
-    display: "flex",
-    alignItems: "center",
-    gap: 9,
-    textAlign: "left",
-  },
-  modeActive: {
-    border: "2px solid #111827",
-    background: "#f9fafb",
-  },
-  radio: {
-    width: 23,
-    height: 23,
-    borderRadius: "50%",
-    border: "1px solid #9ca3af",
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    flexShrink: 0,
-    fontSize: 12,
-    fontWeight: 800,
-  },
-  radioActive: {
-    background: "#111827",
-    color: "#ffffff",
-    borderColor: "#111827",
-  },
-  modeTitle: {
-    fontSize: 12,
-    fontWeight: 750,
-  },
-  modeHint: {
-    marginTop: 2,
-    fontSize: 9,
-    color: "#6b7280",
-  },
-  summaryCard: {
-    marginTop: 12,
-    background: "#111827",
-    color: "#ffffff",
-    borderRadius: 12,
-    padding: 16,
-  },
-  summaryRow: {
-    display: "flex",
-    justifyContent: "space-between",
-    alignItems: "center",
-    gap: 15,
-    padding: "6px 0",
-    fontSize: 12,
-    color: "#e5e7eb",
-  },
-  divider: {
-    height: 1,
-    background: "#374151",
-    margin: "8px 0",
-  },
-  grandTotalRow: {
-    display: "flex",
-    justifyContent: "space-between",
-    alignItems: "center",
-    gap: 15,
-  },
-  grandTotalLabel: {
-    fontSize: 15,
-    fontWeight: 800,
-  },
-  grandTotalHint: {
-    marginTop: 3,
-    fontSize: 9,
-    color: "#9ca3af",
-  },
-  grandTotalValue: {
-    fontSize: 22,
-    fontWeight: 850,
-    whiteSpace: "nowrap",
-  },
-  doInformationCard: {
-    marginTop: 12,
-    background: "#ffffff",
-    border: "1px solid #e5e7eb",
-    borderRadius: 12,
-    padding: 14,
-    boxShadow: "0 1px 3px rgba(0,0,0,.05)",
-    scrollMarginTop: 15,
-  },
-  doInformationHeader: {
-    display: "flex",
-    justifyContent: "space-between",
-    alignItems: "flex-start",
-    gap: 10,
-    marginBottom: 12,
-  },
-  doInformationTitle: {
-    fontSize: 17,
-    fontWeight: 800,
-    color: "#111827",
-  },
-  doInformationSubtitle: {
-    marginTop: 3,
-    fontSize: 10,
-    color: "#6b7280",
-  },
-  closeDOInformationButton: {
-    width: 32,
-    height: 32,
-    border: "none",
-    borderRadius: "50%",
-    background: "#f3f4f6",
-    color: "#111827",
-    fontSize: 21,
-    cursor: "pointer",
-    flexShrink: 0,
-  },
-  formSection: {
-    marginTop: 12,
-    padding: 12,
-    border: "1px solid #e5e7eb",
-    borderRadius: 10,
-    background: "#fafafa",
-  },
-  formSectionTitle: {
-    fontSize: 13,
-    fontWeight: 800,
-    color: "#111827",
-  },
-  formGrid: {
-    display: "grid",
-    gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
-    gap: 9,
-    marginTop: 10,
-  },
-  input: {
-    width: "100%",
-    boxSizing: "border-box",
-    border: "1px solid #cbd5e1",
-    background: "#ffffff",
-    color: "#111827",
-    borderRadius: 8,
-    padding: 10,
-    fontSize: 12,
-    outline: "none",
-  },
-  bankHeader: {
-    display: "flex",
-    justifyContent: "space-between",
-    alignItems: "center",
-    gap: 10,
-  },
-  addBankButton: {
-    border: "none",
-    background: "#111827",
-    color: "#ffffff",
-    borderRadius: 7,
-    padding: "7px 9px",
-    fontSize: 10,
-    fontWeight: 700,
-    cursor: "pointer",
-  },
-  bankCard: {
-    marginTop: 9,
-    background: "#ffffff",
-    border: "1px solid #e5e7eb",
-    borderRadius: 9,
-    padding: 10,
-  },
-  bankNumber: {
-    fontSize: 10,
-    color: "#6b7280",
-    fontWeight: 700,
-    marginBottom: 4,
-  },
-  removeBankButton: {
-    border: "none",
-    background: "#fee2e2",
-    color: "#991b1b",
-    borderRadius: 7,
-    padding: 10,
-    fontSize: 10,
-    fontWeight: 700,
-    cursor: "pointer",
-  },
-  generatedSection: {
-    marginTop: 13,
-    padding: 12,
-    border: "1px solid #d1d5db",
-    borderRadius: 10,
-    background: "#f9fafb",
-  },
-  generatedHeader: {
-    display: "flex",
-    justifyContent: "space-between",
-    alignItems: "center",
-    gap: 10,
-    marginBottom: 8,
-  },
-  copyButton: {
-    border: "none",
-    background: "#111827",
-    color: "#ffffff",
-    borderRadius: 7,
-    padding: "7px 10px",
-    fontSize: 10,
-    fontWeight: 700,
-    cursor: "pointer",
-  },
-  messageTextarea: {
-    width: "100%",
-    minHeight: 260,
-    boxSizing: "border-box",
-    border: "1px solid #cbd5e1",
-    borderRadius: 8,
-    background: "#ffffff",
-    color: "#111827",
-    padding: 11,
-    fontSize: 13,
-    lineHeight: 1.6,
-    outline: "none",
-    resize: "vertical",
-    fontFamily: "Arial, sans-serif",
-  },
-  generateModalButton: {
-    width: "100%",
-    border: "none",
-    background: "#111827",
-    color: "#ffffff",
-    borderRadius: 9,
-    padding: 13,
-    marginTop: 13,
-    fontSize: 13,
-    fontWeight: 800,
-    cursor: "pointer",
-  },
-  loading: {
-    background: "#ffffff",
-    borderRadius: 12,
-    padding: 40,
-    textAlign: "center",
-    color: "#374151",
-  },
+  subtitle: { margin: "3px 0 0", fontSize: 12, color: "#6b7280", textAlign: "center" },
+  categoryCard: { background: "#ffffff", border: "1px solid #e5e7eb", borderRadius: 12, padding: 14, marginBottom: 12, boxShadow: "0 1px 3px rgba(0,0,0,.05)" },
+  sectionTitle: { fontSize: 16, fontWeight: 750, color: "#111827" },
+  categoryGrid: { display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 8, marginTop: 12 },
+  categoryButton: { border: "1px solid #d1d5db", background: "#ffffff", color: "#111827", borderRadius: 9, padding: "11px 9px", fontSize: 12, fontWeight: 650, cursor: "pointer", textAlign: "left", display: "flex", alignItems: "center", gap: 7 },
+  categoryIcon: { width: 21, height: 21, borderRadius: 6, background: "#111827", color: "#ffffff", display: "inline-flex", alignItems: "center", justifyContent: "center", fontWeight: 700, flexShrink: 0 },
+  orderCard: { background: "#ffffff", border: "1px solid #e5e7eb", borderRadius: 12, padding: 14, boxShadow: "0 1px 3px rgba(0,0,0,.05)" },
+  sectionHeader: { display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, marginBottom: 12 },
+  sectionHint: { marginTop: 3, fontSize: 11, color: "#6b7280" },
+  itemCount: { background: "#f3f4f6", color: "#374151", padding: "5px 9px", borderRadius: 7, fontSize: 11, fontWeight: 650, whiteSpace: "nowrap" },
+  emptyState: { border: "1px dashed #d1d5db", borderRadius: 10, padding: "35px 15px", textAlign: "center", background: "#fafafa" },
+  emptyIcon: { margin: "0 auto 8px", width: 35, height: 35, borderRadius: 10, background: "#111827", color: "#ffffff", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 22 },
+  emptyTitle: { fontSize: 14, fontWeight: 700, color: "#374151" },
+  emptyText: { marginTop: 3, fontSize: 11, color: "#9ca3af" },
+  rows: { display: "flex", flexDirection: "column", gap: 8 },
+  orderRow: { position: "relative", display: "grid", gridTemplateColumns: "32px minmax(180px, 1.8fr) minmax(110px, .9fr) 85px minmax(125px, 1fr) minmax(120px, 1fr) 32px", gap: 9, alignItems: "center", border: "1px solid #e5e7eb", borderRadius: 10, padding: 10, background: "#ffffff" },
+  rowNumber: { width: 27, height: 27, borderRadius: 7, background: "#f3f4f6", color: "#374151", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, fontWeight: 700 },
+  categoryColumn: { minWidth: 0 },
+  categoryLabel: { fontSize: 10, color: "#6b7280", marginBottom: 4, fontWeight: 600 },
+  select: { width: "100%", boxSizing: "border-box", border: "1px solid #cbd5e1", borderRadius: 8, background: "#ffffff", color: "#111827", padding: "9px 8px", fontSize: 12, outline: "none" },
+  selectButton: { border: "1px solid #cbd5e1", borderRadius: 8, background: "#ffffff", color: "#111827", padding: "10px 11px", fontSize: 12, outline: "none", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, textAlign: "left" },
+  dropdownArrow: { fontSize: 9, color: "#6b7280", flexShrink: 0 },
+  multiDropdown: { position: "absolute", top: "calc(100% + 5px)", left: 0, right: 0, background: "#ffffff", border: "1px solid #d1d5db", borderRadius: 10, boxShadow: "0 12px 30px rgba(0,0,0,.15)", zIndex: 1000, overflow: "hidden" },
+  multiDropdownHeader: { display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, padding: "10px 11px", borderBottom: "1px solid #e5e7eb", fontSize: 11, fontWeight: 750, color: "#111827" },
+  multiCount: { fontSize: 9, fontWeight: 650, color: "#6b7280", whiteSpace: "nowrap" },
+  multiOptions: { maxHeight: 240, overflowY: "auto", padding: 5 },
+  multiOption: { display: "flex", alignItems: "center", gap: 8, padding: "9px 8px", borderRadius: 7, cursor: "pointer", fontSize: 11, color: "#374151" },
+  multiOptionChecked: { background: "#f3f4f6" },
+  checkbox: { width: 16, height: 16, margin: 0, accentColor: "#111827", cursor: "pointer", flexShrink: 0 },
+  multiItemName: { flex: 1, minWidth: 0 },
+  multiDropdownFooter: { display: "flex", justifyContent: "flex-end", gap: 7, padding: 8, borderTop: "1px solid #e5e7eb", background: "#fafafa" },
+  cancelSelectButton: { border: "1px solid #d1d5db", background: "#ffffff", color: "#374151", borderRadius: 7, padding: "8px 11px", fontSize: 10, fontWeight: 700, cursor: "pointer" },
+  confirmSelectButton: { border: "none", background: "#111827", color: "#ffffff", borderRadius: 7, padding: "8px 11px", fontSize: 10, fontWeight: 700, cursor: "pointer" },
+  selectHelp: { marginTop: 5, fontSize: 9, color: "#9ca3af" },
+  selectedItemBox: { width: "100%", boxSizing: "border-box", border: "1px solid #cbd5e1", borderRadius: 8, background: "#ffffff", color: "#111827", padding: "9px 8px", fontSize: 12, fontWeight: 600, minHeight: 36, display: "flex", alignItems: "center" },
+  priceColumn: { minWidth: 0 },
+  fieldLabel: { fontSize: 10, color: "#6b7280", marginBottom: 4, fontWeight: 600 },
+  priceValue: { fontSize: 14, fontWeight: 750, color: "#111827" },
+  kgText: { marginTop: 2, fontSize: 9, color: "#9ca3af" },
+  bagColumn: { minWidth: 0 },
+  bagInput: { width: "100%", boxSizing: "border-box", border: "1px solid #cbd5e1", borderRadius: 8, background: "#ffffff", color: "#111827", padding: "9px 7px", fontSize: 13, textAlign: "center", outline: "none" },
+  selectItemsHint: { fontSize: 10, color: "#9ca3af", fontWeight: 600, padding: "8px 3px", whiteSpace: "nowrap" },
+  addBagAmountText: { fontSize: 10, color: "#b45309", fontWeight: 700, whiteSpace: "nowrap" },
+  transportColumn: { minWidth: 0 },
+  transportValue: { fontSize: 12, fontWeight: 750, color: "#374151", whiteSpace: "nowrap" },
+  totalColumn: { minWidth: 0 },
+  rowTotal: { fontSize: 14, fontWeight: 800, color: "#111827", whiteSpace: "nowrap" },
+  withoutText: { marginTop: 2, fontSize: 8, color: "#b45309" },
+  removeButton: { border: "none", background: "#fee2e2", color: "#991b1b", width: 30, height: 30, borderRadius: 7, fontSize: 20, lineHeight: 1, cursor: "pointer" },
+  weightInfo: { gridColumn: "2 / -1", fontSize: 9, color: "#9ca3af", marginTop: -2 },
+  addAnotherCard: { marginTop: 10, background: "#ffffff", border: "1px dashed #cbd5e1", borderRadius: 12, padding: 12 },
+  addAnotherTitle: { fontSize: 12, color: "#6b7280", fontWeight: 650, marginBottom: 8 },
+  addAnotherGrid: { display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 7 },
+  addAnotherButton: { border: "1px solid #e5e7eb", background: "#fafafa", color: "#374151", borderRadius: 8, padding: "8px 6px", fontSize: 10, cursor: "pointer" },
+  transportCard: { marginTop: 12, background: "#ffffff", border: "1px solid #e5e7eb", borderRadius: 12, padding: 14, boxShadow: "0 1px 3px rgba(0,0,0,.05)" },
+  transportGrid: { display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 10, marginTop: 12 },
+  formLabel: { display: "block", fontSize: 11, fontWeight: 650, color: "#374151", marginBottom: 5 },
+  rateBox: { marginTop: 12, padding: 12, background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: 9 },
+  rateTitle: { fontSize: 12, fontWeight: 750, color: "#111827", marginBottom: 7 },
+  rateLine: { fontSize: 11, color: "#475569", marginTop: 4 },
+  noRate: { fontSize: 11, color: "#9ca3af" },
+  modeSection: { marginTop: 14 },
+  modeGrid: { display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 9 },
+  modeButton: { border: "1px solid #d1d5db", background: "#ffffff", color: "#111827", borderRadius: 10, padding: 12, cursor: "pointer", display: "flex", alignItems: "center", gap: 9, textAlign: "left" },
+  modeActive: { border: "2px solid #111827", background: "#f9fafb" },
+  radio: { width: 23, height: 23, borderRadius: "50%", border: "1px solid #9ca3af", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, fontSize: 12, fontWeight: 800 },
+  radioActive: { background: "#111827", color: "#ffffff", borderColor: "#111827" },
+  modeTitle: { fontSize: 12, fontWeight: 750 },
+  modeHint: { marginTop: 2, fontSize: 9, color: "#6b7280" },
+  summaryCard: { marginTop: 12, background: "#111827", color: "#ffffff", borderRadius: 12, padding: 16 },
+  summaryRow: { display: "flex", justifyContent: "space-between", alignItems: "center", gap: 15, padding: "6px 0", fontSize: 12, color: "#e5e7eb" },
+  divider: { height: 1, background: "#374151", margin: "8px 0" },
+  grandTotalRow: { display: "flex", justifyContent: "space-between", alignItems: "center", gap: 15 },
+  grandTotalLabel: { fontSize: 15, fontWeight: 800 },
+  grandTotalHint: { marginTop: 3, fontSize: 9, color: "#9ca3af" },
+  grandTotalValue: { fontSize: 22, fontWeight: 850, whiteSpace: "nowrap" },
+  doInformationCard: { marginTop: 12, background: "#ffffff", border: "1px solid #e5e7eb", borderRadius: 12, padding: 14, boxShadow: "0 1px 3px rgba(0,0,0,.05)", scrollMarginTop: 15 },
+  doInformationHeader: { display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 10, marginBottom: 12 },
+  doInformationTitle: { fontSize: 17, fontWeight: 800, color: "#111827" },
+  doInformationSubtitle: { marginTop: 3, fontSize: 10, color: "#6b7280" },
+  closeDOInformationButton: { width: 32, height: 32, border: "none", borderRadius: "50%", background: "#f3f4f6", color: "#111827", fontSize: 21, cursor: "pointer", flexShrink: 0 },
+  formSection: { marginTop: 12, padding: 12, border: "1px solid #e5e7eb", borderRadius: 10, background: "#fafafa" },
+  formSectionTitle: { fontSize: 13, fontWeight: 800, color: "#111827" },
+  formGrid: { display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 9, marginTop: 10 },
+  input: { width: "100%", boxSizing: "border-box", border: "1px solid #cbd5e1", background: "#ffffff", color: "#111827", borderRadius: 8, padding: 10, fontSize: 12, outline: "none" },
+  bankHeader: { display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10 },
+  addBankButton: { border: "none", background: "#111827", color: "#ffffff", borderRadius: 7, padding: "7px 9px", fontSize: 10, fontWeight: 700, cursor: "pointer" },
+  bankCard: { marginTop: 9, background: "#ffffff", border: "1px solid #e5e7eb", borderRadius: 9, padding: 10 },
+  bankNumber: { fontSize: 10, color: "#6b7280", fontWeight: 700, marginBottom: 4 },
+  removeBankButton: { border: "none", background: "#fee2e2", color: "#991b1b", borderRadius: 7, padding: 10, fontSize: 10, fontWeight: 700, cursor: "pointer" },
+  generatedSection: { marginTop: 13, padding: 12, border: "1px solid #d1d5db", borderRadius: 10, background: "#f9fafb" },
+  generatedHeader: { display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, marginBottom: 8 },
+  copyButton: { border: "none", background: "#111827", color: "#ffffff", borderRadius: 7, padding: "7px 10px", fontSize: 10, fontWeight: 700, cursor: "pointer" },
+  messageTextarea: { width: "100%", minHeight: 260, boxSizing: "border-box", border: "1px solid #cbd5e1", borderRadius: 8, background: "#ffffff", color: "#111827", padding: 11, fontSize: 13, lineHeight: 1.6, outline: "none", resize: "vertical", fontFamily: "Arial, sans-serif" },
+  generateModalButton: { width: "100%", border: "none", background: "#111827", color: "#ffffff", borderRadius: 9, padding: 13, marginTop: 13, fontSize: 13, fontWeight: 800, cursor: "pointer" },
+  loading: { background: "#ffffff", borderRadius: 12, padding: 40, textAlign: "center", color: "#374151" },
 };

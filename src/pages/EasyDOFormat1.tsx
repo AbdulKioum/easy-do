@@ -37,7 +37,7 @@ type BankInfo = {
   amount: string;
 };
 
-const EASY_DO_STORAGE_KEY = "easydo_format1_persistent_state_v3";
+const EASY_DO_STORAGE_KEY = "easydo_format1_persistent_v5";
 const PRICE_CACHE_KEY = "easydo_format1_price_cache_v1";
 const TRANSPORT_CACHE_KEY = "easydo_format1_transport_cache_v1";
 
@@ -71,11 +71,14 @@ function getSavedState() {
   try {
     const navEntry = performance.getEntriesByType("navigation")[0] as PerformanceNavigationTiming | undefined;
     const isReload = navEntry?.type === "reload";
+    
+    // If user clicked browser reload/refresh, clear stored session data
     if (isReload) {
-      localStorage.removeItem(EASY_DO_STORAGE_KEY);
+      sessionStorage.removeItem(EASY_DO_STORAGE_KEY);
       return null;
     }
-    const raw = localStorage.getItem(EASY_DO_STORAGE_KEY);
+
+    const raw = sessionStorage.getItem(EASY_DO_STORAGE_KEY);
     return raw ? JSON.parse(raw) : null;
   } catch {
     return null;
@@ -161,6 +164,46 @@ export default function EasyDOFormat1() {
     if (isSuperAdmin) return [];
     return userProfile?.assigned_districts || [];
   }, [isSuperAdmin, userProfile]);
+
+  // LIVE AUTO SAVE TO SESSION STORAGE
+  useEffect(() => {
+    if (loading) return;
+    try {
+      sessionStorage.setItem(
+        EASY_DO_STORAGE_KEY,
+        JSON.stringify({
+          selectedCategory,
+          bagQuantities,
+          selectedItemIds,
+          fromLocation,
+          upazila,
+          transportMode,
+          agentCode,
+          agentName,
+          vehicleNo,
+          banks,
+          showDOInformation,
+          generatedMessage,
+        })
+      );
+    } catch (e) {
+      console.error("Save state failed:", e);
+    }
+  }, [
+    loading,
+    selectedCategory,
+    bagQuantities,
+    selectedItemIds,
+    fromLocation,
+    upazila,
+    transportMode,
+    agentCode,
+    agentName,
+    vehicleNo,
+    banks,
+    showDOInformation,
+    generatedMessage,
+  ]);
 
   async function loadData() {
     if (priceList.length === 0) setLoading(true);
@@ -385,7 +428,7 @@ export default function EasyDOFormat1() {
       const { error } = await supabase.from("saved_dos").insert([payload]);
       if (error) return alert(`Save DO failed: ${error.message}`);
       alert("DO saved successfully.");
-      localStorage.removeItem(EASY_DO_STORAGE_KEY);
+      sessionStorage.removeItem(EASY_DO_STORAGE_KEY);
     } catch {
       alert("Something went wrong while saving DO.");
     } finally {
