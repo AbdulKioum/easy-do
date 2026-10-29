@@ -186,7 +186,7 @@ export default function VisitStatusPage() {
 
       <div style={styles.filterBox}>
         <span style={{ fontSize: 13, fontWeight: 700 }}>Filter Page:</span>
-        {["All", "Price List", "Pricelist Download", "easy-do", "easy-do-format-1"].map((page) => (
+        {["All", "Pricelist Page", "Pricelist Download", "EasyDO Page 1", "EasyDO Page 2"].map((page) => (
           <button
             key={page}
             style={{
