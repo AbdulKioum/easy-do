@@ -12,6 +12,9 @@
   "dependencies": {
     "@supabase/supabase-js": "^2.112.2",
     "file-saver": "^2.0.5",
+    "html2pdf.js": "^0.14.0",
+    "jspdf": "^4.2.1",
+    "jspdf-autotable": "^5.0.9",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
     "react-router-dom": "^7.18.2",

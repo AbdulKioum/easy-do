@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import * as XLSX from "xlsx-js-style";
 import { saveAs } from "file-saver";
+import "jspdf-autotable";
 import { supabase } from "../lib/supabase";
 import { useAuth } from "../context/AuthContext";
 
@@ -11,6 +12,7 @@ type PriceItem = {
   category: string;
   item_name: string;
   short_name: string;
+  protein_percentage: number;
   kg_per_bag: number;
   tp_per_bag: number;
   mrp_per_bag: number;
@@ -35,12 +37,12 @@ const categories = [
 
 // Category wise soft colors for UI table
 const CATEGORY_COLORS: Record<string, string> = {
-  Broiler: "#fef2f2",      // halka lal
-  Layer: "#fefce8",        // halka yellow
-  Sonali: "#f0fdf4",       // halka sobuj
-  Cattle: "#faf5ff",       // halka purple
-  "Fish Floating": "#f0f9ff", // halka blue
-  "Fish Sinking": "#f9fafb",  // halka gray
+  Broiler: "#fef2f2",
+  Layer: "#fefce8",
+  Sonali: "#f0fdf4",
+  Cattle: "#faf5ff",
+  "Fish Floating": "#f0f9ff",
+  "Fish Sinking": "#f9fafb",
 };
 
 // Excel Category Colors (Hex without #)
@@ -53,10 +55,13 @@ const EXCEL_CATEGORY_COLORS: Record<string, string> = {
   "Fish Sinking": "F3F4F6",
 };
 
+
+
 const emptyForm: PriceItem = {
   category: "Broiler",
   item_name: "",
   short_name: "",
+  protein_percentage: 0,
   kg_per_bag: 50,
   tp_per_bag: 0,
   mrp_per_bag: 0,
@@ -87,6 +92,10 @@ export default function PriceListPage() {
   const [form, setForm] = useState<PriceItem>(emptyForm);
 
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  
+  // Refs for dual scrollbar synchronization
+  const topScrollRef = useRef<HTMLDivElement | null>(null);
+  const tableWrapperRef = useRef<HTMLDivElement | null>(null);
 
   const [showBulkModal, setShowBulkModal] = useState(false);
   const [selectedBulkCategories, setSelectedBulkCategories] = useState<string[]>([]);
@@ -96,7 +105,18 @@ export default function PriceListPage() {
   const [previewItems, setPreviewItems] = useState<any[]>([]);
   const [isUpdating, setIsUpdating] = useState(false);
 
-  // Page Visit Tracking
+  const handleTopScroll = () => {
+    if (topScrollRef.current && tableWrapperRef.current) {
+      tableWrapperRef.current.scrollLeft = topScrollRef.current.scrollLeft;
+    }
+  };
+
+  const handleTableScroll = () => {
+    if (topScrollRef.current && tableWrapperRef.current) {
+      topScrollRef.current.scrollLeft = tableWrapperRef.current.scrollLeft;
+    }
+  };
+
   useEffect(() => {
     async function trackPageVisit() {
       if (!user?.id) return;
@@ -162,6 +182,7 @@ export default function PriceListPage() {
       category: item.category,
       item_name: item.item_name,
       short_name: item.short_name || "",
+      protein_percentage: Number(item.protein_percentage || 0),
       kg_per_bag: Number(item.kg_per_bag || 0),
       tp_per_bag: Number(item.tp_per_bag || 0),
       mrp_per_bag: Number(item.mrp_per_bag || 0),
@@ -195,6 +216,7 @@ export default function PriceListPage() {
       category: form.category,
       item_name: form.item_name.trim(),
       short_name: form.short_name.trim(),
+      protein_percentage: Number(form.protein_percentage),
       kg_per_bag: Number(form.kg_per_bag),
       tp_per_bag: Number(form.tp_per_bag),
       mrp_per_bag: Number(form.mrp_per_bag),
@@ -279,6 +301,7 @@ export default function PriceListPage() {
             category: String(row["Category"] || "").trim(),
             item_name: String(row["Item Name"] || "").trim(),
             short_name: String(row["Short Name"] || "").trim(),
+            protein_percentage: Number(row["Protein %"] || 0),
             kg_per_bag: Number(row["KG/Bag"] || 0),
             tp_per_bag: Number(row["TP/Bag"] || 0),
             mrp_per_bag: Number(row["MRP/Bag"] || 0),
@@ -320,101 +343,174 @@ export default function PriceListPage() {
     event.target.value = "";
   }
 
+  async function exportExcel() {
+    if (!filteredItems.length) {
+      alert("No data available to export.");
+      return;
+    }
 
-  
-   async function exportExcel() {
-  if (!filteredItems.length) {
-    alert("No data available to export.");
-    return;
-  }
+    if (user?.id) {
+      const today = new Date().toISOString().split("T")[0];
+      await supabase.from("page_visits").insert([
+        {
+          user_id: user.id,
+          page_name: "Pricelist Download Excel",
+          visit_date: today,
+        },
+      ]);
+    }
 
-  if (user?.id) {
-    const today = new Date().toISOString().split("T")[0];
-    await supabase.from("page_visits").insert([
-      {
-        user_id: user.id,
-        page_name: "Pricelist Download",
-        visit_date: today,
-      },
-    ]);
-  }
+    const exportData = filteredItems.map((item) => ({
+      Category: item.category,
+      "Item Name": item.item_name,
+      "Protein %": item.protein_percentage ? Number(item.protein_percentage) : "-",
+      "KG/Bag": Number(item.kg_per_bag),
+      "TP/Bag": Number(item.tp_per_bag),
+      "TP/KG": Number(item.kg_per_bag) > 0 ? Number(item.tp_per_bag) / Number(item.kg_per_bag) : 0,
+      "MRP/Bag": Number(item.mrp_per_bag),
+      "MRP/KG": Number(item.kg_per_bag) > 0 ? Number(item.mrp_per_bag) / Number(item.kg_per_bag) : 0,
+    }));
 
-  const exportData = filteredItems.map((item) => ({
-    Category: item.category,
-    "Item Name": item.item_name,
-    "KG/Bag": Number(item.kg_per_bag),
-    "TP/Bag": Number(item.tp_per_bag),
-    "TP/KG": Number(item.kg_per_bag) > 0 ? Number(item.tp_per_bag) / Number(item.kg_per_bag) : 0,
-    "MRP/Bag": Number(item.mrp_per_bag),
-    "MRP/KG": Number(item.kg_per_bag) > 0 ? Number(item.mrp_per_bag) / Number(item.kg_per_bag) : 0,
-  }));
+    const worksheet = XLSX.utils.json_to_sheet(exportData);
+    worksheet["!cols"] = [
+      { wch: 16 }, { wch: 28 }, { wch: 12 }, { wch: 10 },
+      { wch: 12 }, { wch: 12 }, { wch: 12 }, { wch: 12 }, { wch: 12 },
+    ];
 
-  const worksheet = XLSX.utils.json_to_sheet(exportData);
-  worksheet["!cols"] = [
-    { wch: 16 }, { wch: 28 }, { wch: 10 },
-    { wch: 12 }, { wch: 12 }, { wch: 12 }, { wch: 12 },
-  ];
+    const thinBorder = {
+      top: { style: "thin", color: { rgb: "D1D5DB" } },
+      bottom: { style: "thin", color: { rgb: "D1D5DB" } },
+      left: { style: "thin", color: { rgb: "D1D5DB" } },
+      right: { style: "thin", color: { rgb: "D1D5DB" } },
+    };
 
-  // Common thin border styling for excel cells
-  const thinBorder = {
-    top: { style: "thin", color: { rgb: "D1D5DB" } },
-    bottom: { style: "thin", color: { rgb: "D1D5DB" } },
-    left: { style: "thin", color: { rgb: "D1D5DB" } },
-    right: { style: "thin", color: { rgb: "D1D5DB" } },
-  };
+    const range = XLSX.utils.decode_range(worksheet["!ref"] || "A1");
+    for (let R = range.s.r; R <= range.e.r; ++R) {
+      for (let C = range.s.c; C <= range.e.c; ++C) {
+        const cellAddress = XLSX.utils.encode_cell({ r: R, c: C });
+        if (!worksheet[cellAddress]) continue;
 
-  const range = XLSX.utils.decode_range(worksheet["!ref"] || "A1");
-  for (let R = range.s.r; R <= range.e.r; ++R) {
-    for (let C = range.s.c; C <= range.e.c; ++C) {
-      const cellAddress = XLSX.utils.encode_cell({ r: R, c: C });
-      if (!worksheet[cellAddress]) continue;
-
-      if (R === 0) {
-        // Header Row Style with Border
-        worksheet[cellAddress].s = {
-          font: { bold: true, color: { rgb: "111827" } },
-          fill: { patternType: "solid", fgColor: { rgb: "E5E7EB" } },
-          alignment: { horizontal: "center", vertical: "center" },
-          border: thinBorder,
-        };
-      } else {
-        const item = filteredItems[R - 1];
-        if (item) {
-          // Full category color for the entire row (No alternating)
-          const hexColor = EXCEL_CATEGORY_COLORS[item.category] || "FFFFFF";
-
+        if (R === 0) {
           worksheet[cellAddress].s = {
-            fill: { patternType: "solid", fgColor: { rgb: hexColor } },
-            font: { color: { rgb: "111827" } },
-            alignment: { vertical: "center" },
+            font: { bold: true, color: { rgb: "111827" } },
+            fill: { patternType: "solid", fgColor: { rgb: "E5E7EB" } },
+            alignment: { horizontal: "center", vertical: "center" },
             border: thinBorder,
           };
+        } else {
+          const item = filteredItems[R - 1];
+          if (item) {
+            const hexColor = EXCEL_CATEGORY_COLORS[item.category] || "FFFFFF";
+            worksheet[cellAddress].s = {
+              fill: { patternType: "solid", fgColor: { rgb: hexColor } },
+              font: { color: { rgb: "111827" } },
+              alignment: { vertical: "center" },
+              border: thinBorder,
+            };
+          }
         }
       }
     }
+
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, "Price List");
+    const excelBuffer = XLSX.write(workbook, { bookType: "xlsx", type: "array", cellStyles: true });
+    const blob = new Blob([excelBuffer], {
+      type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    });
+
+    const now = new Date();
+    const timestamp = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}_${String(now.getHours()).padStart(2, "0")}-${String(now.getMinutes()).padStart(2, "0")}`;
+    saveAs(blob, `Feed_Price_List_${timestamp}.xlsx`);
   }
 
-  const workbook = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(workbook, worksheet, "Price List");
-  const excelBuffer = XLSX.write(workbook, { bookType: "xlsx", type: "array", cellStyles: true });
-  const blob = new Blob([excelBuffer], {
-    type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-  });
+ async function exportPDF() {
+    if (!filteredItems.length) {
+      alert("No data available to export.");
+      return;
+    }
 
-  // Generate unique timestamp filename (Date + Time)
-  const now = new Date();
-  const year = now.getFullYear();
-  const month = String(now.getMonth() + 1).padStart(2, "0");
-  const day = String(now.getDate()).padStart(2, "0");
-  const hours = String(now.getHours()).padStart(2, "0");
-  const minutes = String(now.getMinutes()).padStart(2, "0");
-  const seconds = String(now.getSeconds()).padStart(2, "0");
+    if (user?.id) {
+      const today = new Date().toISOString().split("T")[0];
+      await supabase.from("page_visits").insert([
+        {
+          user_id: user.id,
+          page_name: "Pricelist Download PDF",
+          visit_date: today,
+        },
+      ]);
+    }
 
-  const timestamp = `${year}-${month}-${day}_${hours}-${minutes}-${seconds}`;
-  saveAs(blob, `Feed_Price_List_${timestamp}.xlsx`);
-}
+    const html2pdf: any = (await import("html2pdf.js")).default;
 
+    const container = document.createElement("div");
+    container.style.padding = "5px 8px"; // Reduced container padding to prevent overflowing
+    container.style.fontFamily = "Arial, sans-serif";
+    container.style.color = "#111827";
+    container.style.backgroundColor = "#ffffff";
 
+    let rowsHtml = "";
+    filteredItems.forEach((item) => {
+      const kgPerBag = Number(item.kg_per_bag);
+      const tpPerBag = Number(item.tp_per_bag);
+      const mrpPerBag = Number(item.mrp_per_bag);
+      const tpKg = kgPerBag > 0 ? (tpPerBag / kgPerBag).toFixed(2) : "0.00";
+      const mrpKg = kgPerBag > 0 ? (mrpPerBag / kgPerBag).toFixed(2) : "0.00";
+      const proteinVal = item.protein_percentage ? `${item.protein_percentage}%` : "-";
+      const bgHex = EXCEL_CATEGORY_COLORS[item.category] || "ffffff";
+
+      rowsHtml += `
+        <tr style="background-color: #${bgHex}; page-break-inside: avoid; break-inside: avoid;">
+          <td style="border: 1px solid #cbd5e1; padding: 5px; white-space: nowrap;"><b>${item.category}</b></td>
+          <td style="border: 1px solid #cbd5e1; padding: 5px; white-space: nowrap;"><b>${item.item_name}</b></td>
+          <td style="border: 1px solid #cbd5e1; padding: 5px; text-align: right; white-space: nowrap;">${proteinVal}</td>
+          <td style="border: 1px solid #cbd5e1; padding: 5px; text-align: right; white-space: nowrap;">${item.kg_per_bag}</td>
+          <td style="border: 1px solid #cbd5e1; padding: 5px; text-align: right; white-space: nowrap;">${tpPerBag.toLocaleString()}</td>
+          <td style="border: 1px solid #cbd5e1; padding: 5px; text-align: right; white-space: nowrap;">${tpKg}</td>
+          <td style="border: 1px solid #cbd5e1; padding: 5px; text-align: right; white-space: nowrap;">${mrpPerBag.toLocaleString()}</td>
+          <td style="border: 1px solid #cbd5e1; padding: 5px; text-align: right; white-space: nowrap;">${mrpKg}</td>
+        </tr>
+      `;
+    });
+
+    container.innerHTML = `
+      <div style="margin-bottom: 8px; border-bottom: 2px solid #111827; padding-bottom: 5px;">
+        <h2 style="margin: 0 0 2px 0; font-size: 18px; color: #111827; font-weight: bold;">Feed Price List</h2>
+        <p style="margin: 0; font-size: 11px; color: #4b5563;">Generated on: ${new Date().toLocaleDateString()}</p>
+      </div>
+      <table style="width: 100%; border-collapse: collapse; font-size: 11.5px;">
+        <thead>
+          <tr style="background-color: #f1f5f9; color: #111827; page-break-inside: avoid; break-inside: avoid;">
+            <th style="border: 1px solid #cbd5e1; padding: 5px; text-align: center; font-weight: bold; font-size: 12px;">Category</th>
+            <th style="border: 1px solid #cbd5e1; padding: 5px; text-align: center; font-weight: bold; font-size: 12px;">Item Name</th>
+            <th style="border: 1px solid #cbd5e1; padding: 5px; text-align: center; font-weight: bold; font-size: 12px;">Protein %</th>
+            <th style="border: 1px solid #cbd5e1; padding: 5px; text-align: center; font-weight: bold; font-size: 12px;">KG/Bag</th>
+            <th style="border: 1px solid #cbd5e1; padding: 5px; text-align: center; font-weight: bold; font-size: 12px;">TP/Bag</th>
+            <th style="border: 1px solid #cbd5e1; padding: 5px; text-align: center; font-weight: bold; font-size: 12px;">TP/KG</th>
+            <th style="border: 1px solid #cbd5e1; padding: 5px; text-align: center; font-weight: bold; font-size: 12px;">MRP/Bag</th>
+            <th style="border: 1px solid #cbd5e1; padding: 5px; text-align: center; font-weight: bold; font-size: 12px;">MRP/KG</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${rowsHtml}
+        </tbody>
+      </table>
+    `;
+
+    const now = new Date();
+    const timestamp = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}_${String(now.getHours()).padStart(2, "0")}-${String(now.getMinutes()).padStart(2, "0")}`;
+
+    const options = {
+      margin: 4, // Minimized PDF page margins
+      filename: `Feed_Price_List_${timestamp}.pdf`,
+      image: { type: "jpeg", quality: 0.98 },
+      html2canvas: { scale: 2, useCORS: true },
+      jsPDF: { unit: "mm", format: "a4", orientation: "portrait" },
+      pagebreak: { mode: ['css', 'legacy'] }
+    };
+
+    html2pdf().from(container).set(options).save();
+  }
 
   const toggleBulkCategory = (cat: string) => {
     setSelectedBulkCategories((prev) => {
@@ -567,7 +663,11 @@ export default function PriceListPage() {
 
         <div style={styles.headerButtons}>
           <button style={styles.exportButton} onClick={exportExcel}>
-            📤 Download Price List
+            📤 Download Pricelist in Excel
+          </button>
+          
+          <button style={styles.exportButton} onClick={exportPDF}>
+            📄 Download Pricelist in pdf
           </button>
 
           {canManage && (
@@ -640,75 +740,92 @@ export default function PriceListPage() {
       {loading ? (
         <div style={styles.loading}>Loading...</div>
       ) : (
-        <div style={styles.tableWrapper}>
-          <table style={styles.table}>
-            <thead>
-              <tr>
-                <th style={styles.th}>Category</th>
-                <th style={styles.th}>Item</th>
-                <th style={styles.th}>Short Name</th>
-                <th style={{ ...styles.th, textAlign: "right" }}>KG/Bag</th>
-                <th style={{ ...styles.th, textAlign: "right" }}>TP/Bag</th>
-                <th style={{ ...styles.th, textAlign: "right" }}>TP/KG</th>
-                <th style={{ ...styles.th, textAlign: "right" }}>MRP/Bag</th>
-                <th style={{ ...styles.th, textAlign: "right" }}>MRP/KG</th>
-                <th style={styles.th}>Status</th>
-                {canManage && <th style={{ ...styles.th, textAlign: "center" }}>Action</th>}
-              </tr>
-            </thead>
-            <tbody>
-              {filteredItems.map((item, index) => {
-                const kgPerBag = Number(item.kg_per_bag);
-                const tpPerBag = Number(item.tp_per_bag);
-                const mrpPerBag = Number(item.mrp_per_bag);
-                const tpKg = kgPerBag > 0 ? tpPerBag / kgPerBag : 0;
-                const mrpKg = kgPerBag > 0 ? mrpPerBag / kgPerBag : 0;
+        <div style={styles.tableContainerOuter}>
+          <div 
+            ref={topScrollRef} 
+            onScroll={handleTopScroll} 
+            style={styles.topScrollbarWrapper}
+          >
+            <div style={styles.topScrollbarContent}></div>
+          </div>
 
-                // Alternating row color: Even index -> category soft color, Odd index -> white
-                const rowBg = index % 2 === 0 ? (CATEGORY_COLORS[item.category] || "#ffffff") : "#ffffff";
+          <div 
+            ref={tableWrapperRef} 
+            onScroll={handleTableScroll} 
+            style={styles.tableWrapper}
+          >
+            <table style={styles.table}>
+              <thead>
+                <tr>
+                  <th style={styles.th}>Category</th>
+                  <th style={styles.th}>Item</th>
+                  <th style={{ ...styles.th, textAlign: "right" }}>Protein %</th>
+                  <th style={styles.th}>Short Name</th>
+                  <th style={{ ...styles.th, textAlign: "right" }}>KG/Bag</th>
+                  <th style={{ ...styles.th, textAlign: "right" }}>TP/Bag</th>
+                  <th style={{ ...styles.th, textAlign: "right" }}>TP/KG</th>
+                  <th style={{ ...styles.th, textAlign: "right" }}>MRP/Bag</th>
+                  <th style={{ ...styles.th, textAlign: "right" }}>MRP/KG</th>
+                  <th style={styles.th}>Status</th>
+                  {canManage && <th style={{ ...styles.th, textAlign: "center" }}>Action</th>}
+                </tr>
+              </thead>
+              <tbody>
+                {filteredItems.map((item, index) => {
+                  const kgPerBag = Number(item.kg_per_bag);
+                  const tpPerBag = Number(item.tp_per_bag);
+                  const mrpPerBag = Number(item.mrp_per_bag);
+                  const tpKg = kgPerBag > 0 ? tpPerBag / kgPerBag : 0;
+                  const mrpKg = kgPerBag > 0 ? mrpPerBag / kgPerBag : 0;
 
-                return (
-                  <tr key={item.id} style={{ ...styles.tr, background: rowBg }}>
-                    <td style={styles.td}>
-                      <span style={styles.categoryTag}>{item.category}</span>
-                    </td>
-                    <td style={{ ...styles.td, fontWeight: 600 }}>{item.item_name}</td>
-                    <td style={{ ...styles.td, fontWeight: 700, color: "#2563eb" }}>
-                      {item.short_name || "-"}
-                    </td>
-                    <td style={{ ...styles.td, textAlign: "right" }}>{item.kg_per_bag}</td>
-                    <td style={{ ...styles.td, textAlign: "right" }}>৳{tpPerBag.toLocaleString()}</td>
-                    <td style={{ ...styles.td, textAlign: "right" }}>৳{tpKg.toFixed(2)}</td>
-                    <td style={{ ...styles.td, textAlign: "right" }}>৳{mrpPerBag.toLocaleString()}</td>
-                    <td style={{ ...styles.td, textAlign: "right" }}>৳{mrpKg.toFixed(2)}</td>
-                    <td style={styles.td}>
-                      <span
-                        style={{
-                          ...styles.status,
-                          ...(item.status === "Active" ? styles.activeStatus : styles.inactiveStatus),
-                        }}
-                      >
-                        {item.status}
-                      </span>
-                    </td>
-                    {canManage && (
-                      <td style={{ ...styles.td, textAlign: "center" }}>
-                        <div style={styles.actionGroup}>
-                          <button style={styles.editButton} onClick={() => openEdit(item)} title="Edit">
-                            ✏️
-                          </button>
-                          <button style={styles.deleteButton} onClick={() => deleteItem(item.id)} title="Delete">
-                            🗑️
-                          </button>
-                        </div>
+                  const rowBg = index % 2 === 0 ? (CATEGORY_COLORS[item.category] || "#ffffff") : "#ffffff";
+
+                  return (
+                    <tr key={item.id} style={{ ...styles.tr, background: rowBg }}>
+                      <td style={styles.td}>
+                        <span style={styles.categoryTag}>{item.category}</span>
                       </td>
-                    )}
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-          {!filteredItems.length && <div style={styles.noData}>No price items found.</div>}
+                      <td style={{ ...styles.td, fontWeight: 600 }}>{item.item_name}</td>
+                      <td style={{ ...styles.td, textAlign: "right" }}>
+                        {item.protein_percentage ? `${item.protein_percentage}%` : "-"}
+                      </td>
+                      <td style={{ ...styles.td, fontWeight: 700, color: "#2563eb" }}>
+                        {item.short_name || "-"}
+                      </td>
+                      <td style={{ ...styles.td, textAlign: "right" }}>{item.kg_per_bag}</td>
+                      <td style={{ ...styles.td, textAlign: "right" }}>৳{tpPerBag.toLocaleString()}</td>
+                      <td style={{ ...styles.td, textAlign: "right" }}>৳{tpKg.toFixed(2)}</td>
+                      <td style={{ ...styles.td, textAlign: "right" }}>৳{mrpPerBag.toLocaleString()}</td>
+                      <td style={{ ...styles.td, textAlign: "right" }}>৳{mrpKg.toFixed(2)}</td>
+                      <td style={styles.td}>
+                        <span
+                          style={{
+                            ...styles.status,
+                            ...(item.status === "Active" ? styles.activeStatus : styles.inactiveStatus),
+                          }}
+                        >
+                          {item.status}
+                        </span>
+                      </td>
+                      {canManage && (
+                        <td style={{ ...styles.td, textAlign: "center" }}>
+                          <div style={styles.actionGroup}>
+                            <button style={styles.editButton} onClick={() => openEdit(item)} title="Edit">
+                              ✏️
+                            </button>
+                            <button style={styles.deleteButton} onClick={() => deleteItem(item.id)} title="Delete">
+                              🗑️
+                            </button>
+                          </div>
+                        </td>
+                      )}
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+            {!filteredItems.length && <div style={styles.noData}>No price items found.</div>}
+          </div>
         </div>
       )}
 
@@ -736,6 +853,17 @@ export default function PriceListPage() {
               value={form.item_name}
               onChange={(e) => setForm({ ...form, item_name: e.target.value })}
               placeholder="Feed item name"
+              style={styles.input}
+            />
+
+            <label style={styles.label}>Protein %</label>
+            <input
+              type="number"
+              min="0"
+              step="0.01"
+              value={form.protein_percentage}
+              onChange={(e) => setForm({ ...form, protein_percentage: Number(e.target.value) })}
+              placeholder="e.g. 20.5"
               style={styles.input}
             />
 
@@ -1114,17 +1242,32 @@ const styles: Record<string, React.CSSProperties> = {
     color: "#ffffff",
     borderColor: "#111827",
   },
-  tableWrapper: {
-    width: "100%",
-    overflowX: "auto",
+  tableContainerOuter: {
     background: "#ffffff",
     border: "1px solid #e5e7eb",
     borderRadius: 12,
     boxShadow: "0 1px 3px rgba(0,0,0,.05)",
+    overflow: "hidden",
+  },
+  topScrollbarWrapper: {
+    overflowX: "auto",
+    overflowY: "hidden",
+    height: 14,
+    backgroundColor: "#f8fafc",
+    borderBottom: "1px solid #e5e7eb",
+  },
+  topScrollbarContent: {
+    width: "1250px",
+    height: 1,
+  },
+  tableWrapper: {
+    width: "100%",
+    overflowX: "auto",
+    background: "#ffffff",
   },
   table: {
     width: "100%",
-    minWidth: 1050,
+    minWidth: 1200,
     borderCollapse: "collapse",
     fontSize: 13,
     color: "#111827",
