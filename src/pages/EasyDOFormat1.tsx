@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { supabase } from "../lib/supabase";
 import { useAuth } from "../context/AuthContext";
 
@@ -19,6 +19,13 @@ type Transport = {
   to_upazila: string;
   floating_cattle_rate_per_kg: number;
   sinking_broiler_layer_sonali_rate_per_kg: number;
+  status: string;
+};
+
+type Upazila = {
+  id: number;
+  district: string;
+  upazila_name: string;
   status: string;
 };
 
@@ -64,13 +71,10 @@ function getSavedState() {
   try {
     const navEntry = performance.getEntriesByType("navigation")[0] as PerformanceNavigationTiming | undefined;
     const isReload = navEntry?.type === "reload";
-
-    // If it's a manual browser reload, clear saved state so it resets
     if (isReload) {
       localStorage.removeItem(EASY_DO_STORAGE_KEY);
       return null;
     }
-
     const raw = localStorage.getItem(EASY_DO_STORAGE_KEY);
     return raw ? JSON.parse(raw) : null;
   } catch {
@@ -79,7 +83,7 @@ function getSavedState() {
 }
 
 export default function EasyDOFormat1() {
-  const { user } = useAuth();
+  const { user, role } = useAuth();
   const initialSaved = useMemo(() => getSavedState(), []);
 
   const [priceList, setPriceList] = useState<FeedPrice[]>(() => {
@@ -99,6 +103,9 @@ export default function EasyDOFormat1() {
       return [];
     }
   });
+
+  const [upazilaList, setUpazilaList] = useState<Upazila[]>([]);
+  const [userProfile, setUserProfile] = useState<any>(null);
 
   const [loading, setLoading] = useState(() => priceList.length === 0);
   const [saving, setSaving] = useState(false);
@@ -126,73 +133,39 @@ export default function EasyDOFormat1() {
   );
   const [generatedMessage, setGeneratedMessage] = useState<string>(initialSaved?.generatedMessage || "");
 
-  // RELOAD WARNING CONFIRMATION
-  useEffect(() => {
-    function handleBeforeUnload(event: BeforeUnloadEvent) {
-      event.preventDefault();
-      event.returnValue = "Apni ki page-ti reload korte chan? Reload korle current hisab reset hoye jabe.";
-      return event.returnValue;
-    }
-    window.addEventListener("beforeunload", handleBeforeUnload);
-    return () => window.removeEventListener("beforeunload", handleBeforeUnload);
-  }, []);
+  const isSuperAdmin = role === "super_admin";
 
   useEffect(() => {
-    async function trackPageVisit() {
-      if (!user?.id || !navigator.onLine) return;
-      try {
-        const today = new Date().toISOString().split("T")[0];
-        await supabase.from("page_visits").insert([{ user_id: user.id, page_name: "EasyDO Page 1", visit_date: today }]);
-      } catch {}
+    if (user?.id) {
+      loadUserProfile();
     }
-    trackPageVisit();
+    loadData();
   }, [user?.id]);
 
-  useEffect(() => {
-    loadData();
-  }, []);
-
-  useEffect(() => {
-    try {
-      localStorage.setItem(
-        EASY_DO_STORAGE_KEY,
-        JSON.stringify({
-          selectedCategory,
-          bagQuantities,
-          selectedItemIds,
-          fromLocation,
-          upazila,
-          transportMode,
-          agentCode,
-          agentName,
-          vehicleNo,
-          banks,
-          showDOInformation,
-          generatedMessage,
-        })
-      );
-    } catch (e) {
-      console.error("Save state failed:", e);
+  async function loadUserProfile() {
+    const { data } = await supabase.from("profiles").select("*").eq("id", user?.id).single();
+    if (data) {
+      setUserProfile(data);
+      if (data.assigned_from_locations && data.assigned_from_locations.length > 0 && !fromLocation) {
+        setFromLocation(data.assigned_from_locations[0]);
+      }
     }
-  }, [
-    selectedCategory,
-    bagQuantities,
-    selectedItemIds,
-    fromLocation,
-    upazila,
-    transportMode,
-    agentCode,
-    agentName,
-    vehicleNo,
-    banks,
-    showDOInformation,
-    generatedMessage,
-  ]);
+  }
+
+  const assignedFromLocations: string[] = useMemo(() => {
+    if (isSuperAdmin) return ["Valuka Feed Mill", "Mymensingh Depot"];
+    return userProfile?.assigned_from_locations || [];
+  }, [isSuperAdmin, userProfile]);
+
+  const assignedDistricts: string[] = useMemo(() => {
+    if (isSuperAdmin) return [];
+    return userProfile?.assigned_districts || [];
+  }, [isSuperAdmin, userProfile]);
 
   async function loadData() {
     if (priceList.length === 0) setLoading(true);
     try {
-      const [priceRes, transRes] = await Promise.all([
+      const [priceRes, transRes, upazilaRes] = await Promise.all([
         supabase
           .from("feed_price_list")
           .select("id, category, item_name, short_name, kg_per_bag, tp_per_bag, mrp_per_bag, status")
@@ -203,6 +176,10 @@ export default function EasyDOFormat1() {
           .select("id, from_location, to_upazila, floating_cattle_rate_per_kg, sinking_broiler_layer_sonali_rate_per_kg, status")
           .eq("status", "Active")
           .order("to_upazila", { ascending: true }),
+        supabase
+          .from("upazilas")
+          .select("*")
+          .eq("status", "Active"),
       ]);
 
       if (!priceRes.error && priceRes.data) {
@@ -214,12 +191,35 @@ export default function EasyDOFormat1() {
         setTransportList(transRes.data);
         localStorage.setItem(TRANSPORT_CACHE_KEY, JSON.stringify(transRes.data));
       }
+
+      if (!upazilaRes.error && upazilaRes.data) {
+        setUpazilaList(upazilaRes.data);
+      }
     } catch (e) {
       console.warn("Using offline cached data:", e);
     } finally {
       setLoading(false);
     }
   }
+
+  const fromLocations = useMemo(() => {
+    const dbLocs = Array.from(new Set(transportList.map((i) => i.from_location).filter(Boolean)));
+    if (isSuperAdmin) return dbLocs;
+    return dbLocs.filter((loc) => assignedFromLocations.includes(loc));
+  }, [transportList, isSuperAdmin, assignedFromLocations]);
+
+  const upazilas = useMemo(() => {
+    const filteredByMill = fromLocation ? transportList.filter((i) => i.from_location === fromLocation) : transportList;
+    const allUpazilaNames = Array.from(new Set(filteredByMill.map((i) => i.to_upazila).filter(Boolean)));
+
+    if (isSuperAdmin || !assignedDistricts.length) return allUpazilaNames;
+
+    const allowedUpazilaNames = upazilaList
+      .filter((u) => assignedDistricts.includes(u.district))
+      .map((u) => u.upazila_name);
+
+    return allUpazilaNames.filter((name) => allowedUpazilaNames.includes(name));
+  }, [transportList, fromLocation, isSuperAdmin, assignedDistricts, upazilaList]);
 
   function toggleItemSelect(itemId: number) {
     const isSel = selectedItemIds.includes(itemId) || (bagQuantities[itemId] || 0) > 0;
@@ -278,12 +278,6 @@ export default function EasyDOFormat1() {
   const totalTransportAmount = useMemo(() => (!selectedTransport ? 0 : activeOrderList.reduce((acc, r) => acc + r.totalTransport, 0)), [activeOrderList, selectedTransport]);
   const totalAmount = useMemo(() => activeOrderList.reduce((acc, r) => acc + r.rowTotal, 0), [activeOrderList]);
 
-  const fromLocations = useMemo(() => Array.from(new Set(transportList.map((i) => i.from_location).filter(Boolean))), [transportList]);
-  const upazilas = useMemo(() => {
-    const filtered = fromLocation ? transportList.filter((i) => i.from_location === fromLocation) : transportList;
-    return Array.from(new Set(filtered.map((i) => i.to_upazila).filter(Boolean)));
-  }, [transportList, fromLocation]);
-
   function addBank() {
     setBanks((prev) => [...prev, { id: Date.now() + Math.random(), bankName: "", branch: "", date: new Date().toISOString().split("T")[0], amount: "" }]);
   }
@@ -341,7 +335,7 @@ export default function EasyDOFormat1() {
   async function saveDO() {
     if (saving) return;
     if (!user) return alert("You are not logged in.");
-    if (!navigator.onLine) return alert("Internet connection nei! Connection asle abar Save-e click korun.");
+    if (!navigator.onLine) return alert("Internet connection nei!");
 
     const validRows = activeOrderList.filter((r) => r.bags > 0);
     if (!validRows.length) return alert("Please select feed item and enter bags.");
@@ -391,7 +385,6 @@ export default function EasyDOFormat1() {
       const { error } = await supabase.from("saved_dos").insert([payload]);
       if (error) return alert(`Save DO failed: ${error.message}`);
       alert("DO saved successfully.");
-      
       localStorage.removeItem(EASY_DO_STORAGE_KEY);
     } catch {
       alert("Something went wrong while saving DO.");
@@ -404,17 +397,15 @@ export default function EasyDOFormat1() {
     <div className="edo-page">
       <style>{COMPACT_CSS}</style>
 
-      {/* HEADER */}
       <div style={{ marginBottom: 12, textAlign: "center" }}>
         <h1 style={{ margin: 0, fontSize: 18, fontWeight: 800, color: "#0f172a" }}>Create D/O (Format 1)</h1>
-        <p style={{ margin: "3px 0 0", fontSize: 12, color: "#64748b" }}>Direct feed order entry table</p>
+        <p style={{ margin: "3px 0 0", fontSize: 12, color: "#64748b" }}>Restricted by assigned Mills & Districts</p>
       </div>
 
       {loading ? (
         <div className="edo-card" style={{ padding: 40, textAlign: "center", color: "#475569" }}>Loading price list...</div>
       ) : (
         <>
-          {/* CATEGORY FILTER */}
           <div style={{ marginBottom: 8, overflowX: "auto", paddingBottom: 4 }}>
             <div style={{ display: "flex", gap: 6, whiteSpace: "nowrap" }}>
               <button
@@ -449,7 +440,6 @@ export default function EasyDOFormat1() {
             </div>
           </div>
 
-          {/* ITEM LIST TABLE */}
           <div className="edo-card" style={{ padding: 0, overflow: "hidden" }}>
             <div style={{ overflowX: "auto" }}>
               <table className="edo-table">
@@ -466,7 +456,7 @@ export default function EasyDOFormat1() {
                 <tbody>
                   {(() => {
                     let lastCat = "";
-                    return displayedPriceList.map((item, idx) => {
+                    return displayedPriceList.map((item) => {
                       const showHeader = selectedCategory === "All" && item.category !== lastCat;
                       lastCat = item.category;
 
@@ -481,15 +471,15 @@ export default function EasyDOFormat1() {
                       const rowBg = isSel ? "#dbeafe" : CATEGORY_CONFIG[item.category]?.bg || "#fff";
 
                       return (
-                        <>
+                        <React.Fragment key={item.id}>
                           {showHeader && (
-                            <tr key={`cat-${item.category}-${idx}`}>
+                            <tr>
                               <td colSpan={6} style={{ padding: "2px 12px", background: "#e2e8f0", fontWeight: 800, color: "#1e293b", fontSize: 12 }}>
                                 {item.category}
                               </td>
                             </tr>
                           )}
-                          <tr key={item.id} style={{ background: rowBg, boxShadow: isSel ? "inset 3px 0 0 #2563eb" : undefined }}>
+                          <tr style={{ background: rowBg, boxShadow: isSel ? "inset 3px 0 0 #2563eb" : undefined }}>
                             <td className="edo-td edo-sticky" style={{ background: rowBg }}>
                               <input
                                 type="checkbox"
@@ -539,7 +529,7 @@ export default function EasyDOFormat1() {
                               )}
                             </td>
                           </tr>
-                        </>
+                        </React.Fragment>
                       );
                     });
                   })()}
@@ -548,19 +538,18 @@ export default function EasyDOFormat1() {
             </div>
           </div>
 
-          {/* TRANSPORTATION */}
           <div className="edo-card">
             <div style={{ fontSize: 16, fontWeight: 750, color: "#0f172a" }}>Transportation</div>
             <div className="edo-grid2" style={{ marginTop: 10 }}>
               <div>
-                <label className="edo-label">From</label>
+                <label className="edo-label">From (Assigned Mills/Depots)</label>
                 <select value={fromLocation} onChange={(e) => { setFromLocation(e.target.value); setUpazila(""); }} className="edo-input">
                   <option value="">Select From</option>
                   {fromLocations.map((loc) => <option key={loc} value={loc}>{loc}</option>)}
                 </select>
               </div>
               <div>
-                <label className="edo-label">To / Upazila</label>
+                <label className="edo-label">To / Upazila (Assigned Districts)</label>
                 <select value={upazila} onChange={(e) => setUpazila(e.target.value)} className="edo-input" disabled={!fromLocation}>
                   <option value="">Select Upazila</option>
                   {upazilas.map((name) => <option key={name} value={name}>{name}</option>)}
@@ -606,7 +595,6 @@ export default function EasyDOFormat1() {
             </div>
           </div>
 
-          {/* SUMMARY */}
           <div className="edo-card" style={{ background: "#0f172a", color: "#fff", padding: 16 }}>
             <div style={{ display: "flex", justifyContent: "space-between", padding: "4px 0", fontSize: 12, color: "#cbd5e1" }}>
               <span>Total Weight</span>
@@ -624,7 +612,6 @@ export default function EasyDOFormat1() {
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
               <div>
                 <div style={{ fontSize: 15, fontWeight: 800 }}>Grand Total</div>
-                <div style={{ fontSize: 9, color: "#94a3b8" }}>{transportMode === "with" ? "TP includes transportation" : "Transportation deducted from TP"}</div>
               </div>
               <div style={{ fontSize: 20, fontWeight: 850, color: "#38bdf8" }}>৳ {money(totalAmount)}</div>
             </div>
@@ -633,7 +620,6 @@ export default function EasyDOFormat1() {
             </button>
           </div>
 
-          {/* DO INFORMATION SECTION */}
           {showDOInformation && (
             <div id="do-information-section" className="edo-card">
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 12 }}>
