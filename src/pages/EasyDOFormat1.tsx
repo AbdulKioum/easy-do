@@ -37,7 +37,7 @@ type BankInfo = {
   amount: string;
 };
 
-const EASY_DO_STORAGE_KEY = "easydo_format1_persistent_v5";
+const EASY_DO_STORAGE_KEY = "easydo_format1_persistent_v6";
 const PRICE_CACHE_KEY = "easydo_format1_price_cache_v1";
 const TRANSPORT_CACHE_KEY = "easydo_format1_transport_cache_v1";
 
@@ -72,13 +72,12 @@ function getSavedState() {
     const navEntry = performance.getEntriesByType("navigation")[0] as PerformanceNavigationTiming | undefined;
     const isReload = navEntry?.type === "reload";
     
-    // If user clicked browser reload/refresh, clear stored session data
     if (isReload) {
-      sessionStorage.removeItem(EASY_DO_STORAGE_KEY);
+      localStorage.removeItem(EASY_DO_STORAGE_KEY);
       return null;
     }
 
-    const raw = sessionStorage.getItem(EASY_DO_STORAGE_KEY);
+    const raw = localStorage.getItem(EASY_DO_STORAGE_KEY);
     return raw ? JSON.parse(raw) : null;
   } catch {
     return null;
@@ -165,11 +164,10 @@ export default function EasyDOFormat1() {
     return userProfile?.assigned_districts || [];
   }, [isSuperAdmin, userProfile]);
 
-  // LIVE AUTO SAVE TO SESSION STORAGE
   useEffect(() => {
     if (loading) return;
     try {
-      sessionStorage.setItem(
+      localStorage.setItem(
         EASY_DO_STORAGE_KEY,
         JSON.stringify({
           selectedCategory,
@@ -428,7 +426,7 @@ export default function EasyDOFormat1() {
       const { error } = await supabase.from("saved_dos").insert([payload]);
       if (error) return alert(`Save DO failed: ${error.message}`);
       alert("DO saved successfully.");
-      sessionStorage.removeItem(EASY_DO_STORAGE_KEY);
+      localStorage.removeItem(EASY_DO_STORAGE_KEY);
     } catch {
       alert("Something went wrong while saving DO.");
     } finally {
@@ -442,7 +440,7 @@ export default function EasyDOFormat1() {
 
       <div style={{ marginBottom: 12, textAlign: "center" }}>
         <h1 style={{ margin: 0, fontSize: 18, fontWeight: 800, color: "#0f172a" }}>Create D/O (Format 1)</h1>
-        <p style={{ margin: "3px 0 0", fontSize: 12, color: "#64748b" }}>Restricted by assigned Mills & Districts</p>
+        <p style={{ margin: "3px 0 0", fontSize: 12, color: "#64748b" }}>Direct feed order entry table</p>
       </div>
 
       {loading ? (
