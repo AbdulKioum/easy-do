@@ -1,4 +1,4 @@
-import {
+import React, {
   useEffect,
   useMemo,
   useRef,
@@ -27,6 +27,13 @@ type Transport = {
   status: string;
 };
 
+type Upazila = {
+  id: number;
+  district: string;
+  upazila_name: string;
+  status: string;
+};
+
 type OrderRow = {
   id: number;
   category: string;
@@ -52,16 +59,22 @@ const categories = [
 ];
 
 const EASY_DO_STORAGE_KEY =
-  "easydo_current_state_v1";
+  "easydo_current_state_v2";
 
 export default function EasyDOPage() {
-  const { user } = useAuth();
+  const { user, role } = useAuth();
 
   const [priceList, setPriceList] =
     useState<FeedPrice[]>([]);
 
   const [transportList, setTransportList] =
     useState<Transport[]>([]);
+
+  const [upazilaList, setUpazilaList] =
+    useState<Upazila[]>([]);
+
+  const [userProfile, setUserProfile] =
+    useState<any>(null);
 
   const [loading, setLoading] =
     useState(true);
@@ -81,9 +94,6 @@ export default function EasyDOPage() {
   const [transportMode, setTransportMode] =
     useState<"with" | "without">("with");
 
-  /*
-   * Which category dropdown is currently open.
-   */
   const [
     openDropdownRowId,
     setOpenDropdownRowId,
@@ -91,10 +101,6 @@ export default function EasyDOPage() {
 
   const dropdownRef =
     useRef<HTMLDivElement | null>(null);
-
-  // =========================
-  // DO INFORMATION
-  // =========================
 
   const [
     showDOInformation,
@@ -128,9 +134,7 @@ export default function EasyDOPage() {
     setGeneratedMessage,
   ] = useState("");
 
-  // =========================
-  // PAGE VISIT TRACKING
-  // =========================
+  const isSuperAdmin = role === "super_admin";
 
   useEffect(() => {
     async function trackPageVisit() {
@@ -147,11 +151,11 @@ export default function EasyDOPage() {
     trackPageVisit();
   }, [user?.id]);
 
-  // =========================
-  // INITIAL LOAD
-  // =========================
-
   useEffect(() => {
+    if (user?.id) {
+      loadUserProfile();
+    }
+
     const navigationEntry =
       performance.getEntriesByType(
         "navigation"
@@ -162,14 +166,6 @@ export default function EasyDOPage() {
     const isReload =
       navigationEntry?.type === "reload";
 
-    /*
-     * If browser was actually reloaded,
-     * clear the current DO.
-     *
-     * If user presses reload and then CANCELS,
-     * this code does not run because page never
-     * reloads.
-     */
     if (isReload) {
       sessionStorage.removeItem(
         EASY_DO_STORAGE_KEY
@@ -179,20 +175,32 @@ export default function EasyDOPage() {
     }
 
     loadData();
-  }, []);
+  }, [user?.id]);
 
-  // =========================
-  // RELOAD WARNING
-  // =========================
+  async function loadUserProfile() {
+    const { data } = await supabase.from("profiles").select("*").eq("id", user?.id).single();
+    if (data) {
+      setUserProfile(data);
+      if (data.assigned_from_locations && data.assigned_from_locations.length > 0 && !fromLocation) {
+        setFromLocation(data.assigned_from_locations[0]);
+      }
+    }
+  }
+
+  const assignedFromLocations: string[] = useMemo(() => {
+    if (isSuperAdmin) return [];
+    return userProfile?.assigned_from_locations || [];
+  }, [isSuperAdmin, userProfile]);
+
+  const assignedDistricts: string[] = useMemo(() => {
+    if (isSuperAdmin) return [];
+    return userProfile?.assigned_districts || [];
+  }, [isSuperAdmin, userProfile]);
 
   useEffect(() => {
     function handleBeforeUnload(
       event: BeforeUnloadEvent
     ) {
-      /*
-       * Browser will show its own standard
-       * confirmation message.
-       */
       event.preventDefault();
       event.returnValue = "";
     }
@@ -209,10 +217,6 @@ export default function EasyDOPage() {
       );
     };
   }, []);
-
-  // =========================
-  // CLOSE DROPDOWN
-  // =========================
 
   useEffect(() => {
     function handleOutsideClick(
@@ -243,10 +247,6 @@ export default function EasyDOPage() {
       );
     };
   }, []);
-
-  // =========================
-  // RESTORE CURRENT DO
-  // =========================
 
   function restoreEasyDOState() {
     try {
@@ -325,15 +325,7 @@ export default function EasyDOPage() {
     }
   }
 
-  // =========================
-  // AUTO SAVE CURRENT DO
-  // =========================
-
   useEffect(() => {
-    /*
-     * Do not save anything before the
-     * initial restore/load process.
-     */
     if (loading) {
       return;
     }
@@ -376,16 +368,13 @@ export default function EasyDOPage() {
     generatedMessage,
   ]);
 
-  // =========================
-  // LOAD DATA
-  // =========================
-
   async function loadData() {
     setLoading(true);
 
     const [
       priceResponse,
       transportResponse,
+      upazilaResponse,
     ] = await Promise.all([
       supabase
         .from("feed_price_list")
@@ -406,16 +395,18 @@ export default function EasyDOPage() {
         .order("to_upazila", {
           ascending: true,
         }),
+
+      supabase
+        .from("upazilas")
+        .select("*")
+        .eq("status", "Active"),
     ]);
 
     if (priceResponse.error) {
       console.error(
         priceResponse.error
       );
-
-      alert(
-        "Price list load failed."
-      );
+      alert("Price list load failed.");
     } else {
       setPriceList(
         priceResponse.data || []
@@ -426,30 +417,25 @@ export default function EasyDOPage() {
       console.error(
         transportResponse.error
       );
-
-      alert(
-        "Transportation load failed."
-      );
+      alert("Transportation load failed.");
     } else {
       setTransportList(
         transportResponse.data || []
       );
     }
 
+    if (upazilaResponse.error) {
+      console.error(upazilaResponse.error);
+    } else {
+      setUpazilaList(upazilaResponse.data || []);
+    }
+
     setLoading(false);
   }
-
-  // =========================
-  // CATEGORY
-  // =========================
 
   function addCategory(
     category: string
   ) {
-    /*
-     * Check whether this category still
-     * has any unselected item.
-     */
     const availableItems =
       priceList.filter(
         (item) =>
@@ -470,7 +456,6 @@ export default function EasyDOPage() {
       alert(
         `All ${category} items have already been added.`
       );
-
       return;
     }
 
@@ -478,11 +463,8 @@ export default function EasyDOPage() {
       id:
         Date.now() +
         Math.random(),
-
       category,
-
       item: null,
-
       bags: 0,
     };
 
@@ -491,20 +473,12 @@ export default function EasyDOPage() {
       newRow,
     ]);
 
-    /*
-     * Automatically open the new
-     * category dropdown.
-     */
     setTimeout(() => {
       setOpenDropdownRowId(
         newRow.id
       );
     }, 50);
   }
-
-  // =========================
-  // REMOVE ROW
-  // =========================
 
   function removeRow(
     rowId: number
@@ -524,16 +498,6 @@ export default function EasyDOPage() {
     }
   }
 
-
-
-  /*
-   * Multiple selection helper.
-   *
-   * The dropdown keeps a temporary
-   * selection list. When user clicks
-   * Done, all selected items are
-   * converted into normal rows.
-   */
   const [
     pendingSelections,
     setPendingSelections,
@@ -655,12 +619,9 @@ export default function EasyDOPage() {
                 : Date.now() +
                   Math.random() +
                   itemIndex,
-
             category:
               currentRow.category,
-
             item,
-
             bags: 0,
           })
         );
@@ -677,9 +638,7 @@ export default function EasyDOPage() {
         const copy = {
           ...prev,
         };
-
         delete copy[rowId];
-
         return copy;
       }
     );
@@ -688,10 +647,6 @@ export default function EasyDOPage() {
       null
     );
   }
-
-  // =========================
-  // BAGS
-  // =========================
 
   function updateBags(
     rowId: number,
@@ -711,10 +666,6 @@ export default function EasyDOPage() {
       )
     );
   }
-
-  // =========================
-  // SELECTED TRANSPORT
-  // =========================
 
   const selectedTransport =
     useMemo(() => {
@@ -740,10 +691,6 @@ export default function EasyDOPage() {
       upazila,
     ]);
 
-  // =========================
-  // TRANSPORT RATE
-  // =========================
-
   function getTransportRate(
     category: string
   ) {
@@ -768,10 +715,6 @@ export default function EasyDOPage() {
     );
   }
 
-  // =========================
-  // ROW WEIGHT
-  // =========================
-
   function getRowWeight(
     row: OrderRow
   ) {
@@ -789,10 +732,6 @@ export default function EasyDOPage() {
       Number(row.bags)
     );
   }
-
-  // =========================
-  // ROW TRANSPORT
-  // =========================
 
   function getRowTransport(
     row: OrderRow
@@ -817,10 +756,6 @@ export default function EasyDOPage() {
 
     return weight * rate;
   }
-
-  // =========================
-  // ROW TOTAL
-  // =========================
 
   function getRowTotal(
     row: OrderRow
@@ -850,10 +785,6 @@ export default function EasyDOPage() {
       getRowTransport(row)
     );
   }
-
-  // =========================
-  // TOTAL TRANSPORT
-  // =========================
 
   const totalTransportAmount =
     useMemo(() => {
@@ -889,10 +820,6 @@ export default function EasyDOPage() {
       selectedTransport,
     ]);
 
-  // =========================
-  // TOTAL WEIGHT
-  // =========================
-
   const totalWeight =
     useMemo(() => {
       return rows.reduce(
@@ -902,10 +829,6 @@ export default function EasyDOPage() {
         0
       );
     }, [rows]);
-
-  // =========================
-  // FEED PRICE
-  // =========================
 
   const feedPrice =
     useMemo(() => {
@@ -925,10 +848,6 @@ export default function EasyDOPage() {
       );
     }, [rows]);
 
-  // =========================
-  // GRAND TOTAL
-  // =========================
-
   const totalAmount =
     useMemo(() => {
       return rows.reduce(
@@ -943,13 +862,9 @@ export default function EasyDOPage() {
       selectedTransport,
     ]);
 
-  // =========================
-  // FROM LOCATIONS
-  // =========================
-
   const fromLocations =
     useMemo(() => {
-      return Array.from(
+      const dbLocs = Array.from(
         new Set(
           transportList
             .map(
@@ -959,11 +874,13 @@ export default function EasyDOPage() {
             .filter(Boolean)
         )
       );
-    }, [transportList]);
 
-  // =========================
-  // UPAZILA
-  // =========================
+      if (isSuperAdmin || assignedFromLocations.length === 0) {
+        return dbLocs;
+      }
+
+      return dbLocs.filter((loc) => assignedFromLocations.includes(loc));
+    }, [transportList, isSuperAdmin, assignedFromLocations]);
 
   const upazilas =
     useMemo(() => {
@@ -976,7 +893,7 @@ export default function EasyDOPage() {
             )
           : transportList;
 
-      return Array.from(
+      const allUpazilas = Array.from(
         new Set(
           filtered
             .map(
@@ -986,14 +903,23 @@ export default function EasyDOPage() {
             .filter(Boolean)
         )
       );
+
+      if (isSuperAdmin || assignedDistricts.length === 0) {
+        return allUpazilas;
+      }
+
+      const allowedUpazilaNames = upazilaList
+        .filter((u) => assignedDistricts.includes(u.district))
+        .map((u) => u.upazila_name);
+
+      return allUpazilas.filter((name) => allowedUpazilaNames.includes(name));
     }, [
       transportList,
       fromLocation,
+      isSuperAdmin,
+      assignedDistricts,
+      upazilaList,
     ]);
-
-  // =========================
-  // BANK FUNCTIONS
-  // =========================
 
   function addBank() {
     setBanks((prev) => [
@@ -1002,15 +928,11 @@ export default function EasyDOPage() {
         id:
           Date.now() +
           Math.random(),
-
         bankName: "",
-
         branch: "",
-
         date: new Date()
           .toISOString()
           .split("T")[0],
-
         amount: "",
       },
     ]);
@@ -1045,10 +967,6 @@ export default function EasyDOPage() {
     );
   }
 
-  // =========================
-  // SHORT FEED NAME
-  // =========================
-
   function getFeedShortName(
     item: FeedPrice
   ) {
@@ -1060,10 +978,6 @@ export default function EasyDOPage() {
 
     return item.item_name;
   }
-
-  // =========================
-  // GENERATE MESSAGE
-  // =========================
 
   function buildDOMessage() {
     const finalAgentCode =
@@ -1131,10 +1045,6 @@ ${amount}`;
           .join("\n\n");
     }
 
-    // =========================
-    // FEED MESSAGE
-    // =========================
-
     const validRows =
       rows.filter(
         (
@@ -1189,10 +1099,6 @@ Vehicle No: ${finalVehicle}
 From: ${finalFrom}`;
   }
 
-  // =========================
-  // GENERATE BUTTON
-  // =========================
-
   function openDOInformation() {
     setShowDOInformation(true);
 
@@ -1214,10 +1120,6 @@ From: ${finalFrom}`;
       }
     }, 100);
   }
-
-  // =========================
-  // AUTO UPDATE MESSAGE
-  // =========================
 
   useEffect(() => {
     if (
@@ -1241,10 +1143,6 @@ From: ${finalFrom}`;
     transportMode,
   ]);
 
-  // =========================
-  // COPY MESSAGE
-  // =========================
-
   async function copyMessage() {
     if (
       !generatedMessage
@@ -1262,14 +1160,9 @@ From: ${finalFrom}`;
       );
     } catch (error) {
       console.error(error);
-
       alert("Copy failed.");
     }
   }
-
-  // =========================
-  // SAVE DO
-  // =========================
 
   async function saveDO() {
     if (saving) {
@@ -1280,7 +1173,6 @@ From: ${finalFrom}`;
       alert(
         "You are not logged in."
       );
-
       return;
     }
 
@@ -1288,7 +1180,6 @@ From: ${finalFrom}`;
       alert(
         "Please add at least one feed item."
       );
-
       return;
     }
 
@@ -1305,7 +1196,6 @@ From: ${finalFrom}`;
       alert(
         "Please select feed item and enter bags."
       );
-
       return;
     }
 
@@ -1348,50 +1238,41 @@ ${
           (row) => ({
             category:
               row.category,
-
             item_id:
               row.item?.id ||
               null,
-
             item_name:
               row.item
                 ?.item_name ||
               "",
-
             short_name:
               row.item
                 ?.short_name ||
               "",
-
             bags:
               Number(
                 row.bags
               ),
-
             kg_per_bag:
               Number(
                 row.item
                   ?.kg_per_bag ||
                   0
               ),
-
             tp_per_bag:
               Number(
                 row.item
                   ?.tp_per_bag ||
                   0
               ),
-
             weight:
               getRowWeight(
                 row
               ),
-
             transport:
               getRowTransport(
                 row
               ),
-
             total:
               getRowTotal(
                 row
@@ -1412,88 +1293,66 @@ ${
       const payload = {
         user_id:
           user.id,
-
         agent_info:
           `${agentCode.trim()}, ${agentName.trim()}`
             .replace(
               /^,\s*|\s*,\s*$/g,
               ""
             ) || null,
-
         vehicle_number:
           vehicleNo.trim() ||
           null,
-
         bank_details:
           bankDetails ||
           null,
-
         from_location:
           fromLocation ||
           null,
-
         to_upazila:
           upazila ||
           null,
-
         transport_mode:
           transportMode,
-
         total_weight:
           Number(
             totalWeight.toFixed(
               2
             )
           ),
-
         total_amount:
           Number(
             totalAmount.toFixed(
               2
             )
           ),
-
         order_items:
           orderItems,
-
         agent_code:
           agentCode.trim() ||
           null,
-
         agent_name:
           agentName.trim() ||
           null,
-
         vehicle_no:
           vehicleNo.trim() ||
           null,
-
         bank_name:
           firstBank?.bankName.trim() ||
           null,
-
         bank_branch:
           firstBank?.branch.trim() ||
           null,
-
         bank_amount:
           firstBank?.amount
             ? Number(
                 firstBank.amount
               )
             : 0,
-
         banks:
           validBanks,
-
         message_text:
           finalMessage,
       };
-
-      console.log(
-        "Saving DO:",
-        payload
-      );
 
       const { error } =
         await supabase
@@ -1507,11 +1366,9 @@ ${
           "Save DO error:",
           error
         );
-
         alert(
           `Save DO failed: ${error.message}`
         );
-
         return;
       }
 
@@ -1520,7 +1377,6 @@ ${
       );
     } catch (error) {
       console.error(error);
-
       alert(
         "Something went wrong while saving DO."
       );
@@ -1528,10 +1384,6 @@ ${
       setSaving(false);
     }
   }
-
-  // =========================
-  // FORMAT NUMBER
-  // =========================
 
   function money(
     value: number
@@ -1547,16 +1399,10 @@ ${
     );
   }
 
-  // =========================
-  // RENDER
-  // =========================
-
   return (
     <div
       style={styles.page}
     >
-      {/* HEADER */}
-
       <div
         style={styles.header}
       >
@@ -1572,7 +1418,7 @@ ${
               styles.subtitle
             }
           >
-            Feed order entry
+            Feed order entry with restriction
           </p>
         </div>
       </div>
@@ -1585,10 +1431,6 @@ ${
         </div>
       ) : (
         <>
-          {/* =========================
-              FEED CATEGORY
-          ========================= */}
-
           <div
             style={
               styles.categoryCard
@@ -1636,10 +1478,6 @@ ${
               )}
             </div>
           </div>
-
-          {/* =========================
-              ORDER ITEMS
-          ========================= */}
 
           <div
             style={
@@ -1736,10 +1574,6 @@ ${
                     row,
                     index
                   ) => {
-                    /*
-                     * Items already selected
-                     * in this category.
-                     */
                     const selectedItemIds =
                       rows
                         .filter(
@@ -1759,12 +1593,6 @@ ${
                               .id
                         );
 
-                    /*
-                     * Available items.
-                     *
-                     * Current row's own item
-                     * is allowed.
-                     */
                     const items =
                       priceList.filter(
                         (item) =>
@@ -1804,11 +1632,6 @@ ${
                         row
                       );
 
-                    /*
-                     * Empty category row:
-                     * show multiple selection
-                     * dropdown.
-                     */
                     if (
                       !row.item
                     ) {
@@ -2023,15 +1846,12 @@ ${
                                               {
                                                 ...prev,
                                               };
-
                                             delete copy[
                                               row.id
                                             ];
-
                                             return copy;
                                           }
                                         );
-
                                         setOpenDropdownRowId(
                                           null
                                         );
@@ -2097,9 +1917,6 @@ ${
                       );
                     }
 
-                    /*
-                     * Normal selected item row.
-                     */
                     return (
                       <div
                         key={
@@ -2124,8 +1941,6 @@ ${
                           {index +
                             1}
                         </div>
-
-                        {/* ITEM */}
 
                         <div
                           style={
@@ -2153,8 +1968,6 @@ ${
                             }
                           </div>
                         </div>
-
-                        {/* PRICE */}
 
                         <div
                           style={
@@ -2198,8 +2011,6 @@ ${
                             </div>
                           )}
                         </div>
-
-                        {/* BAGS */}
 
                         <div
                           style={
@@ -2251,8 +2062,6 @@ ${
                           )}
                         </div>
 
-                        {/* TRANSPORT */}
-
                         <div
                           style={
                             styles.transportColumn
@@ -2294,8 +2103,6 @@ ${
                               </div>
                             )}
                         </div>
-
-                        {/* TOTAL */}
 
                         <div
                           style={
@@ -2359,8 +2166,6 @@ ${
                             )}
                         </div>
 
-                        {/* REMOVE */}
-
                         <button
                           style={
                             styles.removeButton
@@ -2398,10 +2203,6 @@ ${
               </div>
             )}
           </div>
-
-          {/* =========================
-              ADD ANOTHER
-          ========================= */}
 
           {rows.length > 0 && (
             <div
@@ -2445,10 +2246,6 @@ ${
             </div>
           )}
 
-          {/* =========================
-              TRANSPORTATION
-          ========================= */}
-
           <div
             style={
               styles.transportCard
@@ -2473,7 +2270,7 @@ ${
                     styles.formLabel
                   }
                 >
-                  From
+                  From (Assigned Mills/Depots)
                 </label>
 
                 <select
@@ -2484,7 +2281,6 @@ ${
                     setFromLocation(
                       e.target.value
                     );
-
                     setUpazila("");
                   }}
                   style={
@@ -2520,7 +2316,7 @@ ${
                     styles.formLabel
                   }
                 >
-                  To / Upazila
+                  To / Upazila (Assigned Districts)
                 </label>
 
                 <select
@@ -2561,8 +2357,6 @@ ${
                 </select>
               </div>
             </div>
-
-            {/* RATE */}
 
             <div
               style={
@@ -2627,8 +2421,6 @@ ${
                 </div>
               )}
             </div>
-
-            {/* WITH / WITHOUT */}
 
             <div
               style={
@@ -2747,10 +2539,6 @@ ${
             </div>
           </div>
 
-          {/* =========================
-              SUMMARY
-          ========================= */}
-
           <div
             style={
               styles.summaryCard
@@ -2858,8 +2646,6 @@ ${
               </div>
             </div>
 
-            {/* ACTION */}
-
             <div
               style={{
                 ...styles.actionButtons,
@@ -2909,10 +2695,6 @@ ${
             </div>
           </div>
 
-          {/* =================================================
-              DO INFORMATION
-          ================================================= */}
-
           {showDOInformation && (
             <div
               id="do-information-section"
@@ -2957,8 +2739,6 @@ ${
                   ×
                 </button>
               </div>
-
-              {/* AGENT */}
 
               <div
                 style={
@@ -3031,8 +2811,6 @@ ${
                   </div>
                 </div>
               </div>
-
-              {/* BANK DETAILS */}
 
               <div
                 style={
@@ -3254,8 +3032,6 @@ ${
                 )}
               </div>
 
-              {/* VEHICLE */}
-
               <div
                 style={
                   styles.formSection
@@ -3285,8 +3061,6 @@ ${
                   }
                 />
               </div>
-
-              {/* GENERATED MESSAGE */}
 
               <div
                 style={
@@ -3334,8 +3108,6 @@ ${
                 />
               </div>
 
-              {/* SAVE */}
-
               <button
                 style={{
                   ...styles.generateModalButton,
@@ -3356,10 +3128,6 @@ ${
           )}
         </>
       )}
-
-      {/* =========================
-          MOBILE RESPONSIVE
-      ========================= */}
 
       <style>
         {`
@@ -3421,57 +3189,47 @@ const styles: Record<
     color: "#111827",
     boxSizing: "border-box",
   },
-
   header: {
     marginBottom: 14,
   },
-
   title: {
-  margin: 0,
-  fontSize: 18,
-  fontWeight: 800,
-  textAlign: "center",
-  fontFamily: "'Outfit', 'Poppins', -apple-system, BlinkMacSystemFont, sans-serif",
-  letterSpacing: "-0.01em",
-  lineHeight: 1.2,
-  color: "#0f172a",
-  textShadow: "0px 2px 4px rgba(0, 0, 0, 0.08)",
-},
-
+    margin: 0,
+    fontSize: 18,
+    fontWeight: 800,
+    textAlign: "center",
+    fontFamily: "'Outfit', 'Poppins', -apple-system, BlinkMacSystemFont, sans-serif",
+    letterSpacing: "-0.01em",
+    lineHeight: 1.2,
+    color: "#0f172a",
+    textShadow: "0px 2px 4px rgba(0, 0, 0, 0.08)",
+  },
   subtitle: {
     margin: "3px 0 0",
     fontSize: 12,
     color: "#6b7280",
+    textAlign: "center",
   },
-
   categoryCard: {
     background: "#ffffff",
-    border:
-      "1px solid #e5e7eb",
+    border: "1px solid #e5e7eb",
     borderRadius: 12,
     padding: 14,
     marginBottom: 12,
-    boxShadow:
-      "0 1px 3px rgba(0,0,0,.05)",
+    boxShadow: "0 1px 3px rgba(0,0,0,.05)",
   },
-
   sectionTitle: {
     fontSize: 16,
     fontWeight: 750,
     color: "#111827",
   },
-
   categoryGrid: {
     display: "grid",
-    gridTemplateColumns:
-      "repeat(2, minmax(0, 1fr))",
+    gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
     gap: 8,
     marginTop: 12,
   },
-
   categoryButton: {
-    border:
-      "1px solid #d1d5db",
+    border: "1px solid #d1d5db",
     background: "#ffffff",
     color: "#111827",
     borderRadius: 9,
@@ -3484,7 +3242,6 @@ const styles: Record<
     alignItems: "center",
     gap: 7,
   },
-
   categoryIcon: {
     width: 21,
     height: 21,
@@ -3497,32 +3254,25 @@ const styles: Record<
     fontWeight: 700,
     flexShrink: 0,
   },
-
   orderCard: {
     background: "#ffffff",
-    border:
-      "1px solid #e5e7eb",
+    border: "1px solid #e5e7eb",
     borderRadius: 12,
     padding: 14,
-    boxShadow:
-      "0 1px 3px rgba(0,0,0,.05)",
+    boxShadow: "0 1px 3px rgba(0,0,0,.05)",
   },
-
   sectionHeader: {
     display: "flex",
-    justifyContent:
-      "space-between",
+    justifyContent: "space-between",
     alignItems: "center",
     gap: 10,
     marginBottom: 12,
   },
-
   sectionHint: {
     marginTop: 3,
     fontSize: 11,
     color: "#6b7280",
   },
-
   itemCount: {
     background: "#f3f4f6",
     color: "#374151",
@@ -3530,23 +3280,17 @@ const styles: Record<
     borderRadius: 7,
     fontSize: 11,
     fontWeight: 650,
-    whiteSpace:
-      "nowrap",
+    whiteSpace: "nowrap",
   },
-
   emptyState: {
-    border:
-      "1px dashed #d1d5db",
+    border: "1px dashed #d1d5db",
     borderRadius: 10,
-    padding:
-      "35px 15px",
+    padding: "35px 15px",
     textAlign: "center",
     background: "#fafafa",
   },
-
   emptyIcon: {
-    margin:
-      "0 auto 8px",
+    margin: "0 auto 8px",
     width: 35,
     height: 35,
     borderRadius: 10,
@@ -3554,45 +3298,35 @@ const styles: Record<
     color: "#ffffff",
     display: "flex",
     alignItems: "center",
-    justifyContent:
-      "center",
+    justifyContent: "center",
     fontSize: 22,
   },
-
   emptyTitle: {
     fontSize: 14,
     fontWeight: 700,
     color: "#374151",
   },
-
   emptyText: {
     marginTop: 3,
     fontSize: 11,
     color: "#9ca3af",
   },
-
   rows: {
     display: "flex",
-    flexDirection:
-      "column",
+    flexDirection: "column",
     gap: 8,
   },
-
   orderRow: {
-    position:
-      "relative",
+    position: "relative",
     display: "grid",
-    gridTemplateColumns:
-      "32px minmax(180px, 1.8fr) minmax(110px, .9fr) 85px minmax(125px, 1fr) minmax(120px, 1fr) 32px",
+    gridTemplateColumns: "32px minmax(180px, 1.8fr) minmax(110px, .9fr) 85px minmax(125px, 1fr) minmax(120px, 1fr) 32px",
     gap: 9,
     alignItems: "center",
-    border:
-      "1px solid #e5e7eb",
+    border: "1px solid #e5e7eb",
     borderRadius: 10,
     padding: 10,
     background: "#ffffff",
   },
-
   rowNumber: {
     width: 27,
     height: 27,
@@ -3601,29 +3335,23 @@ const styles: Record<
     color: "#374151",
     display: "flex",
     alignItems: "center",
-    justifyContent:
-      "center",
+    justifyContent: "center",
     fontSize: 11,
     fontWeight: 700,
   },
-
   categoryColumn: {
     minWidth: 0,
   },
-
   categoryLabel: {
     fontSize: 10,
     color: "#6b7280",
     marginBottom: 4,
     fontWeight: 600,
   },
-
   select: {
     width: "100%",
-    boxSizing:
-      "border-box",
-    border:
-      "1px solid #cbd5e1",
+    boxSizing: "border-box",
+    border: "1px solid #cbd5e1",
     borderRadius: 8,
     background: "#ffffff",
     color: "#111827",
@@ -3631,281 +3359,205 @@ const styles: Record<
     fontSize: 12,
     outline: "none",
   },
-
-  /*
-   * NEW MULTI SELECT
-   */
-
   selectButton: {
-    border:
-      "1px solid #cbd5e1",
+    border: "1px solid #cbd5e1",
     borderRadius: 8,
     background: "#ffffff",
     color: "#111827",
-    padding:
-      "10px 11px",
+    padding: "10px 11px",
     fontSize: 12,
     outline: "none",
     cursor: "pointer",
     display: "flex",
     alignItems: "center",
-    justifyContent:
-      "space-between",
+    justifyContent: "space-between",
     gap: 10,
     textAlign: "left",
   },
-
   dropdownArrow: {
     fontSize: 9,
     color: "#6b7280",
     flexShrink: 0,
   },
-
   multiDropdown: {
-    position:
-      "absolute",
-    top:
-      "calc(100% + 5px)",
+    position: "absolute",
+    top: "calc(100% + 5px)",
     left: 0,
     right: 0,
-    background:
-      "#ffffff",
-    border:
-      "1px solid #d1d5db",
+    background: "#ffffff",
+    border: "1px solid #d1d5db",
     borderRadius: 10,
-    boxShadow:
-      "0 12px 30px rgba(0,0,0,.15)",
+    boxShadow: "0 12px 30px rgba(0,0,0,.15)",
     zIndex: 1000,
-    overflow:
-      "hidden",
+    overflow: "hidden",
   },
-
   multiDropdownHeader: {
     display: "flex",
-    justifyContent:
-      "space-between",
-    alignItems:
-      "center",
+    justifyContent: "space-between",
+    alignItems: "center",
     gap: 10,
-    padding:
-      "10px 11px",
-    borderBottom:
-      "1px solid #e5e7eb",
+    padding: "10px 11px",
+    borderBottom: "1px solid #e5e7eb",
     fontSize: 11,
     fontWeight: 750,
     color: "#111827",
   },
-
   multiCount: {
     fontSize: 9,
     fontWeight: 650,
     color: "#6b7280",
-    whiteSpace:
-      "nowrap",
+    whiteSpace: "nowrap",
   },
-
   multiOptions: {
     maxHeight: 240,
-    overflowY:
-      "auto",
+    overflowY: "auto",
     padding: 5,
   },
-
   multiOption: {
     display: "flex",
-    alignItems:
-      "left",
+    alignItems: "center",
     gap: 8,
-    padding:
-      "9px 8px",
+    padding: "9px 8px",
     borderRadius: 7,
     cursor: "pointer",
     fontSize: 11,
     color: "#374151",
   },
-
   multiOptionChecked: {
-    background:
-      "#f3f4f6",
+    background: "#f3f4f6",
   },
-
   checkbox: {
     width: 16,
     height: 16,
     margin: 0,
-    accentColor:
-      "#111827",
+    accentColor: "#111827",
     cursor: "pointer",
     flexShrink: 0,
   },
-
   multiItemName: {
     flex: 1,
     minWidth: 0,
   },
-
   multiDropdownFooter: {
     display: "flex",
-    justifyContent:
-      "flex-end",
+    justifyContent: "flex-end",
     gap: 7,
     padding: 8,
-    borderTop:
-      "1px solid #e5e7eb",
-    background:
-      "#fafafa",
+    borderTop: "1px solid #e5e7eb",
+    background: "#fafafa",
   },
-
   cancelSelectButton: {
-    border:
-      "1px solid #d1d5db",
-    background:
-      "#ffffff",
+    border: "1px solid #d1d5db",
+    background: "#ffffff",
     color: "#374151",
     borderRadius: 7,
-    padding:
-      "8px 11px",
+    padding: "8px 11px",
     fontSize: 10,
     fontWeight: 700,
     cursor: "pointer",
   },
-
   confirmSelectButton: {
     border: "none",
-    background:
-      "#111827",
+    background: "#111827",
     color: "#ffffff",
     borderRadius: 7,
-    padding:
-      "8px 11px",
+    padding: "8px 11px",
     fontSize: 10,
     fontWeight: 700,
     cursor: "pointer",
   },
-
   selectHelp: {
     marginTop: 5,
     fontSize: 9,
     color: "#9ca3af",
   },
-
   selectedItemBox: {
     width: "100%",
-    boxSizing:
-      "border-box",
-    border:
-      "1px solid #cbd5e1",
+    boxSizing: "border-box",
+    border: "1px solid #cbd5e1",
     borderRadius: 8,
-    background:
-      "#ffffff",
+    background: "#ffffff",
     color: "#111827",
-    padding:
-      "9px 8px",
+    padding: "9px 8px",
     fontSize: 12,
     fontWeight: 600,
     minHeight: 36,
     display: "flex",
-    alignItems:
-      "center",
+    alignItems: "center",
   },
-
   priceColumn: {
     minWidth: 0,
   },
-
   fieldLabel: {
     fontSize: 10,
     color: "#6b7280",
     marginBottom: 4,
     fontWeight: 600,
   },
-
   priceValue: {
     fontSize: 14,
     fontWeight: 750,
     color: "#111827",
   },
-
   kgText: {
     marginTop: 2,
     fontSize: 9,
     color: "#9ca3af",
   },
-
   bagColumn: {
     minWidth: 0,
   },
-
   bagInput: {
     width: "100%",
-    boxSizing:
-      "border-box",
-    border:
-      "1px solid #cbd5e1",
+    boxSizing: "border-box",
+    border: "1px solid #cbd5e1",
     borderRadius: 8,
-    background:
-      "#ffffff",
+    background: "#ffffff",
     color: "#111827",
-    padding:
-      "9px 7px",
+    padding: "9px 7px",
     fontSize: 13,
-    textAlign:
-      "center",
+    textAlign: "center",
     outline: "none",
   },
-
   selectItemsHint: {
     fontSize: 10,
     color: "#9ca3af",
     fontWeight: 600,
-    padding:
-      "8px 3px",
-    whiteSpace:
-      "nowrap",
+    padding: "8px 3px",
+    whiteSpace: "nowrap",
   },
-
   addBagAmountText: {
     fontSize: 10,
     color: "#b45309",
     fontWeight: 700,
-    whiteSpace:
-      "nowrap",
+    whiteSpace: "nowrap",
   },
-
   transportColumn: {
     minWidth: 0,
   },
-
   transportValue: {
     fontSize: 12,
     fontWeight: 750,
     color: "#374151",
-    whiteSpace:
-      "nowrap",
+    whiteSpace: "nowrap",
   },
-
   totalColumn: {
     minWidth: 0,
   },
-
   rowTotal: {
     fontSize: 14,
     fontWeight: 800,
     color: "#111827",
-    whiteSpace:
-      "nowrap",
+    whiteSpace: "nowrap",
   },
-
   withoutText: {
     marginTop: 2,
     fontSize: 8,
     color: "#b45309",
   },
-
   removeButton: {
     border: "none",
-    background:
-      "#fee2e2",
+    background: "#fee2e2",
     color: "#991b1b",
     width: 30,
     height: 30,
@@ -3914,72 +3566,53 @@ const styles: Record<
     lineHeight: 1,
     cursor: "pointer",
   },
-
   weightInfo: {
-    gridColumn:
-      "2 / -1",
+    gridColumn: "2 / -1",
     fontSize: 9,
     color: "#9ca3af",
     marginTop: -2,
   },
-
   addAnotherCard: {
     marginTop: 10,
-    background:
-      "#ffffff",
-    border:
-      "1px dashed #cbd5e1",
+    background: "#ffffff",
+    border: "1px dashed #cbd5e1",
     borderRadius: 12,
     padding: 12,
   },
-
   addAnotherTitle: {
     fontSize: 12,
     color: "#6b7280",
     fontWeight: 650,
     marginBottom: 8,
   },
-
   addAnotherGrid: {
     display: "grid",
-    gridTemplateColumns:
-      "repeat(3, minmax(0, 1fr))",
+    gridTemplateColumns: "repeat(3, minmax(0, 1fr))",
     gap: 7,
   },
-
   addAnotherButton: {
-    border:
-      "1px solid #e5e7eb",
-    background:
-      "#fafafa",
+    border: "1px solid #e5e7eb",
+    background: "#fafafa",
     color: "#374151",
     borderRadius: 8,
-    padding:
-      "8px 6px",
+    padding: "8px 6px",
     fontSize: 10,
     cursor: "pointer",
   },
-
   transportCard: {
     marginTop: 12,
-    background:
-      "#ffffff",
-    border:
-      "1px solid #e5e7eb",
+    background: "#ffffff",
+    border: "1px solid #e5e7eb",
     borderRadius: 12,
     padding: 14,
-    boxShadow:
-      "0 1px 3px rgba(0,0,0,.05)",
+    boxShadow: "0 1px 3px rgba(0,0,0,.05)",
   },
-
   transportGrid: {
     display: "grid",
-    gridTemplateColumns:
-      "repeat(2, minmax(0, 1fr))",
+    gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
     gap: 10,
     marginTop: 12,
   },
-
   formLabel: {
     display: "block",
     fontSize: 11,
@@ -3987,396 +3620,280 @@ const styles: Record<
     color: "#374151",
     marginBottom: 5,
   },
-
   rateBox: {
     marginTop: 12,
     padding: 12,
-    background:
-      "#f8fafc",
-    border:
-      "1px solid #e2e8f0",
+    background: "#f8fafc",
+    border: "1px solid #e2e8f0",
     borderRadius: 9,
   },
-
   rateTitle: {
     fontSize: 12,
     fontWeight: 750,
     color: "#111827",
     marginBottom: 7,
   },
-
   rateLine: {
     fontSize: 11,
     color: "#475569",
     marginTop: 4,
   },
-
   noRate: {
     fontSize: 11,
     color: "#9ca3af",
   },
-
   modeSection: {
     marginTop: 14,
   },
-
   modeGrid: {
     display: "grid",
-    gridTemplateColumns:
-      "repeat(2, minmax(0, 1fr))",
+    gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
     gap: 9,
   },
-
   modeButton: {
-    border:
-      "1px solid #d1d5db",
-    background:
-      "#ffffff",
+    border: "1px solid #d1d5db",
+    background: "#ffffff",
     color: "#111827",
     borderRadius: 10,
     padding: 12,
     cursor: "pointer",
     display: "flex",
-    alignItems:
-      "center",
+    alignItems: "center",
     gap: 9,
     textAlign: "left",
   },
-
   modeActive: {
-    border:
-      "2px solid #111827",
-    background:
-      "#f9fafb",
+    border: "2px solid #111827",
+    background: "#f9fafb",
   },
-
   radio: {
     width: 23,
     height: 23,
-    borderRadius:
-      "50%",
-    border:
-      "1px solid #9ca3af",
+    borderRadius: "50%",
+    border: "1px solid #9ca3af",
     display: "flex",
-    alignItems:
-      "center",
-    justifyContent:
-      "center",
+    alignItems: "center",
+    justifyContent: "center",
     flexShrink: 0,
     fontSize: 12,
     fontWeight: 800,
   },
-
   radioActive: {
-    background:
-      "#111827",
-    color:
-      "#ffffff",
-    borderColor:
-      "#111827",
+    background: "#111827",
+    color: "#ffffff",
+    borderColor: "#111827",
   },
-
   modeTitle: {
     fontSize: 12,
     fontWeight: 750,
   },
-
   modeHint: {
     marginTop: 2,
     fontSize: 9,
     color: "#6b7280",
   },
-
   summaryCard: {
     marginTop: 12,
-    background:
-      "#111827",
-    color:
-      "#ffffff",
+    background: "#111827",
+    color: "#ffffff",
     borderRadius: 12,
     padding: 16,
   },
-
   summaryRow: {
     display: "flex",
-    justifyContent:
-      "space-between",
-    alignItems:
-      "center",
+    justifyContent: "space-between",
+    alignItems: "center",
     gap: 15,
-    padding:
-      "6px 0",
+    padding: "6px 0",
     fontSize: 12,
-    color:
-      "#e5e7eb",
+    color: "#e5e7eb",
   },
-
   divider: {
     height: 1,
-    background:
-      "#374151",
-    margin:
-      "8px 0",
+    background: "#374151",
+    margin: "8px 0",
   },
-
   grandTotalRow: {
     display: "flex",
-    justifyContent:
-      "space-between",
-    alignItems:
-      "center",
+    justifyContent: "space-between",
+    alignItems: "center",
     gap: 15,
   },
-
   grandTotalLabel: {
     fontSize: 15,
     fontWeight: 800,
   },
-
   grandTotalHint: {
     marginTop: 3,
     fontSize: 9,
     color: "#9ca3af",
   },
-
   grandTotalValue: {
     fontSize: 22,
     fontWeight: 850,
-    whiteSpace:
-      "nowrap",
+    whiteSpace: "nowrap",
   },
-
-  // =========================
-  // DO INFORMATION
-  // =========================
-
   doInformationCard: {
     marginTop: 12,
-    background:
-      "#ffffff",
-    border:
-      "1px solid #e5e7eb",
+    background: "#ffffff",
+    border: "1px solid #e5e7eb",
     borderRadius: 12,
     padding: 14,
-    boxShadow:
-      "0 1px 3px rgba(0,0,0,.05)",
+    boxShadow: "0 1px 3px rgba(0,0,0,.05)",
     scrollMarginTop: 15,
   },
-
   doInformationHeader: {
     display: "flex",
-    justifyContent:
-      "space-between",
-    alignItems:
-      "flex-start",
+    justifyContent: "space-between",
+    alignItems: "flex-start",
     gap: 10,
     marginBottom: 12,
   },
-
   doInformationTitle: {
     fontSize: 17,
     fontWeight: 800,
     color: "#111827",
   },
-
   doInformationSubtitle: {
     marginTop: 3,
     fontSize: 10,
     color: "#6b7280",
   },
-
   closeDOInformationButton: {
     width: 32,
     height: 32,
     border: "none",
-    borderRadius:
-      "50%",
-    background:
-      "#f3f4f6",
-    color:
-      "#111827",
+    borderRadius: "50%",
+    background: "#f3f4f6",
+    color: "#111827",
     fontSize: 21,
-    cursor:
-      "pointer",
+    cursor: "pointer",
     flexShrink: 0,
   },
-
   formSection: {
     marginTop: 12,
     padding: 12,
-    border:
-      "1px solid #e5e7eb",
+    border: "1px solid #e5e7eb",
     borderRadius: 10,
-    background:
-      "#fafafa",
+    background: "#fafafa",
   },
-
   formSectionTitle: {
     fontSize: 13,
     fontWeight: 800,
     color: "#111827",
   },
-
   formGrid: {
     display: "grid",
-    gridTemplateColumns:
-      "repeat(2, minmax(0, 1fr))",
+    gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
     gap: 9,
     marginTop: 10,
   },
-
   input: {
     width: "100%",
-    boxSizing:
-      "border-box",
-    border:
-      "1px solid #cbd5e1",
-    background:
-      "#ffffff",
-    color:
-      "#111827",
+    boxSizing: "border-box",
+    border: "1px solid #cbd5e1",
+    background: "#ffffff",
+    color: "#111827",
     borderRadius: 8,
     padding: 10,
     fontSize: 12,
     outline: "none",
   },
-
   bankHeader: {
     display: "flex",
-    justifyContent:
-      "space-between",
-    alignItems:
-      "center",
+    justifyContent: "space-between",
+    alignItems: "center",
     gap: 10,
   },
-
   addBankButton: {
     border: "none",
-    background:
-      "#111827",
-    color:
-      "#ffffff",
+    background: "#111827",
+    color: "#ffffff",
     borderRadius: 7,
-    padding:
-      "7px 9px",
+    padding: "7px 9px",
     fontSize: 10,
     fontWeight: 700,
-    cursor:
-      "pointer",
+    cursor: "pointer",
   },
-
   bankCard: {
     marginTop: 9,
-    background:
-      "#ffffff",
-    border:
-      "1px solid #e5e7eb",
+    background: "#ffffff",
+    border: "1px solid #e5e7eb",
     borderRadius: 9,
     padding: 10,
   },
-
   bankNumber: {
     fontSize: 10,
     color: "#6b7280",
     fontWeight: 700,
     marginBottom: 4,
   },
-
   removeBankButton: {
     border: "none",
-    background:
-      "#fee2e2",
-    color:
-      "#991b1b",
+    background: "#fee2e2",
+    color: "#991b1b",
     borderRadius: 7,
     padding: 10,
     fontSize: 10,
     fontWeight: 700,
-    cursor:
-      "pointer",
+    cursor: "pointer",
   },
-
   generatedSection: {
     marginTop: 13,
     padding: 12,
-    border:
-      "1px solid #d1d5db",
+    border: "1px solid #d1d5db",
     borderRadius: 10,
-    background:
-      "#f9fafb",
+    background: "#f9fafb",
   },
-
   generatedHeader: {
     display: "flex",
-    justifyContent:
-      "space-between",
-    alignItems:
-      "center",
+    justifyContent: "space-between",
+    alignItems: "center",
     gap: 10,
     marginBottom: 8,
   },
-
   copyButton: {
     border: "none",
-    background:
-      "#111827",
-    color:
-      "#ffffff",
+    background: "#111827",
+    color: "#ffffff",
     borderRadius: 7,
-    padding:
-      "7px 10px",
+    padding: "7px 10px",
     fontSize: 10,
     fontWeight: 700,
-    cursor:
-      "pointer",
+    cursor: "pointer",
   },
-
   messageTextarea: {
     width: "100%",
     minHeight: 260,
-    boxSizing:
-      "border-box",
-    border:
-      "1px solid #cbd5e1",
+    boxSizing: "border-box",
+    border: "1px solid #cbd5e1",
     borderRadius: 8,
-    background:
-      "#ffffff",
-    color:
-      "#111827",
+    background: "#ffffff",
+    color: "#111827",
     padding: 11,
     fontSize: 13,
     lineHeight: 1.6,
     outline: "none",
-    resize:
-      "vertical",
-    fontFamily:
-      "Arial, sans-serif",
+    resize: "vertical",
+    fontFamily: "Arial, sans-serif",
   },
-
   generateModalButton: {
     width: "100%",
     border: "none",
-    background:
-      "#111827",
-    color:
-      "#ffffff",
+    background: "#111827",
+    color: "#ffffff",
     borderRadius: 9,
     padding: 13,
     marginTop: 13,
     fontSize: 13,
     fontWeight: 800,
-    cursor:
-      "pointer",
+    cursor: "pointer",
   },
-
   loading: {
-    background:
-      "#ffffff",
+    background: "#ffffff",
     borderRadius: 12,
     padding: 40,
-    textAlign:
-      "center",
-    color:
-      "#374151",
+    textAlign: "center",
+    color: "#374151",
   },
 };
