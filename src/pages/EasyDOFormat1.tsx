@@ -37,7 +37,7 @@ type BankInfo = {
   amount: string;
 };
 
-const EASY_DO_STORAGE_KEY = "easydo_format1_persistent_v6";
+const EASY_DO_STORAGE_KEY = "easydo_format1_persistent_v7";
 const PRICE_CACHE_KEY = "easydo_format1_price_cache_v1";
 const TRANSPORT_CACHE_KEY = "easydo_format1_transport_cache_v1";
 
@@ -69,14 +69,6 @@ const COMPACT_CSS = `
 
 function getSavedState() {
   try {
-    const navEntry = performance.getEntriesByType("navigation")[0] as PerformanceNavigationTiming | undefined;
-    const isReload = navEntry?.type === "reload";
-    
-    if (isReload) {
-      localStorage.removeItem(EASY_DO_STORAGE_KEY);
-      return null;
-    }
-
     const raw = localStorage.getItem(EASY_DO_STORAGE_KEY);
     return raw ? JSON.parse(raw) : null;
   } catch {
@@ -137,6 +129,18 @@ export default function EasyDOFormat1() {
 
   const isSuperAdmin = role === "super_admin";
 
+  // Manual reload detection & clear protection
+  useEffect(() => {
+    function handleBeforeUnload(event: BeforeUnloadEvent) {
+      localStorage.removeItem(EASY_DO_STORAGE_KEY);
+      event.preventDefault();
+      event.returnValue = "Apni ki page-ti refresh korte chan? Refresh korle current input data clear hoye jabe.";
+      return event.returnValue;
+    }
+    window.addEventListener("beforeunload", handleBeforeUnload);
+    return () => window.removeEventListener("beforeunload", handleBeforeUnload);
+  }, []);
+
   useEffect(() => {
     if (user?.id) {
       loadUserProfile();
@@ -164,6 +168,7 @@ export default function EasyDOFormat1() {
     return userProfile?.assigned_districts || [];
   }, [isSuperAdmin, userProfile]);
 
+  // LIVE PERSISTENCE TO LOCALSTORAGE
   useEffect(() => {
     if (loading) return;
     try {
@@ -440,7 +445,7 @@ export default function EasyDOFormat1() {
 
       <div style={{ marginBottom: 12, textAlign: "center" }}>
         <h1 style={{ margin: 0, fontSize: 18, fontWeight: 800, color: "#0f172a" }}>Create D/O (Format 1)</h1>
-        <p style={{ margin: "3px 0 0", fontSize: 12, color: "#64748b" }}>Direct feed order entry table</p>
+        <p style={{ margin: "3px 0 0", fontSize: 12, color: "#64748b" }}>Direct feed order entry table with reload protection</p>
       </div>
 
       {loading ? (
