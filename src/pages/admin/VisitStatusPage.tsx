@@ -261,7 +261,7 @@ export default function VisitStatusPage() {
 const styles: Record<string, React.CSSProperties> = {
   page: { padding: 16, color: "#111827", background: "#f8fafc", minHeight: "100vh", boxSizing: "border-box" },
   header: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16, flexWrap: "wrap", gap: 10 },
-  title: { margin: 0, fontSize: 22, fontWeight: 800 },
+  title: { margin: 0, fontSize: 22, fontWeight: 800, color: "#0f172a" },
   subtitle: { margin: "3px 0 0", fontSize: 12, color: "#6b7280" },
   liveIndicator: { display: "flex", alignItems: "center", gap: 6, background: "#dcfce7", color: "#166534", padding: "6px 12px", borderRadius: 20, fontSize: 12, fontWeight: 700 },
   liveDot: { width: 8, height: 8, background: "#22c55e", borderRadius: "50%", display: "inline-block", boxShadow: "0 0 0 2px #bbf7d0" },
