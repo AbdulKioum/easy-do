@@ -14,7 +14,6 @@ export default function SideMenu({
   currentPage,
   onNavigate,
 }: SideMenuProps) {
-
   const { profile, role, signOut } = useAuth();
 
   if (!open) {
@@ -31,15 +30,13 @@ export default function SideMenu({
     onClose();
   }
 
+  const isAdminOrSuper = role === "admin" || role === "super_admin";
+
   return (
     <>
-      {/* BACKDROP */}
       <div style={styles.backdrop} onClick={onClose} />
 
-      {/* DRAWER */}
       <aside style={styles.drawer}>
-
-        {/* HEADER */}
         <div style={styles.header}>
           <div style={styles.headerLeft}>
             <img
@@ -60,11 +57,7 @@ export default function SideMenu({
           </button>
         </div>
 
-        
-
-        {/* MENU ITEMS (LEFT ALIGNED) */}
         <div style={styles.menu}>
-
           <MenuItem
             icon="📄"
             label="Create D/O Format 1"
@@ -86,12 +79,29 @@ export default function SideMenu({
             onClick={() => navigate("saved-dos")}
           />
 
-          <MenuItem
-            icon="💰"
-            label="Price List"
-            active={currentPage === "price-list"}
-            onClick={() => navigate("price-list")}
-          />
+          {isAdminOrSuper ? (
+            <>
+              <MenuItem
+                icon="💰"
+                label="Price List 1"
+                active={currentPage === "price-list"}
+                onClick={() => navigate("price-list")}
+              />
+              <MenuItem
+                icon="🏷️"
+                label="Price List 2"
+                active={currentPage === "price-list-2"}
+                onClick={() => navigate("price-list-2")}
+              />
+            </>
+          ) : (
+            <MenuItem
+              icon="💰"
+              label="Price List"
+              active={currentPage === "price-list" || currentPage === "price-list-2"}
+              onClick={() => navigate("price-list")}
+            />
+          )}
 
           <MenuItem
             icon="🚚"
@@ -123,10 +133,8 @@ export default function SideMenu({
               />
             </>
           )}
-
         </div>
 
-        {/* USER INFO */}
         <div style={styles.userBox}>
           <div style={styles.userName}>
             {profile?.full_name || profile?.email || "User"}
@@ -140,13 +148,11 @@ export default function SideMenu({
           </div>
         </div>
 
-        {/* FOOTER */}
         <div style={styles.footer}>
           <button onClick={handleLogout} style={styles.logoutButton}>
             🚪 Logout
           </button>
         </div>
-
       </aside>
     </>
   );
@@ -185,7 +191,6 @@ const styles: Record<string, React.CSSProperties> = {
     backdropFilter: "blur(2px)",
     zIndex: 999,
   },
-
   drawer: {
     position: "fixed",
     top: 0,
@@ -199,7 +204,6 @@ const styles: Record<string, React.CSSProperties> = {
     display: "flex",
     flexDirection: "column",
   },
-
   header: {
     padding: "18px 16px",
     borderBottom: "1px solid #f1f5f9",
@@ -207,20 +211,17 @@ const styles: Record<string, React.CSSProperties> = {
     justifyContent: "space-between",
     alignItems: "center",
   },
-
   headerLeft: {
     display: "flex",
     flexDirection: "column",
     alignItems: "flex-start",
   },
-
   subtitle: {
     marginTop: 4,
     fontSize: 11,
     color: "#64748b",
     fontWeight: 500,
   },
-
   closeButton: {
     border: "none",
     background: "#f1f5f9",
@@ -234,7 +235,6 @@ const styles: Record<string, React.CSSProperties> = {
     alignItems: "center",
     justifyContent: "center",
   },
-
   userBox: {
     margin: "12px 16px 4px 16px",
     padding: "10px 12px",
@@ -245,7 +245,6 @@ const styles: Record<string, React.CSSProperties> = {
     justifyContent: "space-between",
     alignItems: "center",
   },
-
   userName: {
     fontSize: 13,
     fontWeight: 600,
@@ -255,7 +254,6 @@ const styles: Record<string, React.CSSProperties> = {
     whiteSpace: "nowrap",
     maxWidth: "150px",
   },
-
   roleBadge: {
     padding: "2px 6px",
     borderRadius: 4,
@@ -264,7 +262,6 @@ const styles: Record<string, React.CSSProperties> = {
     fontSize: 9,
     fontWeight: 700,
   },
-
   menu: {
     padding: "12px 10px",
     display: "flex",
@@ -273,7 +270,6 @@ const styles: Record<string, React.CSSProperties> = {
     flex: 1,
     overflowY: "auto",
   },
-
   menuItem: {
     width: "100%",
     border: "none",
@@ -283,7 +279,7 @@ const styles: Record<string, React.CSSProperties> = {
     borderRadius: 8,
     display: "flex",
     alignItems: "center",
-    justifyContent: "flex-start", // Left Aligned
+    justifyContent: "flex-start",
     gap: 12,
     fontSize: 14,
     fontWeight: 500,
@@ -291,13 +287,11 @@ const styles: Record<string, React.CSSProperties> = {
     cursor: "pointer",
     transition: "all 0.15s ease",
   },
-
   menuItemActive: {
-    background: "#2563eb", // Professional Blue Accent
+    background: "#2563eb",
     color: "#ffffff",
     fontWeight: 600,
   },
-
   icon: {
     width: 20,
     textAlign: "left",
@@ -305,19 +299,16 @@ const styles: Record<string, React.CSSProperties> = {
     display: "flex",
     alignItems: "center",
   },
-
   label: {
     flex: 1,
     textAlign: "left",
   },
-
   footer: {
     padding: 16,
     borderTop: "1px solid #f1f5f9",
     flexShrink: 0,
     background: "#ffffff",
   },
-
   logoutButton: {
     width: "100%",
     border: "1px solid #fecaca",

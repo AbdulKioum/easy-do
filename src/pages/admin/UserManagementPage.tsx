@@ -12,6 +12,7 @@ type Profile = {
   status: string;
   assigned_districts?: string[];
   assigned_from_locations?: string[];
+  assigned_price_list?: string;
   created_at?: string;
   updated_at?: string;
 };
@@ -36,12 +37,15 @@ export default function UserManagementPage() {
   const [newPassword, setNewPassword] = useState("");
   const [newRole, setNewRole] = useState<UserRole>("user");
   const [newStatus, setNewStatus] = useState("Active");
+  const [newAssignedPriceList, setNewAssignedPriceList] = useState("price_list_1");
   const [newAssignedDistricts, setNewAssignedDistricts] = useState<string[]>([]);
   const [newAssignedLocations, setNewAssignedLocations] = useState<string[]>([]);
   const [creatingUser, setCreatingUser] = useState(false);
 
   // Editable fields per user state for assignments
-  const [userInputs, setUserInputs] = useState<Record<string, { districts: string[]; locations: string[] }>>({});
+  const [userInputs, setUserInputs] = useState<
+    Record<string, { districts: string[]; locations: string[]; priceList: string }>
+  >({});
 
   useEffect(() => {
     if (currentRole === "super_admin") {
@@ -54,17 +58,21 @@ export default function UserManagementPage() {
 
   async function loadMetadata() {
     try {
-      // Fetch distinct districts from upazilas table
       const { data: upazilaData } = await supabase.from("upazilas").select("district");
       if (upazilaData) {
-        const uniqueDistricts = Array.from(new Set(upazilaData.map((u) => u.district).filter(Boolean))).sort();
+        const uniqueDistricts = Array.from(
+          new Set(upazilaData.map((u) => u.district).filter(Boolean))
+        ).sort();
         setAllDistricts(uniqueDistricts);
       }
 
-      // Fetch distinct from_locations from transportation table
-      const { data: transData } = await supabase.from("transportation").select("from_location");
+      const { data: transData } = await supabase
+        .from("transportation")
+        .select("from_location");
       if (transData) {
-        const uniqueLocs = Array.from(new Set(transData.map((t) => t.from_location).filter(Boolean))).sort();
+        const uniqueLocs = Array.from(
+          new Set(transData.map((t) => t.from_location).filter(Boolean))
+        ).sort();
         setAllLocations(uniqueLocs);
       }
     } catch (err) {
@@ -91,11 +99,15 @@ export default function UserManagementPage() {
     const fetchedUsers = (data || []) as Profile[];
     setUsers(fetchedUsers);
 
-    const initialInputs: Record<string, { districts: string[]; locations: string[] }> = {};
+    const initialInputs: Record<
+      string,
+      { districts: string[]; locations: string[]; priceList: string }
+    > = {};
     fetchedUsers.forEach((u) => {
       initialInputs[u.id] = {
         districts: u.assigned_districts || [],
         locations: u.assigned_from_locations || [],
+        priceList: u.assigned_price_list || "price_list_1",
       };
     });
     setUserInputs(initialInputs);
@@ -146,6 +158,7 @@ export default function UserManagementPage() {
           status: newStatus,
           assigned_districts: newAssignedDistricts,
           assigned_from_locations: newAssignedLocations,
+          assigned_price_list: newAssignedPriceList,
         },
       });
 
@@ -155,12 +168,26 @@ export default function UserManagementPage() {
         return;
       }
 
+      // Ensure assigned_price_list is saved in profiles even if edge function doesn't handle it directly
+      if (data?.user?.id) {
+        await supabase
+          .from("profiles")
+          .update({ assigned_price_list: newAssignedPriceList })
+          .eq("id", data.user.id);
+      } else {
+        await supabase
+          .from("profiles")
+          .update({ assigned_price_list: newAssignedPriceList })
+          .eq("email", email);
+      }
+
       setSuccess("User created successfully.");
       setNewFullName("");
       setNewEmail("");
       setNewPassword("");
       setNewRole("user");
       setNewStatus("Active");
+      setNewAssignedPriceList("price_list_1");
       setNewAssignedDistricts([]);
       setNewAssignedLocations([]);
       setShowAddUser(false);
@@ -188,7 +215,9 @@ export default function UserManagementPage() {
     if (error) {
       setError(`Role update failed: ${error.message}`);
     } else {
-      setUsers((prev) => prev.map((u) => (u.id === userId ? { ...u, role: selectedRole } : u)));
+      setUsers((prev) =>
+        prev.map((u) => (u.id === userId ? { ...u, role: selectedRole } : u))
+      );
       setSuccess("User role updated successfully.");
     }
     setSavingId(null);
@@ -209,7 +238,9 @@ export default function UserManagementPage() {
     if (error) {
       setError(`Status update failed: ${error.message}`);
     } else {
-      setUsers((prev) => prev.map((u) => (u.id === userId ? { ...u, status: selectedStatus } : u)));
+      setUsers((prev) =>
+        prev.map((u) => (u.id === userId ? { ...u, status: selectedStatus } : u))
+      );
       setSuccess("User status updated successfully.");
     }
     setSavingId(null);
@@ -217,20 +248,41 @@ export default function UserManagementPage() {
 
   async function handleAssignmentsUpdate(userId: string) {
     setSavingId(userId);
-    const currentInput = userInputs[userId] || { districts: [], locations: [] };
+    const currentInput = userInputs[userId] || {
+      districts: [],
+      locations: [],
+      priceList: "price_list_1",
+    };
     const assigned_districts = currentInput.districts;
     const assigned_from_locations = currentInput.locations;
+    const assigned_price_list = currentInput.priceList;
 
     const { error } = await supabase
       .from("profiles")
-      .update({ assigned_districts, assigned_from_locations, updated_at: new Date().toISOString() })
+      .update({
+        assigned_districts,
+        assigned_from_locations,
+        assigned_price_list,
+        updated_at: new Date().toISOString(),
+      })
       .eq("id", userId);
 
     if (error) {
       setError(`Assignment update failed: ${error.message}`);
     } else {
-      setUsers((prev) => prev.map((u) => (u.id === userId ? { ...u, assigned_districts, assigned_from_locations } : u)));
-      setSuccess("User assignments updated successfully.");
+      setUsers((prev) =>
+        prev.map((u) =>
+          u.id === userId
+            ? {
+                ...u,
+                assigned_districts,
+                assigned_from_locations,
+                assigned_price_list,
+              }
+            : u
+        )
+      );
+      setSuccess("User assignments & price list updated successfully.");
     }
     setSavingId(null);
   }
@@ -245,7 +297,9 @@ export default function UserManagementPage() {
 
     setSavingId(userId);
     try {
-      const { data, error } = await supabase.functions.invoke("delete-user", { body: { user_id: userId } });
+      const { data, error } = await supabase.functions.invoke("delete-user", {
+        body: { user_id: userId },
+      });
       if (error || !data?.success) {
         setError(`Delete user failed: ${error?.message || data?.error}`);
       } else {
@@ -263,7 +317,9 @@ export default function UserManagementPage() {
       <div style={styles.accessDenied}>
         <div style={styles.accessIcon}>🔒</div>
         <div style={styles.accessTitle}>Access Denied</div>
-        <div style={styles.accessText}>Only Super Admin can access User Management.</div>
+        <div style={styles.accessText}>
+          Only Super Admin can access User Management.
+        </div>
       </div>
     );
   }
@@ -273,9 +329,20 @@ export default function UserManagementPage() {
       <div style={styles.header}>
         <div>
           <h1 style={styles.title}>User Management</h1>
-          <p style={styles.subtitle}>Create users, manage roles, and assign districts & Depots</p>
+          <p style={styles.subtitle}>
+            Create users, manage roles, and assign Price Lists, districts & Depots
+          </p>
         </div>
-        <button onClick={() => { loadUsers(); loadMetadata(); }} style={styles.refreshButton} disabled={loading}>↻ Refresh</button>
+        <button
+          onClick={() => {
+            loadUsers();
+            loadMetadata();
+          }}
+          style={styles.refreshButton}
+          disabled={loading}
+        >
+          ↻ Refresh
+        </button>
       </div>
 
       {error && <div style={styles.error}>{error}</div>}
@@ -285,9 +352,14 @@ export default function UserManagementPage() {
         <div style={styles.addUserHeader}>
           <div>
             <div style={styles.addUserTitle}>➕ Add User</div>
-            <div style={styles.addUserSubtitle}>Create new users with district & Depot restrictions.</div>
+            <div style={styles.addUserSubtitle}>
+              Create new users with Price List, district & Depot restrictions.
+            </div>
           </div>
-          <button onClick={() => setShowAddUser(!showAddUser)} style={styles.addUserToggle}>
+          <button
+            onClick={() => setShowAddUser(!showAddUser)}
+            style={styles.addUserToggle}
+          >
             {showAddUser ? "✕ Close" : "＋ Add User"}
           </button>
         </div>
@@ -296,19 +368,45 @@ export default function UserManagementPage() {
           <div style={styles.addUserForm}>
             <div style={styles.formGroup}>
               <label style={styles.formLabel}>Full Name</label>
-              <input type="text" value={newFullName} onChange={(e) => setNewFullName(e.target.value)} placeholder="Full name" style={styles.input} disabled={creatingUser} />
+              <input
+                type="text"
+                value={newFullName}
+                onChange={(e) => setNewFullName(e.target.value)}
+                placeholder="Full name"
+                style={styles.input}
+                disabled={creatingUser}
+              />
             </div>
             <div style={styles.formGroup}>
               <label style={styles.formLabel}>Email</label>
-              <input type="email" value={newEmail} onChange={(e) => setNewEmail(e.target.value)} placeholder="Email address" style={styles.input} disabled={creatingUser} />
+              <input
+                type="email"
+                value={newEmail}
+                onChange={(e) => setNewEmail(e.target.value)}
+                placeholder="Email address"
+                style={styles.input}
+                disabled={creatingUser}
+              />
             </div>
             <div style={styles.formGroup}>
               <label style={styles.formLabel}>Password</label>
-              <input type="password" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} placeholder="Min 6 chars" style={styles.input} disabled={creatingUser} />
+              <input
+                type="password"
+                value={newPassword}
+                onChange={(e) => setNewPassword(e.target.value)}
+                placeholder="Min 6 chars"
+                style={styles.input}
+                disabled={creatingUser}
+              />
             </div>
             <div style={styles.formGroup}>
               <label style={styles.formLabel}>Role</label>
-              <select value={newRole} onChange={(e) => setNewRole(e.target.value as UserRole)} style={styles.input} disabled={creatingUser}>
+              <select
+                value={newRole}
+                onChange={(e) => setNewRole(e.target.value as UserRole)}
+                style={styles.input}
+                disabled={creatingUser}
+              >
                 <option value="user">User</option>
                 <option value="admin">Admin</option>
                 <option value="super_admin">Super Admin</option>
@@ -316,9 +414,26 @@ export default function UserManagementPage() {
             </div>
             <div style={styles.formGroup}>
               <label style={styles.formLabel}>Status</label>
-              <select value={newStatus} onChange={(e) => setNewStatus(e.target.value)} style={styles.input} disabled={creatingUser}>
+              <select
+                value={newStatus}
+                onChange={(e) => setNewStatus(e.target.value)}
+                style={styles.input}
+                disabled={creatingUser}
+              >
                 <option value="Active">Active</option>
                 <option value="Inactive">Inactive</option>
+              </select>
+            </div>
+            <div style={styles.formGroup}>
+              <label style={styles.formLabel}>Assigned Price List</label>
+              <select
+                value={newAssignedPriceList}
+                onChange={(e) => setNewAssignedPriceList(e.target.value)}
+                style={styles.input}
+                disabled={creatingUser}
+              >
+                <option value="price_list_1">Price List 1</option>
+                <option value="price_list_2">Price List 2</option>
               </select>
             </div>
 
@@ -329,11 +444,21 @@ export default function UserManagementPage() {
                 {allDistricts.map((dist) => {
                   const checked = newAssignedDistricts.includes(dist);
                   return (
-                    <label key={dist} style={{ ...styles.checkboxLabel, background: checked ? "#eff6ff" : "#fff" }}>
+                    <label
+                      key={dist}
+                      style={{
+                        ...styles.checkboxLabel,
+                        background: checked ? "#eff6ff" : "#fff",
+                      }}
+                    >
                       <input
                         type="checkbox"
                         checked={checked}
-                        onChange={() => setNewAssignedDistricts(handleMultiSelectToggle(newAssignedDistricts, dist))}
+                        onChange={() =>
+                          setNewAssignedDistricts(
+                            handleMultiSelectToggle(newAssignedDistricts, dist)
+                          )
+                        }
                         disabled={creatingUser}
                       />
                       <span>{dist}</span>
@@ -345,16 +470,28 @@ export default function UserManagementPage() {
 
             {/* ASSIGNED FROM LOCATIONS CHECKBOX LIST */}
             <div style={{ ...styles.formGroup, gridColumn: "1 / -1" }}>
-              <label style={styles.formLabel}>Assigned Transport From Locations (Mills / Depots)</label>
+              <label style={styles.formLabel}>
+                Assigned Transport From Locations (Mills / Depots)
+              </label>
               <div style={styles.checkboxContainer}>
                 {allLocations.map((loc) => {
                   const checked = newAssignedLocations.includes(loc);
                   return (
-                    <label key={loc} style={{ ...styles.checkboxLabel, background: checked ? "#eff6ff" : "#fff" }}>
+                    <label
+                      key={loc}
+                      style={{
+                        ...styles.checkboxLabel,
+                        background: checked ? "#eff6ff" : "#fff",
+                      }}
+                    >
                       <input
                         type="checkbox"
                         checked={checked}
-                        onChange={() => setNewAssignedLocations(handleMultiSelectToggle(newAssignedLocations, loc))}
+                        onChange={() =>
+                          setNewAssignedLocations(
+                            handleMultiSelectToggle(newAssignedLocations, loc)
+                          )
+                        }
                         disabled={creatingUser}
                       />
                       <span>{loc}</span>
@@ -364,7 +501,11 @@ export default function UserManagementPage() {
               </div>
             </div>
 
-            <button onClick={handleCreateUser} disabled={creatingUser} style={styles.createButton}>
+            <button
+              onClick={handleCreateUser}
+              disabled={creatingUser}
+              style={styles.createButton}
+            >
               {creatingUser ? "Creating..." : "Create User"}
             </button>
           </div>
@@ -380,14 +521,24 @@ export default function UserManagementPage() {
           {users.map((user) => {
             const isCurrentUser = user.id === currentProfile?.id;
             const isSaving = savingId === user.id;
-            const currentInput = userInputs[user.id] || { districts: [], locations: [] };
+            const currentInput = userInputs[user.id] || {
+              districts: [],
+              locations: [],
+              priceList: "price_list_1",
+            };
 
             return (
               <div key={user.id} style={styles.userCard}>
                 <div style={styles.userInfo}>
-                  <div style={styles.avatar}>{(user.full_name || user.email || "U").charAt(0).toUpperCase()}</div>
+                  <div style={styles.avatar}>
+                    {(user.full_name || user.email || "U")
+                      .charAt(0)
+                      .toUpperCase()}
+                  </div>
                   <div style={styles.userDetails}>
-                    <div style={styles.userName}>{user.full_name || "No Name"}</div>
+                    <div style={styles.userName}>
+                      {user.full_name || "No Name"}
+                    </div>
                     <div style={styles.email}>{user.email || "No Email"}</div>
                     {isCurrentUser && <div style={styles.youBadge}>YOU</div>}
                   </div>
@@ -395,7 +546,14 @@ export default function UserManagementPage() {
 
                 <div style={styles.controlGroup}>
                   <label style={styles.label}>Role</label>
-                  <select value={user.role} disabled={isSaving || isCurrentUser} onChange={(e) => handleRoleChange(user.id, e.target.value as UserRole)} style={styles.select}>
+                  <select
+                    value={user.role}
+                    disabled={isSaving || isCurrentUser}
+                    onChange={(e) =>
+                      handleRoleChange(user.id, e.target.value as UserRole)
+                    }
+                    style={styles.select}
+                  >
                     <option value="user">User</option>
                     <option value="admin">Admin</option>
                     <option value="super_admin">Super Admin</option>
@@ -404,27 +562,70 @@ export default function UserManagementPage() {
 
                 <div style={styles.controlGroup}>
                   <label style={styles.label}>Status</label>
-                  <select value={user.status || "Active"} disabled={isSaving || isCurrentUser} onChange={(e) => handleStatusChange(user.id, e.target.value)} style={styles.select}>
+                  <select
+                    value={user.status || "Active"}
+                    disabled={isSaving || isCurrentUser}
+                    onChange={(e) =>
+                      handleStatusChange(user.id, e.target.value)
+                    }
+                    style={styles.select}
+                  >
                     <option value="Active">Active</option>
                     <option value="Inactive">Inactive</option>
                   </select>
                 </div>
 
                 {/* EDITING ASSIGNMENTS */}
-                <div style={{ ...styles.controlGroup, flex: "1 1 300px" }}>
+                <div style={{ ...styles.controlGroup, flex: "1 1 320px" }}>
+                  <div style={{ marginBottom: 8 }}>
+                    <label style={styles.label}>Assigned Price List</label>
+                    <select
+                      value={currentInput.priceList}
+                      disabled={isSaving}
+                      onChange={(e) =>
+                        setUserInputs({
+                          ...userInputs,
+                          [user.id]: {
+                            ...currentInput,
+                            priceList: e.target.value,
+                          },
+                        })
+                      }
+                      style={styles.select}
+                    >
+                      <option value="price_list_1">Price List 1</option>
+                      <option value="price_list_2">Price List 2</option>
+                    </select>
+                  </div>
+
                   <label style={styles.label}>Assigned Districts</label>
                   <div style={styles.miniCheckboxContainer}>
                     {allDistricts.map((dist) => {
                       const checked = currentInput.districts.includes(dist);
                       return (
-                        <label key={dist} style={{ ...styles.miniCheckboxLabel, background: checked ? "#dbeafe" : "#f8fafc" }}>
+                        <label
+                          key={dist}
+                          style={{
+                            ...styles.miniCheckboxLabel,
+                            background: checked ? "#dbeafe" : "#f8fafc",
+                          }}
+                        >
                           <input
                             type="checkbox"
                             checked={checked}
                             disabled={isSaving}
                             onChange={() => {
-                              const updated = handleMultiSelectToggle(currentInput.districts, dist);
-                              setUserInputs({ ...userInputs, [user.id]: { ...currentInput, districts: updated } });
+                              const updated = handleMultiSelectToggle(
+                                currentInput.districts,
+                                dist
+                              );
+                              setUserInputs({
+                                ...userInputs,
+                                [user.id]: {
+                                  ...currentInput,
+                                  districts: updated,
+                                },
+                              });
                             }}
                           />
                           <span>{dist}</span>
@@ -433,19 +634,36 @@ export default function UserManagementPage() {
                     })}
                   </div>
 
-                  <label style={{ ...styles.label, marginTop: 8 }}>Assigned From Locations</label>
+                  <label style={{ ...styles.label, marginTop: 8 }}>
+                    Assigned From Locations
+                  </label>
                   <div style={styles.miniCheckboxContainer}>
                     {allLocations.map((loc) => {
                       const checked = currentInput.locations.includes(loc);
                       return (
-                        <label key={loc} style={{ ...styles.miniCheckboxLabel, background: checked ? "#dbeafe" : "#f8fafc" }}>
+                        <label
+                          key={loc}
+                          style={{
+                            ...styles.miniCheckboxLabel,
+                            background: checked ? "#dbeafe" : "#f8fafc",
+                          }}
+                        >
                           <input
                             type="checkbox"
                             checked={checked}
                             disabled={isSaving}
                             onChange={() => {
-                              const updated = handleMultiSelectToggle(currentInput.locations, loc);
-                              setUserInputs({ ...userInputs, [user.id]: { ...currentInput, locations: updated } });
+                              const updated = handleMultiSelectToggle(
+                                currentInput.locations,
+                                loc
+                              );
+                              setUserInputs({
+                                ...userInputs,
+                                [user.id]: {
+                                  ...currentInput,
+                                  locations: updated,
+                                },
+                              });
                             }}
                           />
                           <span>{loc}</span>
@@ -454,7 +672,11 @@ export default function UserManagementPage() {
                     })}
                   </div>
 
-                  <button onClick={() => handleAssignmentsUpdate(user.id)} disabled={isSaving} style={styles.smallSaveBtn}>
+                  <button
+                    onClick={() => handleAssignmentsUpdate(user.id)}
+                    disabled={isSaving}
+                    style={styles.smallSaveBtn}
+                  >
                     {isSaving ? "Saving..." : "Save Assignments"}
                   </button>
                 </div>
@@ -462,7 +684,17 @@ export default function UserManagementPage() {
                 {!isCurrentUser && (
                   <div style={styles.deleteGroup}>
                     <label style={styles.label}>Action</label>
-                    <button onClick={() => handleDeleteUser(user.id, user.full_name || user.email || "this user")} disabled={isSaving} style={styles.deleteButton} title="Delete User">
+                    <button
+                      onClick={() =>
+                        handleDeleteUser(
+                          user.id,
+                          user.full_name || user.email || "this user"
+                        )
+                      }
+                      disabled={isSaving}
+                      style={styles.deleteButton}
+                      title="Delete User"
+                    >
                       🗑️
                     </button>
                   </div>

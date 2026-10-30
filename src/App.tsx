@@ -12,9 +12,10 @@ import EasyDOPage from "./pages/EasyDOPage";
 import EasyDOFormat1 from "./pages/EasyDOFormat1";
 import SavedDOPage from "./pages/do/SavedDOPage";
 import PriceListPage from "./pages/PriceListPage";
+import PriceListPage2 from "./pages/PriceListPage2";
 import TransportationPage from "./pages/TransportationPage";
 import UpazilaPage from "./pages/UpazilaPage";
-import VisitStatusPage from "./pages/admin/VisitStatusPage"; // VisitStatusPage import kora holo
+import VisitStatusPage from "./pages/admin/VisitStatusPage";
 
 import LoginPage from "./pages/auth/LoginPage";
 import ProtectedRoute from "./components/auth/ProtectedRoute";
@@ -87,6 +88,7 @@ function canAccessPage(
   if (
     page === "saved-dos" ||
     page === "price-list" ||
+    page === "price-list-2" ||
     page === "transportation" ||
     page === "upazila"
   ) {
@@ -144,6 +146,9 @@ function MainApp() {
 
       case "price-list":
         return <PriceListPage />;
+
+      case "price-list-2":
+        return <PriceListPage2 />;
 
       case "transportation":
         return <TransportationPage />;

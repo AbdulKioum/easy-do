@@ -4,6 +4,7 @@ import { saveAs } from "file-saver";
 import "jspdf-autotable";
 import { supabase } from "../lib/supabase";
 import { useAuth } from "../context/AuthContext";
+import PriceListPage2 from "./PriceListPage2";
 
 type UserRole = "user" | "admin" | "super_admin";
 
@@ -35,7 +36,6 @@ const categories = [
   "Fish Sinking",
 ];
 
-// Category wise soft colors for UI table
 const CATEGORY_COLORS: Record<string, string> = {
   Broiler: "#fef2f2",
   Layer: "#fefce8",
@@ -45,7 +45,6 @@ const CATEGORY_COLORS: Record<string, string> = {
   "Fish Sinking": "#f9fafb",
 };
 
-// Excel Category Colors (Hex without #)
 const EXCEL_CATEGORY_COLORS: Record<string, string> = {
   Broiler: "FEE2E2",
   Layer: "FEF3C7",
@@ -54,8 +53,6 @@ const EXCEL_CATEGORY_COLORS: Record<string, string> = {
   "Fish Floating": "E0F2FE",
   "Fish Sinking": "F3F4F6",
 };
-
-
 
 const emptyForm: PriceItem = {
   category: "Broiler",
@@ -73,13 +70,15 @@ export default function PriceListPage() {
   const currentRole = role as UserRole | null;
 
   const canManage =
-    currentRole === "admin" ||
-    currentRole === "super_admin";
+    currentRole === "admin" || currentRole === "super_admin";
 
   const canView =
     currentRole === "user" ||
     currentRole === "admin" ||
     currentRole === "super_admin";
+
+  const [assignedList, setAssignedList] = useState<string | null>(null);
+  const [checkingProfile, setCheckingProfile] = useState(true);
 
   const [items, setItems] = useState<PriceItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -92,8 +91,6 @@ export default function PriceListPage() {
   const [form, setForm] = useState<PriceItem>(emptyForm);
 
   const fileInputRef = useRef<HTMLInputElement | null>(null);
-  
-  // Refs for dual scrollbar synchronization
   const topScrollRef = useRef<HTMLDivElement | null>(null);
   const tableWrapperRef = useRef<HTMLDivElement | null>(null);
 
@@ -104,6 +101,26 @@ export default function PriceListPage() {
   const [showConfirmModal, setShowConfirmModal] = useState(false);
   const [previewItems, setPreviewItems] = useState<any[]>([]);
   const [isUpdating, setIsUpdating] = useState(false);
+
+  // Check user's assigned price list
+  useEffect(() => {
+    async function checkAssignedPriceList() {
+      if (!user?.id || canManage) {
+        setAssignedList("price_list_1");
+        setCheckingProfile(false);
+        return;
+      }
+      const { data } = await supabase
+        .from("profiles")
+        .select("assigned_price_list")
+        .eq("id", user.id)
+        .single();
+
+      setAssignedList(data?.assigned_price_list || "price_list_1");
+      setCheckingProfile(false);
+    }
+    checkAssignedPriceList();
+  }, [user?.id, canManage]);
 
   const handleTopScroll = () => {
     if (topScrollRef.current && tableWrapperRef.current) {
@@ -119,7 +136,8 @@ export default function PriceListPage() {
 
   useEffect(() => {
     async function trackPageVisit() {
-      if (!user?.id) return;
+      if (!user?.id || checkingProfile) return;
+      if (!canManage && assignedList === "price_list_2") return; // Tracked inside PriceListPage2
       const today = new Date().toISOString().split("T")[0];
       await supabase.from("page_visits").insert([
         {
@@ -129,18 +147,21 @@ export default function PriceListPage() {
         },
       ]);
     }
-    if (canView) {
+    if (canView && !checkingProfile) {
       trackPageVisit();
     }
-  }, [user?.id, canView]);
+  }, [user?.id, canView, checkingProfile, canManage, assignedList]);
 
   useEffect(() => {
+    if (checkingProfile) return;
+    if (!canManage && assignedList === "price_list_2") return;
+
     if (canView) {
       loadPriceList();
     } else {
       setLoading(false);
     }
-  }, [canView]);
+  }, [canView, checkingProfile, canManage, assignedList]);
 
   async function loadPriceList() {
     setLoading(true);
@@ -148,9 +169,7 @@ export default function PriceListPage() {
     const { data, error } = await supabase
       .from("feed_price_list")
       .select("*")
-      .order("sort_order", {
-        ascending: true,
-      });
+      .order("sort_order", { ascending: true });
 
     if (error) {
       console.error("Price list load error:", error);
@@ -424,7 +443,7 @@ export default function PriceListPage() {
     saveAs(blob, `Feed_Price_List_${timestamp}.xlsx`);
   }
 
- async function exportPDF() {
+  async function exportPDF() {
     if (!filteredItems.length) {
       alert("No data available to export.");
       return;
@@ -444,7 +463,7 @@ export default function PriceListPage() {
     const html2pdf: any = (await import("html2pdf.js")).default;
 
     const container = document.createElement("div");
-    container.style.padding = "5px 8px"; // Reduced container padding to prevent overflowing
+    container.style.padding = "5px 8px";
     container.style.fontFamily = "Arial, sans-serif";
     container.style.color = "#111827";
     container.style.backgroundColor = "#ffffff";
@@ -501,12 +520,12 @@ export default function PriceListPage() {
     const timestamp = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}_${String(now.getHours()).padStart(2, "0")}-${String(now.getMinutes()).padStart(2, "0")}`;
 
     const options = {
-      margin: 4, // Minimized PDF page margins
+      margin: 4,
       filename: `Feed_Price_List_${timestamp}.pdf`,
       image: { type: "jpeg", quality: 0.98 },
       html2canvas: { scale: 2, useCORS: true },
       jsPDF: { unit: "mm", format: "a4", orientation: "portrait" },
-      pagebreak: { mode: ['css', 'legacy'] }
+      pagebreak: { mode: ["css", "legacy"] },
     };
 
     html2pdf().from(container).set(options).save();
@@ -643,6 +662,15 @@ export default function PriceListPage() {
     });
   }, [items, search, categoryFilter]);
 
+  if (checkingProfile) {
+    return <div style={styles.loading}>Loading...</div>;
+  }
+
+  // If normal user is assigned to price_list_2, seamlessly render PriceListPage2
+  if (!canManage && assignedList === "price_list_2") {
+    return <PriceListPage2 />;
+  }
+
   if (!canView) {
     return (
       <div style={styles.accessDenied}>
@@ -657,7 +685,7 @@ export default function PriceListPage() {
     <div style={styles.page}>
       <div style={styles.header}>
         <div>
-          <h1 style={styles.title}>Price List</h1>
+          <h1 style={styles.title}>{canManage ? "Price List 1" : "Price List"}</h1>
           <p style={styles.subtitle}>Feed price management</p>
         </div>
 
@@ -665,7 +693,7 @@ export default function PriceListPage() {
           <button style={styles.exportButton} onClick={exportExcel}>
             📤 Download Pricelist in Excel
           </button>
-          
+
           <button style={styles.exportButton} onClick={exportPDF}>
             📄 Download Pricelist in pdf
           </button>
@@ -741,17 +769,17 @@ export default function PriceListPage() {
         <div style={styles.loading}>Loading...</div>
       ) : (
         <div style={styles.tableContainerOuter}>
-          <div 
-            ref={topScrollRef} 
-            onScroll={handleTopScroll} 
+          <div
+            ref={topScrollRef}
+            onScroll={handleTopScroll}
             style={styles.topScrollbarWrapper}
           >
             <div style={styles.topScrollbarContent}></div>
           </div>
 
-          <div 
-            ref={tableWrapperRef} 
-            onScroll={handleTableScroll} 
+          <div
+            ref={tableWrapperRef}
+            onScroll={handleTableScroll}
             style={styles.tableWrapper}
           >
             <table style={styles.table}>
@@ -1136,389 +1164,58 @@ export default function PriceListPage() {
 }
 
 const styles: Record<string, React.CSSProperties> = {
-  page: {
-    padding: 14,
-    color: "#111827",
-    background: "#f8fafc",
-    minHeight: "100vh",
-    boxSizing: "border-box",
-  },
-  header: {
-    display: "flex",
-    justifyContent: "space-between",
-    alignItems: "center",
-    gap: 10,
-    marginBottom: 10,
-    flexWrap: "wrap",
-  },
-  title: {
-    margin: 0,
-    fontSize: 23,
-    color: "#111827",
-  },
-  subtitle: {
-    margin: "3px 0 0",
-    fontSize: 12,
-    color: "#6b7280",
-  },
-  headerButtons: {
-    display: "flex",
-    gap: 6,
-    flexWrap: "wrap",
-  },
-  exportButton: {
-    border: "1px solid #d1d5db",
-    background: "#ffffff",
-    color: "#111827",
-    padding: "9px 10px",
-    borderRadius: 9,
-    fontWeight: 600,
-    cursor: "pointer",
-  },
-  bulkHeaderButton: {
-    border: "none",
-    background: "#2563eb",
-    color: "#ffffff",
-    padding: "9px 12px",
-    borderRadius: 9,
-    fontWeight: 700,
-    cursor: "pointer",
-    boxShadow: "0 1px 2px rgba(37,99,235,0.2)",
-  },
-  importButton: {
-    border: "1px solid #d1d5db",
-    background: "#ffffff",
-    color: "#111827",
-    padding: "9px 10px",
-    borderRadius: 9,
-    fontWeight: 600,
-    cursor: "pointer",
-  },
-  addButton: {
-    border: "none",
-    background: "#111827",
-    color: "#ffffff",
-    padding: "9px 11px",
-    borderRadius: 9,
-    fontWeight: 600,
-    cursor: "pointer",
-  },
-  searchBox: {
-    display: "flex",
-    alignItems: "center",
-    gap: 8,
-    background: "#ffffff",
-    border: "1px solid #e5e7eb",
-    padding: "11px 13px",
-    borderRadius: 10,
-    marginBottom: 10,
-  },
-  searchInput: {
-    border: "none",
-    outline: "none",
-    background: "#ffffff",
-    color: "#111827",
-    width: "100%",
-    fontSize: 14,
-  },
-  categoryScroll: {
-    display: "flex",
-    gap: 7,
-    overflowX: "auto",
-    paddingBottom: 10,
-  },
-  categoryButton: {
-    flexShrink: 0,
-    border: "1px solid #d1d5db",
-    background: "#ffffff",
-    color: "#374151",
-    padding: "7px 12px",
-    borderRadius: 20,
-    fontSize: 12,
-    cursor: "pointer",
-  },
-  categoryActive: {
-    background: "#111827",
-    color: "#ffffff",
-    borderColor: "#111827",
-  },
-  tableContainerOuter: {
-    background: "#ffffff",
-    border: "1px solid #e5e7eb",
-    borderRadius: 12,
-    boxShadow: "0 1px 3px rgba(0,0,0,.05)",
-    overflow: "hidden",
-  },
-  topScrollbarWrapper: {
-    overflowX: "auto",
-    overflowY: "hidden",
-    height: 14,
-    backgroundColor: "#f8fafc",
-    borderBottom: "1px solid #e5e7eb",
-  },
-  topScrollbarContent: {
-    width: "1250px",
-    height: 1,
-  },
-  tableWrapper: {
-    width: "100%",
-    overflowX: "auto",
-    background: "#ffffff",
-  },
-  table: {
-    width: "100%",
-    minWidth: 1200,
-    borderCollapse: "collapse",
-    fontSize: 13,
-    color: "#111827",
-  },
-  th: {
-    position: "sticky",
-    top: 0,
-    background: "#f3f4f6",
-    color: "#374151",
-    fontWeight: 700,
-    padding: "11px 10px",
-    borderBottom: "1px solid #d1d5db",
-    textAlign: "left",
-    whiteSpace: "nowrap",
-  },
-  tr: {
-    background: "#ffffff",
-  },
-  td: {
-    padding: "11px 10px",
-    borderBottom: "1px solid #eef0f2",
-    whiteSpace: "nowrap",
-    color: "#111827",
-  },
-  categoryTag: {
-    background: "#eef2ff",
-    color: "#3730a3",
-    padding: "4px 7px",
-    borderRadius: 6,
-    fontSize: 11,
-    fontWeight: 600,
-  },
-  status: {
-    padding: "4px 7px",
-    borderRadius: 6,
-    fontSize: 11,
-    fontWeight: 600,
-  },
-  activeStatus: {
-    background: "#dcfce7",
-    color: "#166534",
-  },
-  inactiveStatus: {
-    background: "#fee2e2",
-    color: "#991b1b",
-  },
-  actionGroup: {
-    display: "flex",
-    justifyContent: "center",
-    gap: 5,
-  },
-  editButton: {
-    border: "none",
-    background: "#eef2ff",
-    width: 34,
-    height: 34,
-    borderRadius: 7,
-    cursor: "pointer",
-  },
-  deleteButton: {
-    border: "none",
-    background: "#fee2e2",
-    width: 34,
-    height: 34,
-    borderRadius: 7,
-    cursor: "pointer",
-  },
-  noData: {
-    padding: 35,
-    textAlign: "center",
-    color: "#6b7280",
-  },
-  loading: {
-    padding: 40,
-    textAlign: "center",
-    color: "#374151",
-  },
-  overlay: {
-    position: "fixed",
-    inset: 0,
-    background: "rgba(0,0,0,.45)",
-    backdropFilter: "blur(3px)",
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    zIndex: 1000,
-    padding: 16,
-  },
-  modal: {
-    width: "100%",
-    maxWidth: 600,
-    background: "#ffffff",
-    color: "#111827",
-    borderRadius: 16,
-    padding: 20,
-    maxHeight: "90vh",
-    overflowY: "auto",
-    boxSizing: "border-box",
-    boxShadow: "0 20px 25px -5px rgba(0,0,0,0.1), 0 10px 10px -5px rgba(0,0,0,0.04)",
-  },
-  modalHeader: {
-    display: "flex",
-    justifyContent: "space-between",
-    alignItems: "flex-start",
-    marginBottom: 8,
-  },
-  closeButton: {
-    border: "none",
-    background: "#f3f4f6",
-    color: "#111827",
-    width: 32,
-    height: 32,
-    borderRadius: "50%",
-    fontSize: 20,
-    cursor: "pointer",
-  },
-  label: {
-    display: "block",
-    fontSize: 13,
-    fontWeight: 700,
-    marginTop: 10,
-    marginBottom: 6,
-    color: "#374151",
-  },
-  input: {
-    width: "100%",
-    boxSizing: "border-box",
-    border: "1px solid #cbd5e1",
-    background: "#ffffff",
-    color: "#111827",
-    borderRadius: 9,
-    padding: "9px 11px",
-    fontSize: 13,
-    outline: "none",
-  },
-  helperText: {
-    marginTop: 5,
-    fontSize: 11,
-    color: "#6b7280",
-  },
-  calculated: {
-    marginTop: 6,
-    background: "#f3f4f6",
-    color: "#111827",
-    padding: "8px 10px",
-    borderRadius: 8,
-    fontSize: 13,
-    fontWeight: 600,
-  },
-  saveButton: {
-    width: "100%",
-    border: "none",
-    background: "#111827",
-    color: "#ffffff",
-    padding: 13,
-    borderRadius: 10,
-    marginTop: 20,
-    fontWeight: 700,
-    cursor: "pointer",
-  },
-  checkboxGrid: {
-    display: "grid",
-    gridTemplateColumns: "repeat(auto-fill, minmax(130px, 1fr))",
-    gap: 8,
-    marginTop: 6,
-  },
-  checkboxTile: {
-    display: "flex",
-    alignItems: "center",
-    gap: 8,
-    padding: "8px 10px",
-    borderRadius: 8,
-    border: "1px solid #e5e7eb",
-    background: "#f9fafb",
-    fontSize: 12,
-    cursor: "pointer",
-    userSelect: "none",
-  },
-  checkboxTileActive: {
-    background: "#f0fdf4",
-    borderColor: "#86efac",
-    fontWeight: 600,
-  },
-  categoryCard: {
-    background: "#f8fafc",
-    border: "1px solid #e2e8f0",
-    borderRadius: 10,
-    padding: 12,
-  },
-  categoryCardHeader: {
-    display: "flex",
-    justifyContent: "space-between",
-    alignItems: "center",
-  },
-  categoryCardTitle: {
-    fontWeight: 700,
-    fontSize: 13,
-    color: "#1e293b",
-  },
-  actionSelect: {
-    padding: "4px 8px",
-    borderRadius: 6,
-    border: "1px solid #cbd5e1",
-    fontSize: 12,
-    background: "#ffffff",
-    color: "#1e293b",
-    fontWeight: 600,
-  },
-  subInputLabel: {
-    fontSize: 11,
-    color: "#64748b",
-    display: "block",
-    marginBottom: 4,
-  },
-  previewBox: {
-    background: "#f8fafc",
-    border: "1px solid #e2e8f0",
-    borderRadius: 8,
-    padding: 10,
-    maxHeight: 120,
-    overflowY: "auto",
-    marginTop: 6,
-  },
-  previewItemRow: {
-    display: "flex",
-    justifyContent: "space-between",
-    fontSize: 12,
-    padding: "4px 0",
-    borderBottom: "1px dashed #e2e8f0",
-  },
-  accessDenied: {
-    minHeight: "60vh",
-    display: "flex",
-    flexDirection: "column",
-    alignItems: "center",
-    justifyContent: "center",
-    textAlign: "center",
-    padding: 20,
-  },
-  accessIcon: {
-    fontSize: 40,
-    marginBottom: 10,
-  },
-  accessTitle: {
-    fontSize: 20,
-    fontWeight: 800,
-    color: "#111827",
-  },
-  accessText: {
-    marginTop: 5,
-    fontSize: 12,
-    color: "#6b7280",
-  },
+  page: { padding: 14, color: "#111827", background: "#f8fafc", minHeight: "100vh", boxSizing: "border-box" },
+  header: { display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, marginBottom: 10, flexWrap: "wrap" },
+  title: { margin: 0, fontSize: 23, color: "#111827" },
+  subtitle: { margin: "3px 0 0", fontSize: 12, color: "#6b7280" },
+  headerButtons: { display: "flex", gap: 6, flexWrap: "wrap" },
+  exportButton: { border: "1px solid #d1d5db", background: "#ffffff", color: "#111827", padding: "9px 10px", borderRadius: 9, fontWeight: 600, cursor: "pointer" },
+  bulkHeaderButton: { border: "none", background: "#2563eb", color: "#ffffff", padding: "9px 12px", borderRadius: 9, fontWeight: 700, cursor: "pointer", boxShadow: "0 1px 2px rgba(37,99,235,0.2)" },
+  importButton: { border: "1px solid #d1d5db", background: "#ffffff", color: "#111827", padding: "9px 10px", borderRadius: 9, fontWeight: 600, cursor: "pointer" },
+  addButton: { border: "none", background: "#111827", color: "#ffffff", padding: "9px 11px", borderRadius: 9, fontWeight: 600, cursor: "pointer" },
+  searchBox: { display: "flex", alignItems: "center", gap: 8, background: "#ffffff", border: "1px solid #e5e7eb", padding: "11px 13px", borderRadius: 10, marginBottom: 10 },
+  searchInput: { border: "none", outline: "none", background: "#ffffff", color: "#111827", width: "100%", fontSize: 14 },
+  categoryScroll: { display: "flex", gap: 7, overflowX: "auto", paddingBottom: 10 },
+  categoryButton: { flexShrink: 0, border: "1px solid #d1d5db", background: "#ffffff", color: "#374151", padding: "7px 12px", borderRadius: 20, fontSize: 12, cursor: "pointer" },
+  categoryActive: { background: "#111827", color: "#ffffff", borderColor: "#111827" },
+  tableContainerOuter: { background: "#ffffff", border: "1px solid #e5e7eb", borderRadius: 12, boxShadow: "0 1px 3px rgba(0,0,0,.05)", overflow: "hidden" },
+  topScrollbarWrapper: { overflowX: "auto", overflowY: "hidden", height: 14, backgroundColor: "#f8fafc", borderBottom: "1px solid #e5e7eb" },
+  topScrollbarContent: { width: "1250px", height: 1 },
+  tableWrapper: { width: "100%", overflowX: "auto", background: "#ffffff" },
+  table: { width: "100%", minWidth: 1200, borderCollapse: "collapse", fontSize: 13, color: "#111827" },
+  th: { position: "sticky", top: 0, background: "#f3f4f6", color: "#374151", fontWeight: 700, padding: "11px 10px", borderBottom: "1px solid #d1d5db", textAlign: "left", whiteSpace: "nowrap" },
+  tr: { background: "#ffffff" },
+  td: { padding: "11px 10px", borderBottom: "1px solid #eef0f2", whiteSpace: "nowrap", color: "#111827" },
+  categoryTag: { background: "#eef2ff", color: "#3730a3", padding: "4px 7px", borderRadius: 6, fontSize: 11, fontWeight: 600 },
+  status: { padding: "4px 7px", borderRadius: 6, fontSize: 11, fontWeight: 600 },
+  activeStatus: { background: "#dcfce7", color: "#166534" },
+  inactiveStatus: { background: "#fee2e2", color: "#991b1b" },
+  actionGroup: { display: "flex", justifyContent: "center", gap: 5 },
+  editButton: { border: "none", background: "#eef2ff", width: 34, height: 34, borderRadius: 7, cursor: "pointer" },
+  deleteButton: { border: "none", background: "#fee2e2", width: 34, height: 34, borderRadius: 7, cursor: "pointer" },
+  noData: { padding: 35, textAlign: "center", color: "#6b7280" },
+  loading: { padding: 40, textAlign: "center", color: "#374151" },
+  overlay: { position: "fixed", inset: 0, background: "rgba(0,0,0,.45)", backdropFilter: "blur(3px)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000, padding: 16 },
+  modal: { width: "100%", maxWidth: 600, background: "#ffffff", color: "#111827", borderRadius: 16, padding: 20, maxHeight: "90vh", overflowY: "auto", boxSizing: "border-box", boxShadow: "0 20px 25px -5px rgba(0,0,0,0.1), 0 10px 10px -5px rgba(0,0,0,0.04)" },
+  modalHeader: { display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 8 },
+  closeButton: { border: "none", background: "#f3f4f6", color: "#111827", width: 32, height: 32, borderRadius: "50%", fontSize: 20, cursor: "pointer" },
+  label: { display: "block", fontSize: 13, fontWeight: 700, marginTop: 10, marginBottom: 6, color: "#374151" },
+  input: { width: "100%", boxSizing: "border-box", border: "1px solid #cbd5e1", background: "#ffffff", color: "#111827", borderRadius: 9, padding: "9px 11px", fontSize: 13, outline: "none" },
+  helperText: { marginTop: 5, fontSize: 11, color: "#6b7280" },
+  calculated: { marginTop: 6, background: "#f3f4f6", color: "#111827", padding: "8px 10px", borderRadius: 8, fontSize: 13, fontWeight: 600 },
+  saveButton: { width: "100%", border: "none", background: "#111827", color: "#ffffff", padding: 13, borderRadius: 10, marginTop: 20, fontWeight: 700, cursor: "pointer" },
+  checkboxGrid: { display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(130px, 1fr))", gap: 8, marginTop: 6 },
+  checkboxTile: { display: "flex", alignItems: "center", gap: 8, padding: "8px 10px", borderRadius: 8, border: "1px solid #e5e7eb", background: "#f9fafb", fontSize: 12, cursor: "pointer", userSelect: "none" },
+  checkboxTileActive: { background: "#f0fdf4", borderColor: "#86efac", fontWeight: 600 },
+  categoryCard: { background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: 10, padding: 12 },
+  categoryCardHeader: { display: "flex", justifyContent: "space-between", alignItems: "center" },
+  categoryCardTitle: { fontWeight: 700, fontSize: 13, color: "#1e293b" },
+  actionSelect: { padding: "4px 8px", borderRadius: 6, border: "1px solid #cbd5e1", fontSize: 12, background: "#ffffff", color: "#1e293b", fontWeight: 600 },
+  subInputLabel: { fontSize: 11, color: "#64748b", display: "block", marginBottom: 4 },
+  previewBox: { background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: 8, padding: 10, maxHeight: 120, overflowY: "auto", marginTop: 6 },
+  previewItemRow: { display: "flex", justifyContent: "space-between", fontSize: 12, padding: "4px 0", borderBottom: "1px dashed #e2e8f0" },
+  accessDenied: { minHeight: "60vh", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", textAlign: "center", padding: 20 },
+  accessIcon: { fontSize: 40, marginBottom: 10 },
+  accessTitle: { fontSize: 20, fontWeight: 800, color: "#111827" },
+  accessText: { marginTop: 5, fontSize: 12, color: "#6b7280" },
 };

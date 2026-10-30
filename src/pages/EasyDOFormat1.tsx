@@ -38,7 +38,7 @@ type BankInfo = {
 };
 
 const EASY_DO_STORAGE_KEY = "easydo_format1_persistent_v7";
-const PRICE_CACHE_KEY = "easydo_format1_price_cache_v1";
+const PRICE_CACHE_KEY_PREFIX = "easydo_format1_price_cache_";
 const TRANSPORT_CACHE_KEY = "easydo_format1_transport_cache_v1";
 
 const CATEGORY_CONFIG: Record<string, { label: string; icon: string; bg: string }> = {
@@ -80,14 +80,7 @@ export default function EasyDOFormat1() {
   const { user, role } = useAuth();
   const initialSaved = useMemo(() => getSavedState(), []);
 
-  const [priceList, setPriceList] = useState<FeedPrice[]>(() => {
-    try {
-      const cached = localStorage.getItem(PRICE_CACHE_KEY);
-      return cached ? JSON.parse(cached) : [];
-    } catch {
-      return [];
-    }
-  });
+  const [priceList, setPriceList] = useState<FeedPrice[]>([]);
 
   const [transportList, setTransportList] = useState<Transport[]>(() => {
     try {
@@ -101,7 +94,7 @@ export default function EasyDOFormat1() {
   const [upazilaList, setUpazilaList] = useState<Upazila[]>([]);
   const [userProfile, setUserProfile] = useState<any>(null);
 
-  const [loading, setLoading] = useState(() => priceList.length === 0);
+  const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
 
   const [selectedCategory, setSelectedCategory] = useState<string>(initialSaved?.selectedCategory || "All");
@@ -142,19 +135,86 @@ export default function EasyDOFormat1() {
   }, []);
 
   useEffect(() => {
-    if (user?.id) {
-      loadUserProfile();
-    }
-    loadData();
+    initPageData();
   }, [user?.id]);
 
-  async function loadUserProfile() {
-    const { data } = await supabase.from("profiles").select("*").eq("id", user?.id).single();
-    if (data) {
-      setUserProfile(data);
-      if (data.assigned_from_locations && data.assigned_from_locations.length > 0 && !fromLocation) {
-        setFromLocation(data.assigned_from_locations[0]);
+  async function initPageData() {
+    setLoading(true);
+    let assignedPriceList = "price_list_1";
+
+    if (user?.id) {
+      const { data } = await supabase
+        .from("profiles")
+        .select("*")
+        .eq("id", user.id)
+        .single();
+      if (data) {
+        setUserProfile(data);
+        assignedPriceList = data.assigned_price_list || "price_list_1";
+        if (
+          data.assigned_from_locations &&
+          data.assigned_from_locations.length > 0 &&
+          !fromLocation
+        ) {
+          setFromLocation(data.assigned_from_locations[0]);
+        }
       }
+    }
+
+    const priceTable =
+      assignedPriceList === "price_list_2"
+        ? "feed_price_list_2"
+        : "feed_price_list";
+    const cacheKey = `${PRICE_CACHE_KEY_PREFIX}${priceTable}`;
+
+    try {
+      const cached = localStorage.getItem(cacheKey);
+      if (cached) {
+        setPriceList(JSON.parse(cached));
+      }
+    } catch {
+      // ignore cache error
+    }
+
+    try {
+      const [priceRes, transRes, upazilaRes] = await Promise.all([
+        supabase
+          .from(priceTable)
+          .select(
+            "id, category, item_name, short_name, kg_per_bag, tp_per_bag, mrp_per_bag, status"
+          )
+          .eq("status", "Active")
+          .order("sort_order", { ascending: true }),
+        supabase
+          .from("transportation")
+          .select(
+            "id, from_location, to_upazila, floating_cattle_rate_per_kg, sinking_broiler_layer_sonali_rate_per_kg, status"
+          )
+          .eq("status", "Active")
+          .order("to_upazila", { ascending: true }),
+        supabase.from("upazilas").select("*").eq("status", "Active"),
+      ]);
+
+      if (!priceRes.error && priceRes.data) {
+        setPriceList(priceRes.data);
+        localStorage.setItem(cacheKey, JSON.stringify(priceRes.data));
+      }
+
+      if (!transRes.error && transRes.data) {
+        setTransportList(transRes.data);
+        localStorage.setItem(
+          TRANSPORT_CACHE_KEY,
+          JSON.stringify(transRes.data)
+        );
+      }
+
+      if (!upazilaRes.error && upazilaRes.data) {
+        setUpazilaList(upazilaRes.data);
+      }
+    } catch (e) {
+      console.warn("Using offline cached data:", e);
+    } finally {
+      setLoading(false);
     }
   }
 
@@ -207,46 +267,6 @@ export default function EasyDOFormat1() {
     showDOInformation,
     generatedMessage,
   ]);
-
-  async function loadData() {
-    if (priceList.length === 0) setLoading(true);
-    try {
-      const [priceRes, transRes, upazilaRes] = await Promise.all([
-        supabase
-          .from("feed_price_list")
-          .select("id, category, item_name, short_name, kg_per_bag, tp_per_bag, mrp_per_bag, status")
-          .eq("status", "Active")
-          .order("sort_order", { ascending: true }),
-        supabase
-          .from("transportation")
-          .select("id, from_location, to_upazila, floating_cattle_rate_per_kg, sinking_broiler_layer_sonali_rate_per_kg, status")
-          .eq("status", "Active")
-          .order("to_upazila", { ascending: true }),
-        supabase
-          .from("upazilas")
-          .select("*")
-          .eq("status", "Active"),
-      ]);
-
-      if (!priceRes.error && priceRes.data) {
-        setPriceList(priceRes.data);
-        localStorage.setItem(PRICE_CACHE_KEY, JSON.stringify(priceRes.data));
-      }
-
-      if (!transRes.error && transRes.data) {
-        setTransportList(transRes.data);
-        localStorage.setItem(TRANSPORT_CACHE_KEY, JSON.stringify(transRes.data));
-      }
-
-      if (!upazilaRes.error && upazilaRes.data) {
-        setUpazilaList(upazilaRes.data);
-      }
-    } catch (e) {
-      console.warn("Using offline cached data:", e);
-    } finally {
-      setLoading(false);
-    }
-  }
 
   const fromLocations = useMemo(() => {
     const dbLocs = Array.from(new Set(transportList.map((i) => i.from_location).filter(Boolean)));
