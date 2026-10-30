@@ -1,5 +1,6 @@
-import React from "react";
+import React, { useEffect, useState } from "react";
 import { useAuth } from "../../context/AuthContext";
+import { supabase } from "../../lib/supabase";
 
 type SideMenuProps = {
   open: boolean;
@@ -14,7 +15,27 @@ export default function SideMenu({
   currentPage,
   onNavigate,
 }: SideMenuProps) {
-  const { profile, role, signOut } = useAuth();
+  const { user, profile, role, signOut } = useAuth();
+  const [assignedPriceList, setAssignedPriceList] = useState<string>(
+    (profile as any)?.assigned_price_list || "price_list_1"
+  );
+
+  useEffect(() => {
+    async function fetchAssignedPriceList() {
+      if (!user?.id) return;
+      const { data } = await supabase
+        .from("profiles")
+        .select("assigned_price_list")
+        .eq("id", user.id)
+        .single();
+      if (data?.assigned_price_list) {
+        setAssignedPriceList(data.assigned_price_list);
+      }
+    }
+    if (open) {
+      fetchAssignedPriceList();
+    }
+  }, [user?.id, open]);
 
   if (!open) {
     return null;
@@ -31,12 +52,17 @@ export default function SideMenu({
   }
 
   const isAdminOrSuper = role === "admin" || role === "super_admin";
+  const userTargetPricePage =
+    assignedPriceList === "price_list_2" ? "price-list-2" : "price-list";
 
   return (
     <>
+      {/* BACKDROP */}
       <div style={styles.backdrop} onClick={onClose} />
 
+      {/* DRAWER */}
       <aside style={styles.drawer}>
+        {/* HEADER */}
         <div style={styles.header}>
           <div style={styles.headerLeft}>
             <img
@@ -57,20 +83,23 @@ export default function SideMenu({
           </button>
         </div>
 
+        {/* MENU ITEMS (LEFT ALIGNED) */}
         <div style={styles.menu}>
           <MenuItem
-            icon="📄"
-            label="Create D/O Format 1"
+            icon="📝"
+            label="Create D/O"
             active={currentPage === "easy-do-format-1"}
             onClick={() => navigate("easy-do-format-1")}
           />
 
+          {/* Apatoto Create D/O Format 2 bondho rakha holo. Pore dorkar hole comment tule dilei hobe:
           <MenuItem
-            icon="📝"
+            icon="📄"
             label="Create D/O Format 2"
             active={currentPage === "easy-do"}
             onClick={() => navigate("easy-do")}
           />
+          */}
 
           <MenuItem
             icon="💾"
@@ -98,8 +127,10 @@ export default function SideMenu({
             <MenuItem
               icon="💰"
               label="Price List"
-              active={currentPage === "price-list" || currentPage === "price-list-2"}
-              onClick={() => navigate("price-list")}
+              active={
+                currentPage === "price-list" || currentPage === "price-list-2"
+              }
+              onClick={() => navigate(userTargetPricePage)}
             />
           )}
 
@@ -135,6 +166,7 @@ export default function SideMenu({
           )}
         </div>
 
+        {/* USER INFO */}
         <div style={styles.userBox}>
           <div style={styles.userName}>
             {profile?.full_name || profile?.email || "User"}
@@ -148,6 +180,7 @@ export default function SideMenu({
           </div>
         </div>
 
+        {/* FOOTER */}
         <div style={styles.footer}>
           <button onClick={handleLogout} style={styles.logoutButton}>
             🚪 Logout

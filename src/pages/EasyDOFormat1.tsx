@@ -65,6 +65,8 @@ const COMPACT_CSS = `
   .edo-mode-btn { border: 1px solid #cbd5e1; background: #fff; border-radius: 8px; padding: 10px; cursor: pointer; display: flex; align-items: center; gap: 8px; text-align: left; }
   .edo-sec { margin-top: 10px; padding: 10px; border: 1px solid #e2e8f0; border-radius: 8px; background: #f8fafc; text-align: left; }
   .edo-btn-main { display: block; margin: 16px auto 0; width: min(100%, 380px); padding: 14px 18px; border: none; border-radius: 12px; background: linear-gradient(135deg, #2563eb, #1d4ed8); color: #fff; font-size: 14px; font-weight: 800; cursor: pointer; box-shadow: 0 4px 12px rgba(37,99,235,0.35); }
+  .edo-scroll-down-btn { position: fixed; bottom: 24px; right: 20px; width: 44px; height: 44px; border-radius: 50%; background: linear-gradient(135deg, #2563eb, #1d4ed8); color: #fff; border: 2px solid #ffffff; font-size: 20px; font-weight: 800; cursor: pointer; box-shadow: 0 4px 14px rgba(37,99,235,0.45); display: flex; align-items: center; justify-content: center; z-index: 999; transition: all 0.2s ease; }
+  .edo-scroll-down-btn:active { transform: scale(0.92); }
 `;
 
 function getSavedState() {
@@ -120,7 +122,25 @@ export default function EasyDOFormat1() {
   );
   const [generatedMessage, setGeneratedMessage] = useState<string>(initialSaved?.generatedMessage || "");
 
+  const [showScrollBottom, setShowScrollBottom] = useState(true);
+
   const isSuperAdmin = role === "super_admin";
+
+  // PAGE VISIT TRACKING
+  useEffect(() => {
+    async function trackPageVisit() {
+      if (!user?.id) return;
+      const today = new Date().toISOString().split("T")[0];
+      await supabase.from("page_visits").insert([
+        {
+          user_id: user.id,
+          page_name: "EasyDO Page 1",
+          visit_date: today,
+        },
+      ]);
+    }
+    trackPageVisit();
+  }, [user?.id]);
 
   // Manual reload detection & clear protection
   useEffect(() => {
@@ -339,6 +359,25 @@ export default function EasyDOFormat1() {
     return priceList.filter((item) => item.category.toLowerCase() === selectedCategory.toLowerCase());
   }, [priceList, selectedCategory]);
 
+  // Track scroll position to show/hide bottom arrow button
+  useEffect(() => {
+    function handleScroll() {
+      const scrolledToBottom =
+        window.innerHeight + window.scrollY >= document.documentElement.scrollHeight - 120;
+      setShowScrollBottom(!scrolledToBottom);
+    }
+    handleScroll();
+    window.addEventListener("scroll", handleScroll, { passive: true });
+    return () => window.removeEventListener("scroll", handleScroll);
+  }, [displayedPriceList, showDOInformation, loading]);
+
+  function scrollToBottom() {
+    window.scrollTo({
+      top: document.documentElement.scrollHeight,
+      behavior: "smooth",
+    });
+  }
+
   const totalWeight = useMemo(() => activeOrderList.reduce((acc, r) => acc + r.weight, 0), [activeOrderList]);
   const feedPrice = useMemo(() => activeOrderList.reduce((acc, r) => acc + r.tpTotal, 0), [activeOrderList]);
   const totalTransportAmount = useMemo(() => (!selectedTransport ? 0 : activeOrderList.reduce((acc, r) => acc + r.totalTransport, 0)), [activeOrderList, selectedTransport]);
@@ -464,9 +503,8 @@ export default function EasyDOFormat1() {
       <style>{COMPACT_CSS}</style>
 
       <div style={{ marginBottom: 12, textAlign: "center" }}>
-        <h1 style={{ margin: 0, fontSize: 18, fontWeight: 800, color: "#0f172a" }}>Create D/O (Format 1)</h1>
-        <p style={{ margin: "3px 0 0", fontSize: 12, color: "#64748b" }}>Direct feed order entry table with reload protection</p>
-      </div>
+        <h1 style={{ margin: 0, fontSize: 18, fontWeight: 800, color: "#0f172a" }}>Create D/O </h1>
+        </div>
 
       {loading ? (
         <div className="edo-card" style={{ padding: 40, textAlign: "center", color: "#475569" }}>Loading price list...</div>
@@ -772,6 +810,18 @@ export default function EasyDOFormat1() {
                 {saving ? "Saving..." : "💾 Save this DO"}
               </button>
             </div>
+          )}
+
+          {/* FLOATING SCROLL TO BOTTOM BUTTON */}
+          {showScrollBottom && (
+            <button
+              onClick={scrollToBottom}
+              className="edo-scroll-down-btn"
+              title="Scroll to bottom"
+              aria-label="Scroll to bottom"
+            >
+              ↓
+            </button>
           )}
         </>
       )}
