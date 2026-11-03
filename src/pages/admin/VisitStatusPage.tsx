@@ -25,6 +25,7 @@ type SummaryItem = {
   page_name: string;
   total_visits: number;
   last_visited_at: string;
+  all_times: string[];
 };
 
 export default function VisitStatusPage() {
@@ -39,6 +40,9 @@ export default function VisitStatusPage() {
   const [selectedDate, setSelectedDate] = useState(todayStr);
   const [filterPage, setFilterPage] = useState("All");
 
+  // Popup modal state for visit details
+  const [selectedDetails, setSelectedDetails] = useState<{ userName: string; pageName: string; times: string[] } | null>(null);
+
   useEffect(() => {
     if (!isSuperAdmin) {
       setLoading(false);
@@ -47,7 +51,6 @@ export default function VisitStatusPage() {
 
     loadData();
 
-    // Setup Supabase Realtime subscription for automatic updates
     const channel = supabase
       .channel("public:page_visits")
       .on(
@@ -72,7 +75,6 @@ export default function VisitStatusPage() {
   async function loadData() {
     setLoading(true);
     try {
-      // 1. Fetch visits
       const { data: visitData, error: visitError } = await supabase
         .from("page_visits")
         .select("*")
@@ -81,7 +83,6 @@ export default function VisitStatusPage() {
       if (visitError) throw visitError;
       setVisits(visitData || []);
 
-      // 2. Fetch user profiles from 'profiles' table
       const { data: profileData, error: profileError } = await supabase
         .from("profiles")
         .select("*");
@@ -122,9 +123,11 @@ export default function VisitStatusPage() {
         page_name: item.page_name,
         total_visits: 0,
         last_visited_at: item.created_at,
+        all_times: [],
       };
     }
     summaryMap[key].total_visits += 1;
+    summaryMap[key].all_times.push(item.created_at);
   });
 
   const summaryList = Object.values(summaryMap);
@@ -186,7 +189,16 @@ export default function VisitStatusPage() {
 
       <div style={styles.filterBox}>
         <span style={{ fontSize: 13, fontWeight: 700 }}>Filter Page:</span>
-        {["All", "Pricelist Page", "Pricelist Download", "EasyDO Page 1", "EasyDO Page 2"].map((page) => (
+        {[
+          "All",
+          "Pricelist Page",
+          "Pricelist Download Excel",
+          "Pricelist Download PDF",
+          "EasyDO Page 1",
+          "Transportation Page",
+          "Transportation Download Excel",
+          "Transportation Download PDF",
+        ].map((page) => (
           <button
             key={page}
             style={{
@@ -212,6 +224,7 @@ export default function VisitStatusPage() {
                 <th style={styles.th}>Page / Action Name</th>
                 <th style={{ ...styles.th, textAlign: "center" }}>Total Count</th>
                 <th style={styles.th}>Last Time</th>
+                <th style={{ ...styles.th, textAlign: "center" }}>Details</th>
               </tr>
             </thead>
             <tbody>
@@ -244,6 +257,20 @@ export default function VisitStatusPage() {
                     <td style={{ ...styles.td, fontWeight: 600, color: "#0f172a" }}>
                       🕒 {formattedTime}
                     </td>
+                    <td style={{ ...styles.td, textAlign: "center" }}>
+                      <button
+                        style={styles.detailsBtn}
+                        onClick={() =>
+                          setSelectedDetails({
+                            userName: row.userName,
+                            pageName: row.page_name,
+                            times: row.all_times,
+                          })
+                        }
+                      >
+                        👁️ View Times
+                      </button>
+                    </td>
                   </tr>
                 );
               })}
@@ -252,6 +279,43 @@ export default function VisitStatusPage() {
           {!filteredSummary.length && (
             <div style={styles.noData}>No visit or download records found for this date.</div>
           )}
+        </div>
+      )}
+
+      {/* DETAILS POPUP MODAL */}
+      {selectedDetails && (
+        <div style={styles.overlay}>
+          <div style={styles.modal}>
+            <div style={styles.modalHeader}>
+              <div>
+                <h3 style={{ margin: 0, fontSize: 16, fontWeight: 800 }}>Visit Timestamps</h3>
+                <p style={{ margin: "3px 0 0", fontSize: 12, color: "#64748b" }}>
+                  {selectedDetails.userName} — <b style={{ color: "#2563eb" }}>{selectedDetails.pageName}</b>
+                </p>
+              </div>
+              <button style={styles.closeBtn} onClick={() => setSelectedDetails(null)}>✕</button>
+            </div>
+
+            <div style={styles.modalBody}>
+              {selectedDetails.times.sort().map((t, i) => (
+                <div key={i} style={styles.timeRow}>
+                  <span>#{i + 1} Visit</span>
+                  <b>
+                    {new Date(t).toLocaleTimeString("en-US", {
+                      hour: "2-digit",
+                      minute: "2-digit",
+                      second: "2-digit",
+                      hour12: true,
+                    })}
+                  </b>
+                </div>
+              ))}
+            </div>
+
+            <button style={styles.modalCloseFooter} onClick={() => setSelectedDetails(null)}>
+              Close
+            </button>
+          </div>
         </div>
       )}
     </div>
@@ -276,8 +340,16 @@ const styles: Record<string, React.CSSProperties> = {
   th: { background: "#f3f4f6", color: "#374151", fontWeight: 700, padding: "11px 12px", borderBottom: "1px solid #d1d5db", textAlign: "left" },
   td: { padding: "11px 12px", borderBottom: "1px solid #eef0f2", whiteSpace: "nowrap" },
   badge: { padding: "4px 8px", borderRadius: 6, fontSize: 11, fontWeight: 700 },
+  detailsBtn: { background: "#eef2ff", color: "#3730a3", border: "1px solid #c7d2fe", padding: "5px 10px", borderRadius: 6, fontSize: 11, fontWeight: 700, cursor: "pointer" },
   noData: { padding: 35, textAlign: "center", color: "#6b7280" },
   loading: { padding: 40, textAlign: "center", color: "#374151" },
+  overlay: { position: "fixed", inset: 0, background: "rgba(0,0,0,0.4)", backdropFilter: "blur(2px)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000 },
+  modal: { width: "100%", maxWidth: 400, background: "#ffffff", borderRadius: 12, padding: 16, boxShadow: "0 10px 25px rgba(0,0,0,0.1)" },
+  modalHeader: { display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 12, borderBottom: "1px solid #e2e8f0", paddingBottom: 8 },
+  closeBtn: { border: "none", background: "#f1f5f9", width: 28, height: 28, borderRadius: "50%", cursor: "pointer", fontWeight: 700 },
+  modalBody: { maxHeight: 220, overflowY: "auto", display: "flex", flexDirection: "column", gap: 6, marginBottom: 14 },
+  timeRow: { display: "flex", justifyContent: "space-between", padding: "6px 10px", background: "#f8fafc", borderRadius: 6, fontSize: 12, border: "1px solid #e2e8f0" },
+  modalCloseFooter: { width: "100%", border: "none", background: "#111827", color: "#ffffff", padding: "10px", borderRadius: 8, fontWeight: 700, cursor: "pointer" },
   accessDenied: { minHeight: "60vh", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", textAlign: "center", padding: 20 },
   accessIcon: { fontSize: 40, marginBottom: 10 },
   accessTitle: { fontSize: 20, fontWeight: 800, color: "#111827" },

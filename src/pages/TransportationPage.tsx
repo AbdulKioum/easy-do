@@ -113,6 +113,26 @@ export default function TransportationPage() {
   const canManage = role === "admin" || role === "super_admin";
   const isSuperAdmin = role === "super_admin";
 
+  // Track page visit (Fixed with useRef to prevent double logging)
+  const hasTrackedVisit = useRef(false);
+
+  useEffect(() => {
+    async function trackVisit() {
+      if (!user?.id || hasTrackedVisit.current) return;
+      hasTrackedVisit.current = true;
+
+      const today = new Date().toISOString().split("T")[0];
+      await supabase.from("page_visits").insert([
+        {
+          user_id: user.id,
+          page_name: "Transportation Page",
+          visit_date: today,
+        },
+      ]);
+    }
+    trackVisit();
+  }, [user?.id]);
+
   useEffect(() => {
     if (user?.id) {
       loadUserProfile();
@@ -459,7 +479,6 @@ export default function TransportationPage() {
     });
   }, [visibleItems, search, fromFilter, upazilaDistrictMap]);
 
-  // BUILD MATRIX DATA STRUCTURE
   function buildMatrixData(): {
     fromCols: string[];
     groups: MatrixDistrictGroup[];
@@ -521,7 +540,6 @@ export default function TransportationPage() {
     return { fromCols, groups, totalStationRows };
   }
 
-  // PROFESSIONAL PASTEL THEMES
   const MILL_THEMES = [
     { header: "DBEAFE", subSink: "EFF6FF", subFloat: "E0F2FE", cellSink: "F8FAFC", cellFloat: "F0F9FF" },
     { header: "DCFCE7", subSink: "F0FDF4", subFloat: "ECFDF5", cellSink: "F7FEE7", cellFloat: "F0FDF4" },
@@ -537,6 +555,13 @@ export default function TransportationPage() {
     if (!filteredItems.length) {
       alert("No transportation data available to export.");
       return;
+    }
+
+    if (user?.id) {
+      const today = new Date().toISOString().split("T")[0];
+      await supabase.from("page_visits").insert([
+        { user_id: user.id, page_name: "Transportation Download Excel", visit_date: today },
+      ]);
     }
 
     const { fromCols, groups } = buildMatrixData();
@@ -711,6 +736,13 @@ export default function TransportationPage() {
     if (!filteredItems.length) {
       alert("No transportation data available to export.");
       return;
+    }
+
+    if (user?.id) {
+      const today = new Date().toISOString().split("T")[0];
+      await supabase.from("page_visits").insert([
+        { user_id: user.id, page_name: "Transportation Download PDF", visit_date: today },
+      ]);
     }
 
     const html2pdf: any = (await import("html2pdf.js")).default;
