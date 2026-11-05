@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { useAuth } from "../../context/AuthContext";
 import { supabase } from "../../lib/supabase";
+import { isRunningInsideApp } from "../../lib/offlineSync";
 
 type SideMenuProps = {
   open: boolean;
@@ -55,6 +56,9 @@ export default function SideMenu({
   const userTargetPricePage =
     assignedPriceList === "price_list_2" ? "price-list-2" : "price-list";
 
+  const isInsideApp = isRunningInsideApp();
+  const APK_DOWNLOAD_URL = "/Easy-DO.apk";
+
   return (
     <>
       {/* BACKDROP */}
@@ -91,15 +95,6 @@ export default function SideMenu({
             active={currentPage === "easy-do-format-1"}
             onClick={() => navigate("easy-do-format-1")}
           />
-
-          {/* Apatoto Create D/O Format 2 bondho rakha holo. Pore dorkar hole comment tule dilei hobe:
-          <MenuItem
-            icon="📄"
-            label="Create D/O Format 2"
-            active={currentPage === "easy-do"}
-            onClick={() => navigate("easy-do")}
-          />
-          */}
 
           <MenuItem
             icon="💾"
@@ -166,6 +161,20 @@ export default function SideMenu({
           )}
         </div>
 
+       {/* DOWNLOAD APP BUTTON (ONLY SHOWN IN WEB BROWSER, HIDDEN INSIDE APK) */}
+{!isInsideApp && (
+  <div style={{ padding: "0 16px" }}>
+    <a
+      href={APK_DOWNLOAD_URL}
+      download="Easy-DO.apk"
+      style={styles.downloadAppBtn}
+    >
+      <span>📲</span>
+      <span>Download App</span>
+    </a>
+  </div>
+)}
+
         {/* USER INFO */}
         <div style={styles.userBox}>
           <div style={styles.userName}>
@@ -179,6 +188,8 @@ export default function SideMenu({
               : "USER"}
           </div>
         </div>
+
+        
 
         {/* FOOTER */}
         <div style={styles.footer}>
@@ -335,6 +346,22 @@ const styles: Record<string, React.CSSProperties> = {
   label: {
     flex: 1,
     textAlign: "left",
+  },
+  downloadAppBtn: {
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    width: "100%",
+    padding: "10px",
+    borderRadius: 8,
+    background: "linear-gradient(135deg, #2563eb, #1d4ed8)",
+    color: "#ffffff",
+    textDecoration: "none",
+    fontSize: 13,
+    fontWeight: 700,
+    boxShadow: "0 4px 12px rgba(37, 99, 235, 0.25)",
+    boxSizing: "border-box",
   },
   footer: {
     padding: 16,

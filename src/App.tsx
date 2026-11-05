@@ -1,10 +1,11 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   BrowserRouter,
   Routes,
   Route,
   Navigate,
 } from "react-router-dom";
+import { App as CapApp } from "@capacitor/app";
 
 import SideMenu from "./components/common/SideMenu";
 
@@ -112,8 +113,33 @@ function MainApp() {
   const { role } = useAuth();
   const [menuOpen, setMenuOpen] = useState(false);
 
-  // সাইটে ঢুকলেই যেন ১ম পেজ হিসেবে Easy DO Format 1 আসে
+  
   const [currentPage, setCurrentPage] = useState("easy-do-format-1");
+
+  // ANDROID CAPACITOR PHYSICAL BACK BUTTON LISTENER
+  useEffect(() => {
+    const setupBackButton = async () => {
+      const backButtonListener = await CapApp.addListener("backButton", (event: any) => {
+        if (currentPage !== "easy-do-format-1") {
+          setCurrentPage("easy-do-format-1");
+        } else if (!event?.canGoBack || currentPage === "easy-do-format-1") {
+          const confirmExit = window.confirm("Do you want to exit the app?");
+          if (confirmExit) {
+            CapApp.exitApp();
+          }
+        } else {
+          window.history.back();
+        }
+      });
+      return backButtonListener;
+    };
+
+    let listenerPromise = setupBackButton();
+
+    return () => {
+      listenerPromise.then((listener) => listener.remove());
+    };
+  }, [currentPage]);
 
   function handleNavigate(page: string) {
 

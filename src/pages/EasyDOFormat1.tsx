@@ -85,7 +85,19 @@ export default function EasyDOFormat1() {
   const { user, role } = useAuth();
   const initialSaved = useMemo(() => getSavedState(), []);
 
-  const [priceList, setPriceList] = useState<FeedPrice[]>([]);
+  // Instant load from localStorage cache so it doesn't show loading on open
+  const [priceList, setPriceList] = useState<FeedPrice[]>(() => {
+    try {
+      const cachedProfile = localStorage.getItem("easydo_cache_profile_v1");
+      const prof = cachedProfile ? JSON.parse(cachedProfile) : null;
+      const pTable = prof?.assigned_price_list === "price_list_2" ? "feed_price_list_2" : "feed_price_list";
+      const cached = localStorage.getItem(`${PRICE_CACHE_KEY_PREFIX}${pTable}`);
+      return cached ? JSON.parse(cached) : [];
+    } catch {
+      return [];
+    }
+  });
+
   const [transportList, setTransportList] = useState<Transport[]>(() => {
     try {
       const cached = localStorage.getItem(TRANSPORT_CACHE_KEY);
@@ -95,10 +107,26 @@ export default function EasyDOFormat1() {
     }
   });
 
-  const [upazilaList, setUpazilaList] = useState<Upazila[]>([]);
-  const [userProfile, setUserProfile] = useState<any>(null);
+  const [upazilaList, setUpazilaList] = useState<Upazila[]>(() => {
+    try {
+      const cached = localStorage.getItem("easydo_cache_upazilas_v1");
+      return cached ? JSON.parse(cached) : [];
+    } catch {
+      return [];
+    }
+  });
 
-  const [loading, setLoading] = useState(true);
+  const [userProfile, setUserProfile] = useState<any>(() => {
+    try {
+      const cached = localStorage.getItem("easydo_cache_profile_v1");
+      return cached ? JSON.parse(cached) : null;
+    } catch {
+      return null;
+    }
+  });
+
+  // If local cache exists, loading is false instantly
+  const [loading, setLoading] = useState(() => priceList.length === 0);
   const [saving, setSaving] = useState(false);
 
   const [selectedCategory, setSelectedCategory] = useState<string>(initialSaved?.selectedCategory || "All");
@@ -139,7 +167,7 @@ export default function EasyDOFormat1() {
   const hasTrackedVisit = useRef(false);
   useEffect(() => {
     async function trackPageVisit() {
-      if (!user?.id || hasTrackedVisit.current) return;
+      if (!user?.id || hasTrackedVisit.current || !navigator.onLine) return;
       hasTrackedVisit.current = true;
       const today = new Date().toISOString().split("T")[0];
       await supabase.from("page_visits").insert([
@@ -157,7 +185,7 @@ export default function EasyDOFormat1() {
     function handleBeforeUnload(event: BeforeUnloadEvent) {
       localStorage.removeItem(EASY_DO_STORAGE_KEY);
       event.preventDefault();
-      event.returnValue = "Apni ki page-ti refresh korte chan?";
+      event.returnValue = "Do you want to refresh this page?";
       return event.returnValue;
     }
     window.addEventListener("beforeunload", handleBeforeUnload);
@@ -166,57 +194,59 @@ export default function EasyDOFormat1() {
 
   useEffect(() => {
     initPageData();
+    const handleOnline = () => initPageData();
+    window.addEventListener("online", handleOnline);
+    return () => window.removeEventListener("online", handleOnline);
   }, [user?.id]);
 
   async function initPageData() {
-    setLoading(true);
-    let assignedPriceList = "price_list_1";
-
-    if (user?.id) {
-      const { data } = await supabase
-        .from("profiles")
-        .select("*")
-        .eq("id", user.id)
-        .single();
-      if (data) {
-        setUserProfile(data);
-        assignedPriceList = data.assigned_price_list || "price_list_1";
-        if (
-          data.assigned_from_locations &&
-          data.assigned_from_locations.length > 0 &&
-          !fromLocation
-        ) {
-          setFromLocation(data.assigned_from_locations[0]);
-        }
-      }
+    if (priceList.length === 0) setLoading(true);
+    if (!navigator.onLine) {
+      setLoading(false);
+      return;
     }
 
-    const priceTable =
-      assignedPriceList === "price_list_2"
-        ? "feed_price_list_2"
-        : "feed_price_list";
-    const cacheKey = `${PRICE_CACHE_KEY_PREFIX}${priceTable}`;
+    let assignedPriceList = userProfile?.assigned_price_list || "price_list_1";
 
     try {
-      const cached = localStorage.getItem(cacheKey);
-      if (cached) {
-        setPriceList(JSON.parse(cached));
+      if (user?.id) {
+        const { data } = await supabase
+          .from("profiles")
+          .select("*")
+          .eq("id", user.id)
+          .single();
+        if (data) {
+          setUserProfile(data);
+          localStorage.setItem("easydo_cache_profile_v1", JSON.stringify(data));
+          assignedPriceList = data.assigned_price_list || "price_list_1";
+          if (
+            data.assigned_from_locations &&
+            data.assigned_from_locations.length > 0 &&
+            !fromLocation
+          ) {
+            setFromLocation(data.assigned_from_locations[0]);
+          }
+        }
       }
-    } catch {}
 
-    try {
+      const priceTable =
+        assignedPriceList === "price_list_2"
+          ? "feed_price_list_2"
+          : "feed_price_list";
+      const cacheKey = `${PRICE_CACHE_KEY_PREFIX}${priceTable}`;
+
       const [priceRes, transRes, upazilaRes] = await Promise.all([
         supabase
           .from(priceTable)
           .select("id, category, item_name, short_name, kg_per_bag, tp_per_bag, mrp_per_bag, status")
           .eq("status", "Active")
-          .order("sort_order", { ascending: true }),
+          .order("sort_order", { ascending: true }) as any,
         supabase
           .from("transportation")
           .select("id, from_location, to_upazila, floating_cattle_rate_per_kg, sinking_broiler_layer_sonali_rate_per_kg, status")
           .eq("status", "Active")
-          .order("to_upazila", { ascending: true }),
-        supabase.from("upazilas").select("*").eq("status", "Active"),
+          .order("to_upazila", { ascending: true }) as any,
+        supabase.from("upazilas").select("*").eq("status", "Active") as any,
       ]);
 
       if (!priceRes.error && priceRes.data) {
@@ -231,6 +261,7 @@ export default function EasyDOFormat1() {
 
       if (!upazilaRes.error && upazilaRes.data) {
         setUpazilaList(upazilaRes.data);
+        localStorage.setItem("easydo_cache_upazilas_v1", JSON.stringify(upazilaRes.data));
       }
     } catch (e) {
       console.warn("Using offline cached data:", e);
@@ -473,7 +504,6 @@ export default function EasyDOFormat1() {
   async function saveDO() {
     if (saving) return;
     if (!user) return alert("You are not logged in.");
-    if (!navigator.onLine) return alert("Internet connection nei!");
 
     const validRows = activeOrderList.filter((r) => r.bags > 0);
     if (!validRows.length) return alert("Please select feed item and enter bags.");
@@ -822,7 +852,7 @@ export default function EasyDOFormat1() {
                         step="0.01"
                         value={subAgentRatePerKg}
                         onChange={(e) => setSubAgentRatePerKg(e.target.value)}
-                        placeholder="Tk/kg"
+                        placeholder=""
                         style={{ width: 75, padding: "4px 6px", borderRadius: 6, border: "1px solid #cbd5e1", fontSize: 12, textAlign: "right", color: "#0f172a", fontWeight: 700 }}
                       />
                       <span style={{ fontSize: 11, color: "#94a3b8" }}>Tk/kg</span>
@@ -885,7 +915,7 @@ export default function EasyDOFormat1() {
                 </div>
                 {banks.map((bank, idx) => (
                   <div key={bank.id} style={{ marginTop: 8, background: "#fff", border: "1px solid #e2e8f0", borderRadius: 8, padding: 8 }}>
-                    <div style={{ fontSize: 10, color: "#64748b", fontWeight: 700, marginBottom: 6 }}>Bank {idx + 1}</div>
+                    <div style={{ fontSize: 10, color: "#64748b", fontWeight: 700, marginBottom: 6 }}>Button {idx + 1}</div>
                     <div className="edo-grid2" style={{ marginBottom: 8 }}>
                       <div>
                         <label className="edo-label">Bank Name</label>

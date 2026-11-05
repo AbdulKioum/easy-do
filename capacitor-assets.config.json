@@ -1,0 +1,9 @@
+{
+  "icon": {
+    "src": "public/favicon_easy_do.png",
+    "transform": {
+      "background": "#ffffff",
+      "logoScale": 0.75
+    }
+  }
+}
