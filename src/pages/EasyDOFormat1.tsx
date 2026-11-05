@@ -565,42 +565,83 @@ export default function EasyDOFormat1() {
     <div className="edo-page">
       <style>{COMPACT_CSS}</style>
 
-      {/* HEADER: CREATE D/O CENTERED WITH SEARCH ICON ON THE RIGHT */}
-      <div style={{ marginBottom: 12, display: "grid", gridTemplateColumns: "36px 1fr 36px", alignItems: "center" }}>
+      {/* HEADER: CREATE D/O CENTERED WITH SEARCH & RESET ICONS ON THE RIGHT */}
+      <div style={{ marginBottom: 12, display: "grid", gridTemplateColumns: "36px 1fr auto", alignItems: "center", gap: 6 }}>
         <div />
         <h1 style={{ margin: 0, fontSize: 18, fontWeight: 800, color: "#0f172a", textAlign: "center" }}>Create D/O</h1>
-        <button
-          onClick={() => setShowSearchBox(!showSearchBox)}
-          style={{
-            border: "1px solid #cbd5e1",
-            background: showSearchBox ? "#2563eb" : "#ffffff",
-            color: showSearchBox ? "#ffffff" : "#1e293b",
-            width: 36,
-            height: 36,
-            borderRadius: "50%",
-            cursor: "pointer",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            boxShadow: "0 1px 3px rgba(0,0,0,0.05)",
-            justifySelf: "end",
-          }}
-          title="Toggle Search"
-        >
-          <svg
-            width="16"
-            height="16"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2.5"
-            strokeLinecap="round"
-            strokeLinejoin="round"
+        <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+          {/* RESET BUTTON */}
+          <button
+            onClick={() => {
+              const confirmReset = window.confirm("Do you want to reset all fields?");
+              if (confirmReset) {
+                localStorage.removeItem("easydo_format1_persistent_v11");
+                window.location.reload();
+              }
+            }}
+            style={{
+              border: "1px solid #cbd5e1",
+              background: "#ffffff",
+              color: "#dc2626",
+              width: 36,
+              height: 36,
+              borderRadius: "50%",
+              cursor: "pointer",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              boxShadow: "0 1px 3px rgba(0,0,0,0.05)",
+            }}
+            title="Reset Data"
           >
-            <circle cx="11" cy="11" r="8"></circle>
-            <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
-          </svg>
-        </button>
+            <svg
+              width="16"
+              height="16"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2.5"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <polyline points="1 4 1 10 7 10"></polyline>
+              <path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"></path>
+            </svg>
+          </button>
+
+          {/* SEARCH TOGGLE BUTTON */}
+          <button
+            onClick={() => setShowSearchBox(!showSearchBox)}
+            style={{
+              border: "1px solid #cbd5e1",
+              background: showSearchBox ? "#2563eb" : "#ffffff",
+              color: showSearchBox ? "#ffffff" : "#1e293b",
+              width: 36,
+              height: 36,
+              borderRadius: "50%",
+              cursor: "pointer",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              boxShadow: "0 1px 3px rgba(0,0,0,0.05)",
+            }}
+            title="Toggle Search"
+          >
+            <svg
+              width="16"
+              height="16"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2.5"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <circle cx="11" cy="11" r="8"></circle>
+              <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+            </svg>
+          </button>
+        </div>
       </div>
 
       {/* EXPANDABLE SEARCH BAR */}
