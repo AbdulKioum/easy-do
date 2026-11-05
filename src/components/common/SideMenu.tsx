@@ -163,7 +163,7 @@ export default function SideMenu({
 
        {/* DOWNLOAD APP BUTTON (ONLY SHOWN IN WEB BROWSER, HIDDEN INSIDE APK) */}
 {!isInsideApp && (
-  <div style={{ padding: "0 16px" }}>
+  <div style={{ padding: "0 70px" }}>
     <a
       href={APK_DOWNLOAD_URL}
       download="Easy-DO.apk"
