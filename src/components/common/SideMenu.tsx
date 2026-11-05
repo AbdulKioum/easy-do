@@ -57,7 +57,7 @@ export default function SideMenu({
     assignedPriceList === "price_list_2" ? "price-list-2" : "price-list";
 
   const isInsideApp = isRunningInsideApp();
-  const APK_DOWNLOAD_URL = "/Easy-DO.apk";
+  const APK_DOWNLOAD_URL = "https://xazcbgiovvrtzrhymgsc.supabase.co/storage/v1/object/public/APK/Easy-DO.apk?download=Easy-DO.apk";
 
   return (
     <>

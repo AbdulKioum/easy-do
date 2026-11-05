@@ -5,7 +5,7 @@ const config: CapacitorConfig = {
   appName: 'Easy DO',
   webDir: 'dist',
   server: {
-    url: 'https://xazcbgiovvrtzrhymgsc.supabase.co/storage/v1/object/public/APK/Easy-DO.apk?download=Easy-DO.apk', 
+    url: 'https://easy-do-five.vercel.app', 
     cleartext: true
   }
 };
