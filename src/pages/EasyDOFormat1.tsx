@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "../lib/supabase";
 import { useAuth } from "../context/AuthContext";
 
@@ -37,7 +37,7 @@ type BankInfo = {
   amount: string;
 };
 
-const EASY_DO_STORAGE_KEY = "easydo_format1_persistent_v7";
+const EASY_DO_STORAGE_KEY = "easydo_format1_persistent_v11";
 const PRICE_CACHE_KEY_PREFIX = "easydo_format1_price_cache_";
 const TRANSPORT_CACHE_KEY = "easydo_format1_transport_cache_v1";
 
@@ -51,7 +51,7 @@ const CATEGORY_CONFIG: Record<string, { label: string; icon: string; bg: string 
 };
 
 const COMPACT_CSS = `
-  .edo-page { min-height: 100vh; background: #f8fafc; padding: 12px; color: #111827; box-sizing: border-box; }
+  .edo-page { min-height: 100vh; background: #f8fafc; padding: 12px; color: #111827; box-sizing: border-box; padding-bottom: 85px; }
   .edo-card { background: #fff; border: 1px solid #e2e8f0; border-radius: 12px; padding: 14px; margin-bottom: 12px; text-align: left; box-shadow: 0 2px 8px rgba(0,0,0,0.04); }
   .edo-filter-btn { padding: 6px 10px; border-radius: 20px; border: 1px solid #cbd5e1; font-size: 11px; font-weight: 600; cursor: pointer; display: flex; align-items: center; gap: 4px; flex-shrink: 0; transition: all 0.15s ease; }
   .edo-table { width: 100%; border-collapse: collapse; min-width: 540px; font-size: 12px; }
@@ -67,6 +67,9 @@ const COMPACT_CSS = `
   .edo-btn-main { display: block; margin: 16px auto 0; width: min(100%, 380px); padding: 14px 18px; border: none; border-radius: 12px; background: linear-gradient(135deg, #2563eb, #1d4ed8); color: #fff; font-size: 14px; font-weight: 800; cursor: pointer; box-shadow: 0 4px 12px rgba(37,99,235,0.35); }
   .edo-scroll-down-btn { position: fixed; bottom: 24px; right: 20px; width: 44px; height: 44px; border-radius: 50%; background: linear-gradient(135deg, #2563eb, #1d4ed8); color: #fff; border: 2px solid #ffffff; font-size: 20px; font-weight: 800; cursor: pointer; box-shadow: 0 4px 14px rgba(37,99,235,0.45); display: flex; align-items: center; justify-content: center; z-index: 999; transition: all 0.2s ease; }
   .edo-scroll-down-btn:active { transform: scale(0.92); }
+  .edo-search-bar { display: flex; align-items: center; gap: 8px; background: #fff; border: 1px solid #cbd5e1; padding: 8px 12px; border-radius: 10px; margin-bottom: 10px; animation: fadeIn 0.2s ease; }
+  .edo-search-bar input { border: none; outline: none; width: 100%; font-size: 13px; color: #0f172a; background: transparent; }
+  @keyframes fadeIn { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: translateY(0); } }
 `;
 
 function getSavedState() {
@@ -83,7 +86,6 @@ export default function EasyDOFormat1() {
   const initialSaved = useMemo(() => getSavedState(), []);
 
   const [priceList, setPriceList] = useState<FeedPrice[]>([]);
-
   const [transportList, setTransportList] = useState<Transport[]>(() => {
     try {
       const cached = localStorage.getItem(TRANSPORT_CACHE_KEY);
@@ -100,6 +102,8 @@ export default function EasyDOFormat1() {
   const [saving, setSaving] = useState(false);
 
   const [selectedCategory, setSelectedCategory] = useState<string>(initialSaved?.selectedCategory || "All");
+  const [showSearchBox, setShowSearchBox] = useState<boolean>(false);
+  const [tableSearch, setTableSearch] = useState<string>("");
   const [bagQuantities, setBagQuantities] = useState<Record<number, number>>(initialSaved?.bagQuantities || {});
   const [selectedItemIds, setSelectedItemIds] = useState<number[]>(
     Array.isArray(initialSaved?.selectedItemIds) ? initialSaved.selectedItemIds : []
@@ -115,21 +119,28 @@ export default function EasyDOFormat1() {
   const [agentCode, setAgentCode] = useState<string>(initialSaved?.agentCode || "");
   const [agentName, setAgentName] = useState<string>(initialSaved?.agentName || "");
   const [vehicleNo, setVehicleNo] = useState<string>(initialSaved?.vehicleNo || "");
+  
+  const [subAgentSpecialActive, setSubAgentSpecialActive] = useState<boolean>(initialSaved?.subAgentSpecialActive || false);
+  const [subAgentRatePerKg, setSubAgentRatePerKg] = useState<string>(initialSaved?.subAgentRatePerKg || "");
+
   const [banks, setBanks] = useState<BankInfo[]>(() =>
     Array.isArray(initialSaved?.banks) && initialSaved.banks.length > 0
       ? initialSaved.banks
       : [{ id: Date.now(), bankName: "", branch: "", date: new Date().toISOString().split("T")[0], amount: "" }]
   );
-  const [generatedMessage, setGeneratedMessage] = useState<string>(initialSaved?.generatedMessage || "");
 
+  const [generatedMessage, setGeneratedMessage] = useState<string>(initialSaved?.generatedMessage || "");
   const [showScrollBottom, setShowScrollBottom] = useState(true);
 
   const isSuperAdmin = role === "super_admin";
+  const allowSubAgentSpecial = Boolean(userProfile?.allow_sub_agent_special);
 
   // PAGE VISIT TRACKING
+  const hasTrackedVisit = useRef(false);
   useEffect(() => {
     async function trackPageVisit() {
-      if (!user?.id) return;
+      if (!user?.id || hasTrackedVisit.current) return;
+      hasTrackedVisit.current = true;
       const today = new Date().toISOString().split("T")[0];
       await supabase.from("page_visits").insert([
         {
@@ -142,12 +153,11 @@ export default function EasyDOFormat1() {
     trackPageVisit();
   }, [user?.id]);
 
-  // Manual reload detection & clear protection
   useEffect(() => {
     function handleBeforeUnload(event: BeforeUnloadEvent) {
       localStorage.removeItem(EASY_DO_STORAGE_KEY);
       event.preventDefault();
-      event.returnValue = "Apni ki page-ti refresh korte chan? Refresh korle current input data clear hoye jabe.";
+      event.returnValue = "Apni ki page-ti refresh korte chan?";
       return event.returnValue;
     }
     window.addEventListener("beforeunload", handleBeforeUnload);
@@ -192,24 +202,18 @@ export default function EasyDOFormat1() {
       if (cached) {
         setPriceList(JSON.parse(cached));
       }
-    } catch {
-      // ignore cache error
-    }
+    } catch {}
 
     try {
       const [priceRes, transRes, upazilaRes] = await Promise.all([
         supabase
           .from(priceTable)
-          .select(
-            "id, category, item_name, short_name, kg_per_bag, tp_per_bag, mrp_per_bag, status"
-          )
+          .select("id, category, item_name, short_name, kg_per_bag, tp_per_bag, mrp_per_bag, status")
           .eq("status", "Active")
           .order("sort_order", { ascending: true }),
         supabase
           .from("transportation")
-          .select(
-            "id, from_location, to_upazila, floating_cattle_rate_per_kg, sinking_broiler_layer_sonali_rate_per_kg, status"
-          )
+          .select("id, from_location, to_upazila, floating_cattle_rate_per_kg, sinking_broiler_layer_sonali_rate_per_kg, status")
           .eq("status", "Active")
           .order("to_upazila", { ascending: true }),
         supabase.from("upazilas").select("*").eq("status", "Active"),
@@ -222,10 +226,7 @@ export default function EasyDOFormat1() {
 
       if (!transRes.error && transRes.data) {
         setTransportList(transRes.data);
-        localStorage.setItem(
-          TRANSPORT_CACHE_KEY,
-          JSON.stringify(transRes.data)
-        );
+        localStorage.setItem(TRANSPORT_CACHE_KEY, JSON.stringify(transRes.data));
       }
 
       if (!upazilaRes.error && upazilaRes.data) {
@@ -247,46 +248,6 @@ export default function EasyDOFormat1() {
     if (isSuperAdmin) return [];
     return userProfile?.assigned_districts || [];
   }, [isSuperAdmin, userProfile]);
-
-  // LIVE PERSISTENCE TO LOCALSTORAGE
-  useEffect(() => {
-    if (loading) return;
-    try {
-      localStorage.setItem(
-        EASY_DO_STORAGE_KEY,
-        JSON.stringify({
-          selectedCategory,
-          bagQuantities,
-          selectedItemIds,
-          fromLocation,
-          upazila,
-          transportMode,
-          agentCode,
-          agentName,
-          vehicleNo,
-          banks,
-          showDOInformation,
-          generatedMessage,
-        })
-      );
-    } catch (e) {
-      console.error("Save state failed:", e);
-    }
-  }, [
-    loading,
-    selectedCategory,
-    bagQuantities,
-    selectedItemIds,
-    fromLocation,
-    upazila,
-    transportMode,
-    agentCode,
-    agentName,
-    vehicleNo,
-    banks,
-    showDOInformation,
-    generatedMessage,
-  ]);
 
   const fromLocations = useMemo(() => {
     const dbLocs = Array.from(new Set(transportList.map((i) => i.from_location).filter(Boolean)));
@@ -322,7 +283,7 @@ export default function EasyDOFormat1() {
     const valid = bags < 0 ? 0 : bags;
     setBagQuantities((prev) => ({ ...prev, [itemId]: valid }));
     if (valid > 0) {
-      if (!selectedItemIds.includes(itemId)) setSelectedItemIds((prev) => [...prev, itemId]);
+      setSelectedItemIds((prev) => (prev.includes(itemId) ? prev : [...prev, itemId]));
     } else {
       setSelectedItemIds((prev) => prev.filter((id) => id !== itemId));
     }
@@ -355,11 +316,88 @@ export default function EasyDOFormat1() {
   }, [priceList, selectedItemIds, bagQuantities, selectedTransport, transportMode]);
 
   const displayedPriceList = useMemo(() => {
-    if (selectedCategory === "All") return priceList;
-    return priceList.filter((item) => item.category.toLowerCase() === selectedCategory.toLowerCase());
-  }, [priceList, selectedCategory]);
+    let list = priceList;
+    if (selectedCategory !== "All") {
+      list = list.filter((item) => item.category.toLowerCase() === selectedCategory.toLowerCase());
+    }
+    if (tableSearch.trim()) {
+      const q = tableSearch.toLowerCase().trim();
+      list = list.filter(
+        (item) =>
+          item.item_name.toLowerCase().includes(q) ||
+          (item.short_name || "").toLowerCase().includes(q) ||
+          item.category.toLowerCase().includes(q)
+      );
+    }
+    return list;
+  }, [priceList, selectedCategory, tableSearch]);
 
-  // Track scroll position to show/hide bottom arrow button
+  const totalWeight = useMemo(() => activeOrderList.reduce((acc, r) => acc + r.weight, 0), [activeOrderList]);
+  const feedPrice = useMemo(() => activeOrderList.reduce((acc, r) => acc + r.tpTotal, 0), [activeOrderList]);
+  const totalTransportAmount = useMemo(() => (!selectedTransport ? 0 : activeOrderList.reduce((acc, r) => acc + r.totalTransport, 0)), [activeOrderList, selectedTransport]);
+  const rawGrandTotal = useMemo(() => activeOrderList.reduce((acc, r) => acc + r.rowTotal, 0), [activeOrderList]);
+
+  const subAgentDiscount = useMemo(() => {
+    if (!allowSubAgentSpecial || !subAgentSpecialActive) return 0;
+    const rate = Number(subAgentRatePerKg) || 0;
+    return totalWeight * rate;
+  }, [allowSubAgentSpecial, subAgentSpecialActive, subAgentRatePerKg, totalWeight]);
+
+  const finalGrandTotal = useMemo(() => {
+    return Math.max(0, rawGrandTotal - subAgentDiscount);
+  }, [rawGrandTotal, subAgentDiscount]);
+
+  // Auto-fill bank amount with finalGrandTotal
+  useEffect(() => {
+    setBanks((prev) => {
+      if (!prev.length) return [{ id: Date.now(), bankName: "", branch: "", date: new Date().toISOString().split("T")[0], amount: String(finalGrandTotal.toFixed(2)) }];
+      return prev.map((b, idx) => (idx === 0 ? { ...b, amount: String(finalGrandTotal.toFixed(2)) } : b));
+    });
+  }, [finalGrandTotal]);
+
+  useEffect(() => {
+    if (loading) return;
+    try {
+      localStorage.setItem(
+        EASY_DO_STORAGE_KEY,
+        JSON.stringify({
+          selectedCategory,
+          bagQuantities,
+          selectedItemIds,
+          fromLocation,
+          upazila,
+          transportMode,
+          agentCode,
+          agentName,
+          vehicleNo,
+          subAgentSpecialActive,
+          subAgentRatePerKg,
+          banks,
+          showDOInformation,
+          generatedMessage,
+        })
+      );
+    } catch (e) {
+      console.error("Save state failed:", e);
+    }
+  }, [
+    loading,
+    selectedCategory,
+    bagQuantities,
+    selectedItemIds,
+    fromLocation,
+    upazila,
+    transportMode,
+    agentCode,
+    agentName,
+    vehicleNo,
+    subAgentSpecialActive,
+    subAgentRatePerKg,
+    banks,
+    showDOInformation,
+    generatedMessage,
+  ]);
+
   useEffect(() => {
     function handleScroll() {
       const scrolledToBottom =
@@ -377,11 +415,6 @@ export default function EasyDOFormat1() {
       behavior: "smooth",
     });
   }
-
-  const totalWeight = useMemo(() => activeOrderList.reduce((acc, r) => acc + r.weight, 0), [activeOrderList]);
-  const feedPrice = useMemo(() => activeOrderList.reduce((acc, r) => acc + r.tpTotal, 0), [activeOrderList]);
-  const totalTransportAmount = useMemo(() => (!selectedTransport ? 0 : activeOrderList.reduce((acc, r) => acc + r.totalTransport, 0)), [activeOrderList, selectedTransport]);
-  const totalAmount = useMemo(() => activeOrderList.reduce((acc, r) => acc + r.rowTotal, 0), [activeOrderList]);
 
   function addBank() {
     setBanks((prev) => [...prev, { id: Date.now() + Math.random(), bankName: "", branch: "", date: new Date().toISOString().split("T")[0], amount: "" }]);
@@ -404,9 +437,9 @@ export default function EasyDOFormat1() {
     const validBanks = banks.filter((b) => b.bankName.trim() || b.branch.trim() || b.date.trim() || b.amount.trim());
 
     const bankText = !validBanks.length
-      ? "[Bank Details]"
+      ? `৳ ${money(finalGrandTotal)}`
       : validBanks
-          .map((b) => `${b.bankName.trim() || "[Bank Name]"}\n${b.branch.trim() || "[Branch]"}\n${b.date.trim() || "[Date]"}\n${b.amount.trim() ? `৳ ${money(Number(b.amount))}` : "[Bank Amount]"}`)
+          .map((b) => `${b.bankName.trim() || "[Bank Name]"}\n${b.branch.trim() || "[Branch]"}\n${b.date.trim() || "[Date]"}\n${b.amount.trim() ? `৳ ${money(Number(b.amount))}` : `৳ ${money(finalGrandTotal)}`}`)
           .join("\n\n");
 
     const validRows = activeOrderList.filter((r) => r.bags > 0);
@@ -425,7 +458,7 @@ export default function EasyDOFormat1() {
 
   useEffect(() => {
     if (showDOInformation) setGeneratedMessage(buildDOMessage());
-  }, [showDOInformation, agentCode, agentName, vehicleNo, banks, activeOrderList, fromLocation, upazila, transportMode]);
+  }, [showDOInformation, agentCode, agentName, vehicleNo, banks, activeOrderList, fromLocation, upazila, transportMode, finalGrandTotal]);
 
   async function copyMessage() {
     if (!generatedMessage) return;
@@ -449,7 +482,7 @@ export default function EasyDOFormat1() {
     try {
       const validBanks = banks.filter((b) => b.bankName.trim() || b.branch.trim() || b.date.trim() || b.amount.trim());
       const bankDetails = validBanks
-        .map((b) => `${b.bankName || "[Bank Name]"}\n${b.branch || "[Branch]"}\n${b.date || "[Date]"}\n${b.amount ? `৳ ${money(Number(b.amount))}` : "[Bank Amount]"}`)
+        .map((b) => `${b.bankName || "[Bank Name]"}\n${b.branch || "[Branch]"}\n${b.date || "[Date]"}\n${b.amount ? `৳ ${money(Number(b.amount))}` : `৳ ${money(finalGrandTotal)}`}`)
         .join("\n\n");
 
       const orderItems = validRows.map((r) => ({
@@ -475,14 +508,14 @@ export default function EasyDOFormat1() {
         to_upazila: upazila || null,
         transport_mode: transportMode,
         total_weight: Number(totalWeight.toFixed(2)),
-        total_amount: Number(totalAmount.toFixed(2)),
+        total_amount: Number(finalGrandTotal.toFixed(2)),
         order_items: orderItems,
         agent_code: agentCode.trim() || null,
         agent_name: agentName.trim() || null,
         vehicle_no: vehicleNo.trim() || null,
         bank_name: firstBank?.bankName.trim() || null,
         bank_branch: firstBank?.branch.trim() || null,
-        bank_amount: firstBank?.amount ? Number(firstBank.amount) : 0,
+        bank_amount: firstBank?.amount ? Number(firstBank.amount) : finalGrandTotal,
         banks: validBanks,
         message_text: generatedMessage || buildDOMessage(),
       };
@@ -502,9 +535,65 @@ export default function EasyDOFormat1() {
     <div className="edo-page">
       <style>{COMPACT_CSS}</style>
 
-      <div style={{ marginBottom: 12, textAlign: "center" }}>
-        <h1 style={{ margin: 0, fontSize: 18, fontWeight: 800, color: "#0f172a" }}>Create D/O </h1>
+      {/* HEADER: CREATE D/O CENTERED WITH SEARCH ICON ON THE RIGHT */}
+      <div style={{ marginBottom: 12, display: "grid", gridTemplateColumns: "36px 1fr 36px", alignItems: "center" }}>
+        <div />
+        <h1 style={{ margin: 0, fontSize: 18, fontWeight: 800, color: "#0f172a", textAlign: "center" }}>Create D/O</h1>
+        <button
+          onClick={() => setShowSearchBox(!showSearchBox)}
+          style={{
+            border: "1px solid #cbd5e1",
+            background: showSearchBox ? "#2563eb" : "#ffffff",
+            color: showSearchBox ? "#ffffff" : "#1e293b",
+            width: 36,
+            height: 36,
+            borderRadius: "50%",
+            cursor: "pointer",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            boxShadow: "0 1px 3px rgba(0,0,0,0.05)",
+            justifySelf: "end",
+          }}
+          title="Toggle Search"
+        >
+          <svg
+            width="16"
+            height="16"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2.5"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
+            <circle cx="11" cy="11" r="8"></circle>
+            <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+          </svg>
+        </button>
+      </div>
+
+      {/* EXPANDABLE SEARCH BAR */}
+      {showSearchBox && (
+        <div className="edo-search-bar">
+          <span>🔎</span>
+          <input
+            type="text"
+            value={tableSearch}
+            onChange={(e) => setTableSearch(e.target.value)}
+            placeholder="Search feed name or short name..."
+            autoFocus
+          />
+          {tableSearch && (
+            <button
+              onClick={() => setTableSearch("")}
+              style={{ border: "none", background: "#f1f5f9", borderRadius: "50%", width: 22, height: 22, cursor: "pointer", fontWeight: 700 }}
+            >
+              ✕
+            </button>
+          )}
         </div>
+      )}
 
       {loading ? (
         <div className="edo-card" style={{ padding: 40, textAlign: "center", color: "#475569" }}>Loading price list...</div>
@@ -561,7 +650,7 @@ export default function EasyDOFormat1() {
                   {(() => {
                     let lastCat = "";
                     return displayedPriceList.map((item) => {
-                      const showHeader = selectedCategory === "All" && item.category !== lastCat;
+                      const showHeader = selectedCategory === "All" && !tableSearch && item.category !== lastCat;
                       lastCat = item.category;
 
                       const bags = bagQuantities[item.id] ?? "";
@@ -594,7 +683,7 @@ export default function EasyDOFormat1() {
                             </td>
                             <td className="edo-td" style={{ background: rowBg }}>
                               <div style={{ fontWeight: isSel ? 700 : 600, color: isSel ? "#1d4ed8" : "#1e293b", fontSize: 13 }}>{item.item_name}</div>
-                              <div style={{ fontSize: 10, color: "#64748b", marginTop: 2 }}>{item.category} • {item.kg_per_bag}kg</div>
+                              <div style={{ fontSize: 10.5, color: "#64748b", marginTop: 2 }}>{item.kg_per_bag} kg</div>
                             </td>
                             <td className="edo-td">
                               <input
@@ -646,14 +735,14 @@ export default function EasyDOFormat1() {
             <div style={{ fontSize: 16, fontWeight: 750, color: "#0f172a" }}>Transportation</div>
             <div className="edo-grid2" style={{ marginTop: 10 }}>
               <div>
-                <label className="edo-label">From (Assigned Mills/Depots)</label>
+                <label className="edo-label">From</label>
                 <select value={fromLocation} onChange={(e) => { setFromLocation(e.target.value); setUpazila(""); }} className="edo-input">
                   <option value="">Select From</option>
                   {fromLocations.map((loc) => <option key={loc} value={loc}>{loc}</option>)}
                 </select>
               </div>
               <div>
-                <label className="edo-label">To / Upazila (Assigned Districts)</label>
+                <label className="edo-label">To / Upazila</label>
                 <select value={upazila} onChange={(e) => setUpazila(e.target.value)} className="edo-input" disabled={!fromLocation}>
                   <option value="">Select Upazila</option>
                   {upazilas.map((name) => <option key={name} value={name}>{name}</option>)}
@@ -712,12 +801,49 @@ export default function EasyDOFormat1() {
               <span>Transportation</span>
               <strong>{transportMode === "with" ? "Included in TP" : selectedTransport ? `- ৳ ${money(totalTransportAmount)}` : "—"}</strong>
             </div>
+
+            {allowSubAgentSpecial && (
+              <div style={{ margin: "10px 0", padding: "10px", background: "#1e293b", borderRadius: 8, border: "1px dashed #475569" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                  <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12, fontWeight: 700, cursor: "pointer" }}>
+                    <input
+                      type="checkbox"
+                      checked={subAgentSpecialActive}
+                      onChange={(e) => setSubAgentSpecialActive(e.target.checked)}
+                      style={{ width: 16, height: 16, accentColor: "#38bdf8", cursor: "pointer" }}
+                    />
+                    <span>Sub-Agent Special</span>
+                  </label>
+                  {subAgentSpecialActive && (
+                    <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                      <input
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        value={subAgentRatePerKg}
+                        onChange={(e) => setSubAgentRatePerKg(e.target.value)}
+                        placeholder="Tk/kg"
+                        style={{ width: 75, padding: "4px 6px", borderRadius: 6, border: "1px solid #cbd5e1", fontSize: 12, textAlign: "right", color: "#0f172a", fontWeight: 700 }}
+                      />
+                      <span style={{ fontSize: 11, color: "#94a3b8" }}>Tk/kg</span>
+                    </div>
+                  )}
+                </div>
+                {subAgentSpecialActive && subAgentDiscount > 0 && (
+                  <div style={{ display: "flex", justifyContent: "space-between", marginTop: 6, fontSize: 11, color: "#f87171" }}>
+                    <span>Special Deduction ({totalWeight.toLocaleString()} kg × ৳{subAgentRatePerKg})</span>
+                    <strong>- ৳ {money(subAgentDiscount)}</strong>
+                  </div>
+                )}
+              </div>
+            )}
+
             <div style={{ height: 1, background: "#334155", margin: "8px 0" }} />
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
               <div>
                 <div style={{ fontSize: 15, fontWeight: 800 }}>Grand Total</div>
               </div>
-              <div style={{ fontSize: 20, fontWeight: 850, color: "#38bdf8" }}>৳ {money(totalAmount)}</div>
+              <div style={{ fontSize: 20, fontWeight: 850, color: "#38bdf8" }}>৳ {money(finalGrandTotal)}</div>
             </div>
             <button className="edo-btn-main" onClick={openDOInformation}>
               📝 Generate DO Message / 💾 Save
@@ -729,7 +855,7 @@ export default function EasyDOFormat1() {
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 12 }}>
                 <div>
                   <div style={{ fontSize: 17, fontWeight: 800, color: "#0f172a" }}>DO Information</div>
-                  <div style={{ fontSize: 10, color: "#64748b" }}>Enter optional information. Message will update automatically.</div>
+                  <div style={{ fontSize: 10, color: "#64748b" }}>Enter optional information. Bank amount is editable.</div>
                 </div>
                 <button onClick={() => setShowDOInformation(false)} style={{ width: 30, height: 30, border: "none", borderRadius: "50%", background: "#f1f5f9", color: "#475569", fontSize: 18, cursor: "pointer" }}>
                   ×
@@ -777,7 +903,7 @@ export default function EasyDOFormat1() {
                       </div>
                       <div>
                         <label className="edo-label">Amount Tk</label>
-                        <input type="number" min="0" step="0.01" value={bank.amount} onChange={(e) => updateBank(bank.id, "amount", e.target.value)} placeholder="Optional" className="edo-input" />
+                        <input type="number" min="0" step="0.01" value={bank.amount} onChange={(e) => updateBank(bank.id, "amount", e.target.value)} className="edo-input" style={{ fontWeight: 700, }} />
                       </div>
                     </div>
                     {banks.length > 1 && (
@@ -812,7 +938,6 @@ export default function EasyDOFormat1() {
             </div>
           )}
 
-          {/* FLOATING SCROLL TO BOTTOM BUTTON */}
           {showScrollBottom && (
             <button
               onClick={scrollToBottom}

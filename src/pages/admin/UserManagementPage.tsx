@@ -13,6 +13,7 @@ type Profile = {
   assigned_districts?: string[];
   assigned_from_locations?: string[];
   assigned_price_list?: string;
+  allow_sub_agent_special?: boolean;
   created_at?: string;
   updated_at?: string;
 };
@@ -38,13 +39,14 @@ export default function UserManagementPage() {
   const [newRole, setNewRole] = useState<UserRole>("user");
   const [newStatus, setNewStatus] = useState("Active");
   const [newAssignedPriceList, setNewAssignedPriceList] = useState("price_list_1");
+  const [newAllowSubAgentSpecial, setNewAllowSubAgentSpecial] = useState(false);
   const [newAssignedDistricts, setNewAssignedDistricts] = useState<string[]>([]);
   const [newAssignedLocations, setNewAssignedLocations] = useState<string[]>([]);
   const [creatingUser, setCreatingUser] = useState(false);
 
   // Editable fields per user state for assignments
   const [userInputs, setUserInputs] = useState<
-    Record<string, { districts: string[]; locations: string[]; priceList: string }>
+    Record<string, { districts: string[]; locations: string[]; priceList: string; allowSubAgent: boolean }>
   >({});
 
   useEffect(() => {
@@ -101,13 +103,14 @@ export default function UserManagementPage() {
 
     const initialInputs: Record<
       string,
-      { districts: string[]; locations: string[]; priceList: string }
+      { districts: string[]; locations: string[]; priceList: string; allowSubAgent: boolean }
     > = {};
     fetchedUsers.forEach((u) => {
       initialInputs[u.id] = {
         districts: u.assigned_districts || [],
         locations: u.assigned_from_locations || [],
         priceList: u.assigned_price_list || "price_list_1",
+        allowSubAgent: Boolean(u.allow_sub_agent_special),
       };
     });
     setUserInputs(initialInputs);
@@ -159,6 +162,7 @@ export default function UserManagementPage() {
           assigned_districts: newAssignedDistricts,
           assigned_from_locations: newAssignedLocations,
           assigned_price_list: newAssignedPriceList,
+          allow_sub_agent_special: newAllowSubAgentSpecial,
         },
       });
 
@@ -168,16 +172,21 @@ export default function UserManagementPage() {
         return;
       }
 
-      // Ensure assigned_price_list is saved in profiles even if edge function doesn't handle it directly
       if (data?.user?.id) {
         await supabase
           .from("profiles")
-          .update({ assigned_price_list: newAssignedPriceList })
+          .update({
+            assigned_price_list: newAssignedPriceList,
+            allow_sub_agent_special: newAllowSubAgentSpecial,
+          })
           .eq("id", data.user.id);
       } else {
         await supabase
           .from("profiles")
-          .update({ assigned_price_list: newAssignedPriceList })
+          .update({
+            assigned_price_list: newAssignedPriceList,
+            allow_sub_agent_special: newAllowSubAgentSpecial,
+          })
           .eq("email", email);
       }
 
@@ -188,6 +197,7 @@ export default function UserManagementPage() {
       setNewRole("user");
       setNewStatus("Active");
       setNewAssignedPriceList("price_list_1");
+      setNewAllowSubAgentSpecial(false);
       setNewAssignedDistricts([]);
       setNewAssignedLocations([]);
       setShowAddUser(false);
@@ -252,10 +262,12 @@ export default function UserManagementPage() {
       districts: [],
       locations: [],
       priceList: "price_list_1",
+      allowSubAgent: false,
     };
     const assigned_districts = currentInput.districts;
     const assigned_from_locations = currentInput.locations;
     const assigned_price_list = currentInput.priceList;
+    const allow_sub_agent_special = currentInput.allowSubAgent;
 
     const { error } = await supabase
       .from("profiles")
@@ -263,6 +275,7 @@ export default function UserManagementPage() {
         assigned_districts,
         assigned_from_locations,
         assigned_price_list,
+        allow_sub_agent_special,
         updated_at: new Date().toISOString(),
       })
       .eq("id", userId);
@@ -278,11 +291,12 @@ export default function UserManagementPage() {
                 assigned_districts,
                 assigned_from_locations,
                 assigned_price_list,
+                allow_sub_agent_special,
               }
             : u
         )
       );
-      setSuccess("User assignments & price list updated successfully.");
+      setSuccess("User assignments updated successfully.");
     }
     setSavingId(null);
   }
@@ -330,7 +344,7 @@ export default function UserManagementPage() {
         <div>
           <h1 style={styles.title}>User Management</h1>
           <p style={styles.subtitle}>
-            Create users, manage roles, and assign Price Lists, districts & Depots
+            Create users, manage roles, Sub-Agent Special & assignments
           </p>
         </div>
         <button
@@ -353,7 +367,7 @@ export default function UserManagementPage() {
           <div>
             <div style={styles.addUserTitle}>➕ Add User</div>
             <div style={styles.addUserSubtitle}>
-              Create new users with Price List, district & Depot restrictions.
+              Create new users with Sub-Agent Special, district & Depot restrictions.
             </div>
           </div>
           <button
@@ -435,6 +449,20 @@ export default function UserManagementPage() {
                 <option value="price_list_1">Price List 1</option>
                 <option value="price_list_2">Price List 2</option>
               </select>
+            </div>
+
+            <div style={{ ...styles.formGroup, gridColumn: "1 / -1", display: "flex", alignItems: "center", gap: 8, padding: "8px 0" }}>
+              <input
+                type="checkbox"
+                id="newSubAgent"
+                checked={newAllowSubAgentSpecial}
+                onChange={(e) => setNewAllowSubAgentSpecial(e.target.checked)}
+                style={{ width: 18, height: 18, accentColor: "#2563eb", cursor: "pointer" }}
+                disabled={creatingUser}
+              />
+              <label htmlFor="newSubAgent" style={{ fontSize: 13, fontWeight: 700, color: "#1e293b", cursor: "pointer" }}>
+                Allow Sub-Agent Special Option
+              </label>
             </div>
 
             {/* ASSIGNED DISTRICTS CHECKBOX LIST */}
@@ -525,6 +553,7 @@ export default function UserManagementPage() {
               districts: [],
               locations: [],
               priceList: "price_list_1",
+              allowSubAgent: false,
             };
 
             return (
@@ -596,6 +625,28 @@ export default function UserManagementPage() {
                       <option value="price_list_1">Price List 1</option>
                       <option value="price_list_2">Price List 2</option>
                     </select>
+                  </div>
+
+                  <div style={{ marginBottom: 8, display: "flex", alignItems: "center", gap: 6 }}>
+                    <input
+                      type="checkbox"
+                      id={`sub_${user.id}`}
+                      checked={currentInput.allowSubAgent}
+                      disabled={isSaving}
+                      onChange={(e) =>
+                        setUserInputs({
+                          ...userInputs,
+                          [user.id]: {
+                            ...currentInput,
+                            allowSubAgent: e.target.checked,
+                          },
+                        })
+                      }
+                      style={{ width: 15, height: 15, accentColor: "#2563eb", cursor: "pointer" }}
+                    />
+                    <label htmlFor={`sub_${user.id}`} style={{ fontSize: 11.5, fontWeight: 700, color: "#1e293b", cursor: "pointer" }}>
+                      Allow Sub-Agent Special
+                    </label>
                   </div>
 
                   <label style={styles.label}>Assigned Districts</label>
