@@ -57,7 +57,8 @@ export default function SideMenu({
     assignedPriceList === "price_list_2" ? "price-list-2" : "price-list";
 
   const isInsideApp = isRunningInsideApp();
-  const APK_DOWNLOAD_URL = "https://xazcbgiovvrtzrhymgsc.supabase.co/storage/v1/object/public/APK/Easy-DO.apk?download=Easy-DO.apk";
+  const APK_DOWNLOAD_URL =
+    "https://xazcbgiovvrtzrhymgsc.supabase.co/storage/v1/object/public/APK/Easy-DO.apk?download=Easy-DO.apk";
 
   return (
     <>
@@ -159,21 +160,30 @@ export default function SideMenu({
               />
             </>
           )}
+
+          {isAdminOrSuper && (
+            <MenuItem
+              icon="📢"
+              label="Send Notification"
+              active={currentPage === "send-notification"}
+              onClick={() => navigate("send-notification")}
+            />
+          )}
         </div>
 
-       {/* DOWNLOAD APP BUTTON (ONLY SHOWN IN WEB BROWSER, HIDDEN INSIDE APK) */}
-{!isInsideApp && (
-  <div style={{ padding: "0 70px" }}>
-    <a
-      href={APK_DOWNLOAD_URL}
-      download="Easy-DO.apk"
-      style={styles.downloadAppBtn}
-    >
-      <span>📲</span>
-      <span>Download App</span>
-    </a>
-  </div>
-)}
+        {/* DOWNLOAD APP BUTTON (HIDDEN INSIDE APK AND HIDDEN FOR SUPER ADMIN) */}
+        {!isInsideApp && role !== "super_admin" && (
+          <div style={{ padding: "0 70px" }}>
+            <a
+              href={APK_DOWNLOAD_URL}
+              download="Easy-DO.apk"
+              style={styles.downloadAppBtn}
+            >
+              <span>📲</span>
+              <span>Download App</span>
+            </a>
+          </div>
+        )}
 
         {/* USER INFO */}
         <div style={styles.userBox}>
@@ -188,8 +198,6 @@ export default function SideMenu({
               : "USER"}
           </div>
         </div>
-
-        
 
         {/* FOOTER */}
         <div style={styles.footer}>

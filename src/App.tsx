@@ -6,6 +6,7 @@ import {
   Navigate,
 } from "react-router-dom";
 import { App as CapApp } from "@capacitor/app";
+import { supabase } from "./lib/supabase";
 
 import SideMenu from "./components/common/SideMenu";
 
@@ -21,6 +22,7 @@ import VisitStatusPage from "./pages/admin/VisitStatusPage";
 import LoginPage from "./pages/auth/LoginPage";
 import ProtectedRoute from "./components/auth/ProtectedRoute";
 import UserManagementPage from "./pages/admin/UserManagementPage";
+import SendNotificationPage from "./pages/admin/SendNotificationPage";
 
 import {
   useAuth,
@@ -77,13 +79,16 @@ function canAccessPage(
     return false;
   }
 
-  // user-management ebong visit-status shudhu super_admin access korte parbe
   if (page === "user-management" || page === "visit-status") {
     return role === "super_admin";
   }
 
   if (page === "easy-do" || page === "easy-do-format-1") {
     return true;
+  }
+
+  if (page === "send-notification") {
+    return role === "super_admin" || role === "admin";
   }
 
   if (
@@ -110,11 +115,148 @@ function canAccessPage(
 
 function MainApp() {
 
-  const { role } = useAuth();
+  const { user, role } = useAuth();
   const [menuOpen, setMenuOpen] = useState(false);
-
-  
   const [currentPage, setCurrentPage] = useState("easy-do-format-1");
+
+  // NOTIFICATION STATES
+  const [notifications, setNotifications] = useState<any[]>([]);
+  const [showNotifPopup, setShowNotifPopup] = useState(false);
+
+  // REPLY STATES
+  const [replyOpenId, setReplyOpenId] = useState<number | null>(null);
+  const [replyTextMap, setReplyTextMap] = useState<Record<number, string>>({});
+  const [replySendingId, setReplySendingId] = useState<number | null>(null);
+
+  // FETCH NOTIFICATIONS & REALTIME
+  useEffect(() => {
+    if (!user?.id) return;
+
+    async function fetchNotifications() {
+      const { data, error } = await supabase
+        .from("notifications")
+        .select("*")
+        .or(`user_id.eq.${user?.id},user_id.is.null`)
+        .order("created_at", { ascending: false });
+      
+      if (!error && data) {
+        setNotifications(data);
+      }
+    }
+
+    fetchNotifications();
+
+    const channel = supabase
+      .channel("public:notifications")
+      // 1. Notun notification ashle sathe sathe add hobe
+      .on(
+        "postgres_changes",
+        { event: "INSERT", schema: "public", table: "notifications" },
+        (payload) => {
+          const newNotif = payload.new as any;
+          if (!newNotif.user_id || newNotif.user_id === user?.id) {
+            setNotifications((prev) => [newNotif, ...prev]);
+          }
+        }
+      )
+      // 2. Admin notification edit korle user-er okhane sathe sathe update hobe
+      .on(
+        "postgres_changes",
+        { event: "UPDATE", schema: "public", table: "notifications" },
+        (payload) => {
+          const updated = payload.new as any;
+          setNotifications((prev) =>
+            prev.map((n) => (n.id === updated.id ? { ...n, ...updated } : n))
+          );
+        }
+      )
+      // 3. Admin notification delete korle kono reload charai user-er list theke muche jabe
+      .on(
+        "postgres_changes",
+        { event: "DELETE", schema: "public", table: "notifications" },
+        (payload) => {
+          const deletedId = (payload.old as any)?.id;
+          if (deletedId) {
+            setNotifications((prev) => prev.filter((n) => n.id !== deletedId));
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [user?.id]);
+
+  const unreadCount = notifications.filter((n) => !n.is_read).length;
+
+  async function markAsRead(id: number) {
+    const { error } = await supabase
+      .from("notifications")
+      .update({ is_read: true })
+      .eq("id", id);
+
+    if (!error) {
+      setNotifications((prev) =>
+        prev.map((n) => (n.id === id ? { ...n, is_read: true } : n))
+      );
+    }
+  }
+
+  async function handleReplyToAdmin(notif: any) {
+    const text = (replyTextMap[notif.id] || "").trim();
+    if (!text) return alert("Please write a reply first.");
+    if (!user?.id) return;
+
+    setReplySendingId(notif.id);
+    try {
+  
+
+      // 1. Find all admins & super_admins so they get the notification in their bell
+      const { data: admins } = await supabase
+        .from("profiles")
+        .select("id")
+        .in("role", ["admin", "super_admin"]);
+
+      let targetAdminIds: string[] = [];
+      if (admins && admins.length > 0) {
+        targetAdminIds = admins.map((a: any) => a.id);
+      } else if (notif.sender_id) {
+        targetAdminIds = [notif.sender_id];
+      }
+
+      if (targetAdminIds.length === 0) {
+        alert("Could not find admin to send reply.");
+        return;
+      }
+
+      const payloads = targetAdminIds.map((adminId) => ({
+        user_id: adminId,
+        sender_id: user.id,
+        title: `↩ Reply to: ${notif.title || "Notice"}`,
+        message: text,
+        is_read: false,
+        is_reply: true,
+        reply_to_id: notif.id,
+      }));
+
+      const { error } = await supabase.from("notifications").insert(payloads);
+      if (error) throw error;
+
+      // Mark original notification as read as well
+      if (!notif.is_read) {
+        await markAsRead(notif.id);
+      }
+
+      alert("Reply sent to Admin!");
+      setReplyTextMap((prev) => ({ ...prev, [notif.id]: "" }));
+      setReplyOpenId(null);
+    } catch (err: any) {
+      alert(`Reply failed: ${err.message}`);
+    } finally {
+      setReplySendingId(null);
+    }
+  }
 
   // ANDROID CAPACITOR PHYSICAL BACK BUTTON LISTENER
   useEffect(() => {
@@ -194,6 +336,12 @@ function MainApp() {
         }
         return <UserManagementPage />;
 
+      case "send-notification":
+        if (role !== "super_admin" && role !== "admin") {
+          return <EasyDOFormat1 />;
+        }
+        return <SendNotificationPage />;
+
       default:
         return <EasyDOFormat1 />;
     }
@@ -230,10 +378,177 @@ function MainApp() {
           </h2>
         </div>
 
+        {/* RIGHT SIDE: MODERN NOTIFICATION ICON */}
         <div style={styles.topRight}>
-          {(currentPage === "easy-do" || currentPage === "easy-do-format-1") && (
-            <span style={styles.statusDot} />
-          )}
+          <div style={{ position: "relative" }}>
+            <button
+              onClick={() => setShowNotifPopup(!showNotifPopup)}
+              style={{
+                ...styles.notifButton,
+                background: showNotifPopup
+                  ? "linear-gradient(135deg, #2563eb, #1d4ed8)"
+                  : unreadCount > 0
+                  ? "#eff6ff"
+                  : "#f8fafc",
+                color: showNotifPopup ? "#ffffff" : unreadCount > 0 ? "#2563eb" : "#334155",
+                borderColor: showNotifPopup ? "#2563eb" : unreadCount > 0 ? "#bfdbfe" : "#e2e8f0",
+              }}
+              aria-label="Notifications"
+            >
+              {/* MODERN SVG BELL ICON */}
+              <svg
+                width="19"
+                height="19"
+                viewBox="0 0 24 24"
+                fill={unreadCount > 0 && !showNotifPopup ? "rgba(37,99,235,0.15)" : "none"}
+                stroke="currentColor"
+                strokeWidth="2.2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"></path>
+                <path d="M13.73 21a2 2 0 0 1-3.46 0"></path>
+              </svg>
+
+              {unreadCount > 0 && (
+                <span style={styles.badge}>
+                  {unreadCount > 99 ? "99+" : unreadCount}
+                </span>
+              )}
+            </button>
+
+            {/* NOTIFICATION DROPDOWN POPUP */}
+            {showNotifPopup && (
+              <div style={styles.popupDropdown}>
+                <div style={styles.popupHeader}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                    <span>Notifications</span>
+                    {unreadCount > 0 && (
+                      <span style={{ background: "#dbeafe", color: "#1d4ed8", fontSize: 10, padding: "2px 7px", borderRadius: 12, fontWeight: 800 }}>
+                        {unreadCount} New
+                      </span>
+                    )}
+                  </div>
+                  <button
+                    onClick={() => setShowNotifPopup(false)}
+                    style={{ border: "none", background: "#f1f5f9", borderRadius: "50%", width: 24, height: 24, cursor: "pointer", fontWeight: 800, color: "#475569", fontSize: 11 }}
+                  >
+                    ✕
+                  </button>
+                </div>
+
+                <div style={styles.popupBody}>
+                  {notifications.length === 0 ? (
+                    <div style={{ padding: 28, textAlign: "center", color: "#64748b", fontSize: 12 }}>
+                      🔕 No notifications yet.
+                    </div>
+                  ) : (
+                    notifications.map((n) => {
+                      const isReplying = replyOpenId === n.id;
+                      const senderText = n.sender_name 
+          ? n.sender_name.replace(/\s*\(.*?\)/g, "").trim() 
+          : (n.is_reply ? "User" : "Admin");
+
+                      return (
+                        <div
+                          key={n.id}
+                          style={{
+                            ...styles.notifItem,
+                            background: n.is_read ? "#ffffff" : "#eff6ff",
+                            borderLeft: n.is_read
+                              ? "1px solid #e2e8f0"
+                              : n.is_reply
+                              ? "4px solid #f59e0b"
+                              : "4px solid #2563eb",
+                          }}
+                        >
+                          {/* TITLE */}
+                          {n.title && (
+                            <div style={{ fontSize: 11.5, fontWeight: 800, color: n.is_reply ? "#b45309" : "#1d4ed8", marginBottom: 3 }}>
+                              {n.title}
+                            </div>
+                          )}
+
+                          {/* MESSAGE */}
+                          <div style={{ fontSize: 12.5, fontWeight: n.is_read ? 500 : 750, color: "#0f172a", lineHeight: 1.4, marginBottom: 6, whiteSpace: "pre-wrap" }}>
+                            {n.message}
+                          </div>
+
+                          {/* SENDER & TIME META */}
+                          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+                            <span style={{ fontSize: 10, fontWeight: 700, color: "#475569", background: "#f1f5f9", padding: "2px 6px", borderRadius: 4 }}>
+                              From: {senderText}
+                            </span>
+                            <span style={{ fontSize: 9.5, color: "#94a3b8", fontWeight: 600 }}>
+                              {new Date(n.created_at).toLocaleString("en-BD", {
+                                month: "short",
+                                day: "numeric",
+                                hour: "2-digit",
+                                minute: "2-digit",
+                              })}
+                            </span>
+                          </div>
+
+                          {/* ACTION BUTTONS: REPLY & MARK READ */}
+                          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 6, borderTop: "1px dashed #e2e8f0", paddingTop: 6 }}>
+                            {!n.is_reply ? (
+                              <button
+                                type="button"
+                                onClick={() => setReplyOpenId(isReplying ? null : n.id)}
+                                style={styles.replyToggleBtn}
+                              >
+                                {isReplying ? "✕ Cancel" : "↩ Reply"}
+                              </button>
+                            ) : (
+                              <span style={{ fontSize: 9.5, color: "#d97706", fontWeight: 700 }}>
+                                💬 User Reply
+                              </span>
+                            )}
+
+                            {!n.is_read && (
+                              <button
+                                type="button"
+                                onClick={() => markAsRead(n.id)}
+                                style={styles.markReadBtn}
+                              >
+                                ✓ Mark Read
+                              </button>
+                            )}
+                          </div>
+
+                          {/* INLINE REPLY INPUT BOX */}
+                          {isReplying && (
+                            <div style={{ marginTop: 8, background: "#f8fafc", padding: 6, borderRadius: 6, border: "1px solid #cbd5e1" }}>
+                              <input
+                                type="text"
+                                value={replyTextMap[n.id] || ""}
+                                onChange={(e) =>
+                                  setReplyTextMap((prev) => ({
+                                    ...prev,
+                                    [n.id]: e.target.value,
+                                  }))
+                                }
+                                placeholder="Write a short reply..."
+                                style={styles.replyInput}
+                              />
+                              <button
+                                type="button"
+                                disabled={replySendingId === n.id}
+                                onClick={() => handleReplyToAdmin(n)}
+                                style={styles.replySendBtn}
+                              >
+                                {replySendingId === n.id ? "Sending..." : "➤ Reply to Admin"}
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
         </div>
 
       </header>
@@ -320,12 +635,121 @@ const styles: Record<string, React.CSSProperties> = {
     alignItems: "center",
   },
 
-  statusDot: {
-    width: 9,
-    height: 9,
-    background: "#10b981",
-    borderRadius: "50%",
-    boxShadow: "0 0 0 2px #d1fae5",
+  notifButton: {
+    border: "1px solid #e2e8f0",
+    width: 40,
+    height: 40,
+    borderRadius: 12,
+    cursor: "pointer",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    position: "relative",
+    transition: "all 0.2s ease",
+    boxShadow: "0 2px 6px rgba(15, 23, 42, 0.05)",
+  },
+
+  badge: {
+    position: "absolute",
+    top: -5,
+    right: -5,
+    background: "linear-gradient(135deg, #ef4444, #dc2626)",
+    color: "#ffffff",
+    borderRadius: 20,
+    padding: "2px 5.5px",
+    fontSize: 9.5,
+    fontWeight: 800,
+    border: "2px solid #ffffff",
+    boxShadow: "0 2px 4px rgba(220, 38, 38, 0.4)",
+  },
+
+  popupDropdown: {
+    position: "absolute",
+    right: 0,
+    top: 48,
+    width: 315,
+    maxHeight: 420,
+    background: "#ffffff",
+    border: "1px solid #cbd5e1",
+    borderRadius: 14,
+    boxShadow: "0 14px 30px -5px rgba(15, 23, 42, 0.16), 0 8px 12px -6px rgba(15, 23, 42, 0.08)",
+    zIndex: 1000,
+    display: "flex",
+    flexDirection: "column",
+    overflow: "hidden",
+  },
+
+  popupHeader: {
+    padding: "12px 14px",
+    background: "#f8fafc",
+    borderBottom: "1px solid #e2e8f0",
+    fontWeight: 800,
+    fontSize: 13.5,
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "center",
+    color: "#0f172a",
+  },
+
+  popupBody: {
+    overflowY: "auto",
+    maxHeight: 365,
+    padding: 10,
+  },
+
+  notifItem: {
+    padding: 10,
+    borderRadius: 10,
+    marginBottom: 8,
+    border: "1px solid #e2e8f0",
+    textAlign: "left",
+  },
+
+  markReadBtn: {
+    border: "none",
+    background: "#2563eb",
+    color: "#ffffff",
+    fontSize: 10,
+    fontWeight: 700,
+    padding: "4px 9px",
+    borderRadius: 6,
+    cursor: "pointer",
+  },
+
+  replyToggleBtn: {
+    border: "1px solid #cbd5e1",
+    background: "#ffffff",
+    color: "#334155",
+    fontSize: 10,
+    fontWeight: 700,
+    padding: "3px 8px",
+    borderRadius: 6,
+    cursor: "pointer",
+  },
+
+  replyInput: {
+    width: "100%",
+    boxSizing: "border-box",
+    padding: "6px 8px",
+    fontSize: 11.5,
+    borderRadius: 5,
+    border: "1px solid #cbd5e1",
+    marginBottom: 6,
+    outline: "none",
+    background: "#ffffff",
+    color: "#0f172a",
+  },
+
+  replySendBtn: {
+    width: "100%",
+    border: "none",
+    background: "linear-gradient(135deg, #2563eb, #1d4ed8)",
+    color: "#ffffff",
+    fontSize: 11,
+    fontWeight: 800,
+    padding: "6px 10px",
+    borderRadius: 5,
+    cursor: "pointer",
   },
 
   content: {
