@@ -182,7 +182,9 @@ export default function EasyDOFormat1() {
   }, [user?.id]);
 
   useEffect(() => {
+    let isResetting = false;
     function handleBeforeUnload(event: BeforeUnloadEvent) {
+      if (isResetting) return; // Jodi reset kora hoy, tahote reload warning dekhabe na
       localStorage.removeItem(EASY_DO_STORAGE_KEY);
       event.preventDefault();
       event.returnValue = "Do you want to refresh this page?";
@@ -570,11 +572,14 @@ export default function EasyDOFormat1() {
         <div />
         <h1 style={{ margin: 0, fontSize: 18, fontWeight: 800, color: "#0f172a", textAlign: "center" }}>Create D/O</h1>
         <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+         
+         
           {/* RESET BUTTON */}
           <button
             onClick={() => {
               const confirmReset = window.confirm("Do you want to reset all fields?");
               if (confirmReset) {
+                // Set flag or directly clear storage and reload without triggering beforeunload warning prompt if needed
                 localStorage.removeItem("easydo_format1_persistent_v11");
                 window.location.reload();
               }
