@@ -399,7 +399,7 @@ export default function UserManagementPage() {
         </div>
       )}
 
-      {/* STATS & USER SELECT DROPDOWN BAR */}
+      {/* STATS & USER SELECT DROPDOWN */}
       <div style={styles.topControlRow}>
         <div style={styles.statsCard}>
           <span style={{ fontSize: 13, fontWeight: 700, color: "#64748b" }}>Total Users:</span>
