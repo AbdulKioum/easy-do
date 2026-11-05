@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { supabase } from "../../lib/supabase";
 import { useAuth } from "../../context/AuthContext";
 
@@ -31,7 +31,12 @@ export default function UserManagementPage() {
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
 
-  // ADD USER FORM
+  // SEARCH & DROPDOWN FILTER STATES
+  const [showSearchBox, setShowSearchBox] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [selectedUserDropdown, setSelectedUserDropdown] = useState("All");
+
+  // ADD USER FORM STATES
   const [showAddUser, setShowAddUser] = useState(false);
   const [newFullName, setNewFullName] = useState("");
   const [newEmail, setNewEmail] = useState("");
@@ -44,10 +49,21 @@ export default function UserManagementPage() {
   const [newAssignedLocations, setNewAssignedLocations] = useState<string[]>([]);
   const [creatingUser, setCreatingUser] = useState(false);
 
-  // Editable fields per user state for assignments
-  const [userInputs, setUserInputs] = useState<
-    Record<string, { districts: string[]; locations: string[]; priceList: string; allowSubAgent: boolean }>
-  >({});
+  // EDIT MODAL STATES (Full Form Layout Like Add User)
+  const [editingUser, setEditingUser] = useState<Profile | null>(null);
+  const [editFullName, setEditFullName] = useState("");
+  const [editRole, setEditRole] = useState<UserRole>("user");
+  const [editStatus, setEditStatus] = useState("Active");
+  const [editPriceList, setEditPriceList] = useState("price_list_1");
+  const [editAllowSubAgent, setEditAllowSubAgent] = useState(false);
+  const [editDistricts, setEditDistricts] = useState<string[]>([]);
+  const [editLocations, setEditLocations] = useState<string[]>([]);
+  const [updatingUser, setUpdatingUser] = useState(false);
+
+  // PASSWORD RECOVERY STATES
+  const [resetModalUser, setResetModalUser] = useState<Profile | null>(null);
+  const [newManualPassword, setNewManualPassword] = useState("");
+  const [resettingPassword, setResettingPassword] = useState(false);
 
   useEffect(() => {
     if (currentRole === "super_admin") {
@@ -68,9 +84,7 @@ export default function UserManagementPage() {
         setAllDistricts(uniqueDistricts);
       }
 
-      const { data: transData } = await supabase
-        .from("transportation")
-        .select("from_location");
+      const { data: transData } = await supabase.from("transportation").select("from_location");
       if (transData) {
         const uniqueLocs = Array.from(
           new Set(transData.map((t) => t.from_location).filter(Boolean))
@@ -98,23 +112,7 @@ export default function UserManagementPage() {
       return;
     }
 
-    const fetchedUsers = (data || []) as Profile[];
-    setUsers(fetchedUsers);
-
-    const initialInputs: Record<
-      string,
-      { districts: string[]; locations: string[]; priceList: string; allowSubAgent: boolean }
-    > = {};
-    fetchedUsers.forEach((u) => {
-      initialInputs[u.id] = {
-        districts: u.assigned_districts || [],
-        locations: u.assigned_from_locations || [],
-        priceList: u.assigned_price_list || "price_list_1",
-        allowSubAgent: Boolean(u.allow_sub_agent_special),
-      };
-    });
-    setUserInputs(initialInputs);
-
+    setUsers((data || []) as Profile[]);
     setLoading(false);
   }
 
@@ -210,95 +208,96 @@ export default function UserManagementPage() {
     setCreatingUser(false);
   }
 
-  async function handleRoleChange(userId: string, selectedRole: UserRole) {
-    if (userId === currentProfile?.id) {
-      setError("You cannot change your own role.");
+  function openEditModal(user: Profile) {
+    setEditingUser(user);
+    setEditFullName(user.full_name || "");
+    setEditRole(user.role);
+    setEditStatus(user.status || "Active");
+    setEditPriceList(user.assigned_price_list || "price_list_1");
+    setEditAllowSubAgent(Boolean(user.allow_sub_agent_special));
+    setEditDistricts(user.assigned_districts || []);
+    setEditLocations(user.assigned_from_locations || []);
+  }
+
+  async function handleUpdateUser() {
+    if (!editingUser) return;
+    const fullName = editFullName.trim();
+    if (!fullName) {
+      alert("Full name cannot be empty.");
       return;
     }
 
-    setSavingId(userId);
-    const { error } = await supabase
-      .from("profiles")
-      .update({ role: selectedRole, updated_at: new Date().toISOString() })
-      .eq("id", userId);
-
-    if (error) {
-      setError(`Role update failed: ${error.message}`);
-    } else {
-      setUsers((prev) =>
-        prev.map((u) => (u.id === userId ? { ...u, role: selectedRole } : u))
-      );
-      setSuccess("User role updated successfully.");
-    }
-    setSavingId(null);
-  }
-
-  async function handleStatusChange(userId: string, selectedStatus: string) {
-    if (userId === currentProfile?.id) {
-      setError("You cannot change your own status.");
-      return;
-    }
-
-    setSavingId(userId);
-    const { error } = await supabase
-      .from("profiles")
-      .update({ status: selectedStatus, updated_at: new Date().toISOString() })
-      .eq("id", userId);
-
-    if (error) {
-      setError(`Status update failed: ${error.message}`);
-    } else {
-      setUsers((prev) =>
-        prev.map((u) => (u.id === userId ? { ...u, status: selectedStatus } : u))
-      );
-      setSuccess("User status updated successfully.");
-    }
-    setSavingId(null);
-  }
-
-  async function handleAssignmentsUpdate(userId: string) {
-    setSavingId(userId);
-    const currentInput = userInputs[userId] || {
-      districts: [],
-      locations: [],
-      priceList: "price_list_1",
-      allowSubAgent: false,
-    };
-    const assigned_districts = currentInput.districts;
-    const assigned_from_locations = currentInput.locations;
-    const assigned_price_list = currentInput.priceList;
-    const allow_sub_agent_special = currentInput.allowSubAgent;
-
+    setUpdatingUser(true);
     const { error } = await supabase
       .from("profiles")
       .update({
-        assigned_districts,
-        assigned_from_locations,
-        assigned_price_list,
-        allow_sub_agent_special,
+        full_name: fullName,
+        role: editRole,
+        status: editStatus,
+        assigned_price_list: editPriceList,
+        allow_sub_agent_special: editAllowSubAgent,
+        assigned_districts: editDistricts,
+        assigned_from_locations: editLocations,
         updated_at: new Date().toISOString(),
       })
-      .eq("id", userId);
+      .eq("id", editingUser.id);
 
     if (error) {
-      setError(`Assignment update failed: ${error.message}`);
+      alert(`Update failed: ${error.message}`);
     } else {
-      setUsers((prev) =>
-        prev.map((u) =>
-          u.id === userId
-            ? {
-                ...u,
-                assigned_districts,
-                assigned_from_locations,
-                assigned_price_list,
-                allow_sub_agent_special,
-              }
-            : u
-        )
-      );
-      setSuccess("User assignments updated successfully.");
+      setSuccess("User updated successfully.");
+      setEditingUser(null);
+      await loadUsers();
     }
-    setSavingId(null);
+    setUpdatingUser(false);
+  }
+
+  async function handleSendResetEmail(email: string | null) {
+    if (!email) {
+      alert("This user does not have a valid email address.");
+      return;
+    }
+
+    setResettingPassword(true);
+    const { error } = await supabase.auth.resetPasswordForEmail(email, {
+      redirectTo: window.location.origin,
+    });
+
+    if (error) {
+      alert(`Password reset email failed: ${error.message}`);
+    } else {
+      alert(`Password reset link successfully sent to ${email}`);
+    }
+    setResettingPassword(false);
+  }
+
+  async function handleAdminSetPassword() {
+    if (!resetModalUser || !newManualPassword) {
+      alert("Please enter a new password.");
+      return;
+    }
+    if (newManualPassword.length < 6) {
+      alert("Password must be at least 6 characters.");
+      return;
+    }
+
+    setResettingPassword(true);
+    try {
+      const { data, error } = await supabase.functions.invoke("update-user-password", {
+        body: { user_id: resetModalUser.id, new_password: newManualPassword },
+      });
+
+      if (error || !data?.success) {
+        alert(`Password update failed: ${error?.message || data?.error}`);
+      } else {
+        alert(`Password successfully updated for ${resetModalUser.full_name || resetModalUser.email}`);
+        setResetModalUser(null);
+        setNewManualPassword("");
+      }
+    } catch (err: any) {
+      alert(`Password update error: ${err.message}`);
+    }
+    setResettingPassword(false);
   }
 
   async function handleDeleteUser(userId: string, userName: string) {
@@ -326,54 +325,121 @@ export default function UserManagementPage() {
     setSavingId(null);
   }
 
+  const filteredUsers = useMemo(() => {
+    return users.filter((u) => {
+      const name = (u.full_name || "").toLowerCase();
+      const email = (u.email || "").toLowerCase();
+      const query = searchQuery.toLowerCase().trim();
+      const matchesSearch = name.includes(query) || email.includes(query);
+
+      const matchesDropdown =
+        selectedUserDropdown === "All" || u.id === selectedUserDropdown;
+
+      return matchesSearch && matchesDropdown;
+    });
+  }, [users, searchQuery, selectedUserDropdown]);
+
   if (currentRole !== "super_admin") {
     return (
       <div style={styles.accessDenied}>
         <div style={styles.accessIcon}>🔒</div>
         <div style={styles.accessTitle}>Access Denied</div>
-        <div style={styles.accessText}>
-          Only Super Admin can access User Management.
-        </div>
+        <div style={styles.accessText}>Only Super Admin can access User Management.</div>
       </div>
     );
   }
 
   return (
     <div style={styles.page}>
+      <style>{MODERN_CSS}</style>
+
+      {/* HEADER WITH CENTERED TITLE & SEARCH ICON */}
       <div style={styles.header}>
-        <div>
+        <div />
+        <div style={{ textAlign: "center" }}>
           <h1 style={styles.title}>User Management</h1>
-          <p style={styles.subtitle}>
-            Create users, manage roles, Sub-Agent Special & assignments
-          </p>
+          <p style={styles.subtitle}>Manage system users and permissions</p>
         </div>
         <button
-          onClick={() => {
-            loadUsers();
-            loadMetadata();
+          onClick={() => setShowSearchBox(!showSearchBox)}
+          style={{
+            ...styles.iconBtn,
+            background: showSearchBox ? "#2563eb" : "#ffffff",
+            color: showSearchBox ? "#ffffff" : "#1e293b",
           }}
-          style={styles.refreshButton}
-          disabled={loading}
+          title="Toggle Search"
         >
-          ↻ Refresh
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+            <circle cx="11" cy="11" r="8"></circle>
+            <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+          </svg>
         </button>
       </div>
 
       {error && <div style={styles.error}>{error}</div>}
       {success && <div style={styles.success}>{success}</div>}
 
-      <div style={styles.addUserBox}>
+      {/* EXPANDABLE SEARCH BAR */}
+      {showSearchBox && (
+        <div className="edo-search-bar" style={styles.searchBar}>
+          <span>🔍</span>
+          <input
+            type="text"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            placeholder="Search user by name or email..."
+            autoFocus
+            style={styles.searchInput}
+          />
+          {searchQuery && (
+            <button onClick={() => setSearchQuery("")} style={styles.clearSearchBtn}>
+              ✕
+            </button>
+          )}
+        </div>
+      )}
+
+      {/* STATS & USER SELECT DROPDOWN BAR */}
+      <div style={styles.topControlRow}>
+        <div style={styles.statsCard}>
+          <span style={{ fontSize: 13, fontWeight: 700, color: "#64748b" }}>Total Users:</span>
+          <span style={{ fontSize: 15, fontWeight: 800, color: "#2563eb" }}>{users.length}</span>
+        </div>
+
+        <div style={{ flex: "1 1 240px", minWidth: 200 }}>
+          <select
+            value={selectedUserDropdown}
+            onChange={(e) => setSelectedUserDropdown(e.target.value)}
+            style={styles.input}
+          >
+            <option value="All">📂 All Users ({users.length})</option>
+            {users.map((u) => (
+              <option key={u.id} value={u.id}>
+                👤 {u.full_name || u.email} ({u.role})
+              </option>
+            ))}
+          </select>
+        </div>
+
+        <button
+          onClick={() => {
+            loadUsers();
+            loadMetadata();
+          }}
+          style={styles.refreshBtn}
+        >
+          ↻ Refresh
+        </button>
+      </div>
+
+      {/* ADD USER SECTION */}
+      <div style={styles.addUserCard}>
         <div style={styles.addUserHeader}>
           <div>
-            <div style={styles.addUserTitle}>➕ Add User</div>
-            <div style={styles.addUserSubtitle}>
-              Create new users with Sub-Agent Special, district & Depot restrictions.
-            </div>
+            <div style={{ fontSize: 16, fontWeight: 800, color: "#0f172a" }}>➕ Add New User</div>
+            <div style={{ fontSize: 11.5, color: "#64748b", marginTop: 2 }}>Create account with role and district access.</div>
           </div>
-          <button
-            onClick={() => setShowAddUser(!showAddUser)}
-            style={styles.addUserToggle}
-          >
+          <button onClick={() => setShowAddUser(!showAddUser)} style={styles.addUserToggleBtn}>
             {showAddUser ? "✕ Close" : "＋ Add User"}
           </button>
         </div>
@@ -408,7 +474,7 @@ export default function UserManagementPage() {
                 type="password"
                 value={newPassword}
                 onChange={(e) => setNewPassword(e.target.value)}
-                placeholder="Min 6 chars"
+                placeholder="Min 6 characters"
                 style={styles.input}
                 disabled={creatingUser}
               />
@@ -439,7 +505,7 @@ export default function UserManagementPage() {
               </select>
             </div>
             <div style={styles.formGroup}>
-              <label style={styles.formLabel}>Assigned Price List</label>
+              <label style={styles.formLabel}>Price List</label>
               <select
                 value={newAssignedPriceList}
                 onChange={(e) => setNewAssignedPriceList(e.target.value)}
@@ -451,7 +517,7 @@ export default function UserManagementPage() {
               </select>
             </div>
 
-            <div style={{ ...styles.formGroup, gridColumn: "1 / -1", display: "flex", alignItems: "center", gap: 8, padding: "8px 0" }}>
+            <div style={{ gridColumn: "1 / -1", display: "flex", alignItems: "center", gap: 8, padding: "4px 0" }}>
               <input
                 type="checkbox"
                 id="newSubAgent"
@@ -465,28 +531,17 @@ export default function UserManagementPage() {
               </label>
             </div>
 
-            {/* ASSIGNED DISTRICTS CHECKBOX LIST */}
-            <div style={{ ...styles.formGroup, gridColumn: "1 / -1" }}>
+            <div style={{ gridColumn: "1 / -1" }}>
               <label style={styles.formLabel}>Assigned Districts</label>
               <div style={styles.checkboxContainer}>
                 {allDistricts.map((dist) => {
                   const checked = newAssignedDistricts.includes(dist);
                   return (
-                    <label
-                      key={dist}
-                      style={{
-                        ...styles.checkboxLabel,
-                        background: checked ? "#eff6ff" : "#fff",
-                      }}
-                    >
+                    <label key={dist} style={{ ...styles.checkboxLabel, background: checked ? "#eff6ff" : "#fff" }}>
                       <input
                         type="checkbox"
                         checked={checked}
-                        onChange={() =>
-                          setNewAssignedDistricts(
-                            handleMultiSelectToggle(newAssignedDistricts, dist)
-                          )
-                        }
+                        onChange={() => setNewAssignedDistricts(handleMultiSelectToggle(newAssignedDistricts, dist))}
                         disabled={creatingUser}
                       />
                       <span>{dist}</span>
@@ -496,30 +551,17 @@ export default function UserManagementPage() {
               </div>
             </div>
 
-            {/* ASSIGNED FROM LOCATIONS CHECKBOX LIST */}
-            <div style={{ ...styles.formGroup, gridColumn: "1 / -1" }}>
-              <label style={styles.formLabel}>
-                Assigned Transport From Locations (Mills / Depots)
-              </label>
+            <div style={{ gridColumn: "1 / -1" }}>
+              <label style={styles.formLabel}>Assigned Transport From Locations (Mills / Depots)</label>
               <div style={styles.checkboxContainer}>
                 {allLocations.map((loc) => {
                   const checked = newAssignedLocations.includes(loc);
                   return (
-                    <label
-                      key={loc}
-                      style={{
-                        ...styles.checkboxLabel,
-                        background: checked ? "#eff6ff" : "#fff",
-                      }}
-                    >
+                    <label key={loc} style={{ ...styles.checkboxLabel, background: checked ? "#eff6ff" : "#fff" }}>
                       <input
                         type="checkbox"
                         checked={checked}
-                        onChange={() =>
-                          setNewAssignedLocations(
-                            handleMultiSelectToggle(newAssignedLocations, loc)
-                          )
-                        }
+                        onChange={() => setNewAssignedLocations(handleMultiSelectToggle(newAssignedLocations, loc))}
                         disabled={creatingUser}
                       />
                       <span>{loc}</span>
@@ -529,12 +571,8 @@ export default function UserManagementPage() {
               </div>
             </div>
 
-            <button
-              onClick={handleCreateUser}
-              disabled={creatingUser}
-              style={styles.createButton}
-            >
-              {creatingUser ? "Creating..." : "Create User"}
+            <button onClick={handleCreateUser} disabled={creatingUser} style={styles.createButton}>
+              {creatingUser ? "Creating..." : "Create User Account"}
             </button>
           </div>
         )}
@@ -542,261 +580,304 @@ export default function UserManagementPage() {
 
       {loading ? (
         <div style={styles.loading}>Loading users...</div>
-      ) : users.length === 0 ? (
+      ) : filteredUsers.length === 0 ? (
         <div style={styles.empty}>No users found.</div>
       ) : (
         <div style={styles.userList}>
-          {users.map((user) => {
+          {filteredUsers.map((user) => {
             const isCurrentUser = user.id === currentProfile?.id;
             const isSaving = savingId === user.id;
-            const currentInput = userInputs[user.id] || {
-              districts: [],
-              locations: [],
-              priceList: "price_list_1",
-              allowSubAgent: false,
-            };
 
             return (
               <div key={user.id} style={styles.userCard}>
-                <div style={styles.userInfo}>
-                  <div style={styles.avatar}>
-                    {(user.full_name || user.email || "U")
-                      .charAt(0)
-                      .toUpperCase()}
-                  </div>
-                  <div style={styles.userDetails}>
-                    <div style={styles.userName}>
-                      {user.full_name || "No Name"}
+                <div style={{ width: "100%" }}>
+                  <div style={styles.userInfo}>
+                    <div style={styles.avatar}>
+                      {(user.full_name || user.email || "U").charAt(0).toUpperCase()}
                     </div>
-                    <div style={styles.email}>{user.email || "No Email"}</div>
-                    {isCurrentUser && <div style={styles.youBadge}>YOU</div>}
+                    <div style={styles.userDetails}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+                        <div style={styles.userName}>{user.full_name || "No Name"}</div>
+                        <span style={{ ...styles.badge, background: user.role === "super_admin" ? "#fef3c7" : user.role === "admin" ? "#e0f2fe" : "#f1f5f9", color: user.role === "super_admin" ? "#92400e" : user.role === "admin" ? "#0369a1" : "#475569" }}>
+                          {user.role}
+                        </span>
+                        <span style={{ ...styles.badge, background: user.status === "Inactive" ? "#fee2e2" : "#dcfce7", color: user.status === "Inactive" ? "#991b1b" : "#166534" }}>
+                          {user.status || "Active"}
+                        </span>
+                      </div>
+                      <div style={styles.email}>{user.email || "No Email"}</div>
+                      {isCurrentUser && <div style={styles.youBadge}>YOU</div>}
+                    </div>
+                  </div>
+
+                  {/* ASSIGNED INFO SHOWN CLEARLY ON TOP OF CARD */}
+                  <div style={styles.assignedInfoBox}>
+                    <div style={{ fontSize: 11.5, color: "#334155", marginBottom: 4 }}>
+                      <b>Price List:</b> {user.assigned_price_list || "price_list_1"} &nbsp;|&nbsp; 
+                      <b>Sub-Agent Special:</b>{" "}
+                      <span style={{ color: user.allow_sub_agent_special ? "#16a34a" : "#dc2626", fontWeight: 700 }}>
+                        {user.allow_sub_agent_special ? "Allowed" : "Not Allowed"}
+                      </span>
+                    </div>
+                    <div style={{ fontSize: 11.5, color: "#334155", marginBottom: 4 }}>
+                      <b>Districts:</b> {user.assigned_districts && user.assigned_districts.length > 0 ? user.assigned_districts.join(", ") : "None"}
+                    </div>
+                    <div style={{ fontSize: 11.5, color: "#334155" }}>
+                      <b>Depots/Mills:</b> {user.assigned_from_locations && user.assigned_from_locations.length > 0 ? user.assigned_from_locations.join(", ") : "None"}
+                    </div>
                   </div>
                 </div>
 
-                <div style={styles.controlGroup}>
-                  <label style={styles.label}>Role</label>
-                  <select
-                    value={user.role}
-                    disabled={isSaving || isCurrentUser}
-                    onChange={(e) =>
-                      handleRoleChange(user.id, e.target.value as UserRole)
-                    }
-                    style={styles.select}
+                <div style={styles.actionRow}>
+                  <button
+                    onClick={() => setResetModalUser(user)}
+                    style={styles.keyBtn}
+                    title="Password Reset / Recovery"
                   >
-                    <option value="user">User</option>
-                    <option value="admin">Admin</option>
-                    <option value="super_admin">Super Admin</option>
-                  </select>
-                </div>
-
-                <div style={styles.controlGroup}>
-                  <label style={styles.label}>Status</label>
-                  <select
-                    value={user.status || "Active"}
-                    disabled={isSaving || isCurrentUser}
-                    onChange={(e) =>
-                      handleStatusChange(user.id, e.target.value)
-                    }
-                    style={styles.select}
-                  >
-                    <option value="Active">Active</option>
-                    <option value="Inactive">Inactive</option>
-                  </select>
-                </div>
-
-                {/* EDITING ASSIGNMENTS */}
-                <div style={{ ...styles.controlGroup, flex: "1 1 320px" }}>
-                  <div style={{ marginBottom: 8 }}>
-                    <label style={styles.label}>Assigned Price List</label>
-                    <select
-                      value={currentInput.priceList}
-                      disabled={isSaving}
-                      onChange={(e) =>
-                        setUserInputs({
-                          ...userInputs,
-                          [user.id]: {
-                            ...currentInput,
-                            priceList: e.target.value,
-                          },
-                        })
-                      }
-                      style={styles.select}
-                    >
-                      <option value="price_list_1">Price List 1</option>
-                      <option value="price_list_2">Price List 2</option>
-                    </select>
-                  </div>
-
-                  <div style={{ marginBottom: 8, display: "flex", alignItems: "center", gap: 6 }}>
-                    <input
-                      type="checkbox"
-                      id={`sub_${user.id}`}
-                      checked={currentInput.allowSubAgent}
-                      disabled={isSaving}
-                      onChange={(e) =>
-                        setUserInputs({
-                          ...userInputs,
-                          [user.id]: {
-                            ...currentInput,
-                            allowSubAgent: e.target.checked,
-                          },
-                        })
-                      }
-                      style={{ width: 15, height: 15, accentColor: "#2563eb", cursor: "pointer" }}
-                    />
-                    <label htmlFor={`sub_${user.id}`} style={{ fontSize: 11.5, fontWeight: 700, color: "#1e293b", cursor: "pointer" }}>
-                      Allow Sub-Agent Special
-                    </label>
-                  </div>
-
-                  <label style={styles.label}>Assigned Districts</label>
-                  <div style={styles.miniCheckboxContainer}>
-                    {allDistricts.map((dist) => {
-                      const checked = currentInput.districts.includes(dist);
-                      return (
-                        <label
-                          key={dist}
-                          style={{
-                            ...styles.miniCheckboxLabel,
-                            background: checked ? "#dbeafe" : "#f8fafc",
-                          }}
-                        >
-                          <input
-                            type="checkbox"
-                            checked={checked}
-                            disabled={isSaving}
-                            onChange={() => {
-                              const updated = handleMultiSelectToggle(
-                                currentInput.districts,
-                                dist
-                              );
-                              setUserInputs({
-                                ...userInputs,
-                                [user.id]: {
-                                  ...currentInput,
-                                  districts: updated,
-                                },
-                              });
-                            }}
-                          />
-                          <span>{dist}</span>
-                        </label>
-                      );
-                    })}
-                  </div>
-
-                  <label style={{ ...styles.label, marginTop: 8 }}>
-                    Assigned From Locations
-                  </label>
-                  <div style={styles.miniCheckboxContainer}>
-                    {allLocations.map((loc) => {
-                      const checked = currentInput.locations.includes(loc);
-                      return (
-                        <label
-                          key={loc}
-                          style={{
-                            ...styles.miniCheckboxLabel,
-                            background: checked ? "#dbeafe" : "#f8fafc",
-                          }}
-                        >
-                          <input
-                            type="checkbox"
-                            checked={checked}
-                            disabled={isSaving}
-                            onChange={() => {
-                              const updated = handleMultiSelectToggle(
-                                currentInput.locations,
-                                loc
-                              );
-                              setUserInputs({
-                                ...userInputs,
-                                [user.id]: {
-                                  ...currentInput,
-                                  locations: updated,
-                                },
-                              });
-                            }}
-                          />
-                          <span>{loc}</span>
-                        </label>
-                      );
-                    })}
-                  </div>
+                    🔑 Password
+                  </button>
 
                   <button
-                    onClick={() => handleAssignmentsUpdate(user.id)}
-                    disabled={isSaving}
-                    style={styles.smallSaveBtn}
+                    onClick={() => openEditModal(user)}
+                    style={styles.editBtn}
+                    title="Full Edit Details"
                   >
-                    {isSaving ? "Saving..." : "Save Assignments"}
+                    ✏️ Edit
                   </button>
-                </div>
 
-                {!isCurrentUser && (
-                  <div style={styles.deleteGroup}>
-                    <label style={styles.label}>Action</label>
+                  {!isCurrentUser && (
                     <button
-                      onClick={() =>
-                        handleDeleteUser(
-                          user.id,
-                          user.full_name || user.email || "this user"
-                        )
-                      }
+                      onClick={() => handleDeleteUser(user.id, user.full_name || user.email || "this user")}
                       disabled={isSaving}
                       style={styles.deleteButton}
                       title="Delete User"
                     >
                       🗑️
                     </button>
-                  </div>
-                )}
+                  )}
+                </div>
               </div>
             );
           })}
+        </div>
+      )}
+
+      {/* FULL EDIT MODAL (Like Add User Form Layout) */}
+      {editingUser && (
+        <div style={styles.overlay}>
+          <div style={styles.modal}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
+              <h3 style={{ margin: 0, fontSize: 17, fontWeight: 800, color: "#0f172a" }}>Edit User Details</h3>
+              <button onClick={() => setEditingUser(null)} style={styles.modalCloseBtn}>✕</button>
+            </div>
+
+            <div style={{ display: "flex", flexDirection: "column", gap: 10, maxHeight: "75vh", overflowY: "auto", paddingRight: 4 }}>
+              <div>
+                <label style={styles.formLabel}>Full Name</label>
+                <input
+                  type="text"
+                  value={editFullName}
+                  onChange={(e) => setEditFullName(e.target.value)}
+                  style={styles.input}
+                />
+              </div>
+
+              <div style={styles.formGroup}>
+                <label style={styles.formLabel}>Role</label>
+                <select
+                  value={editRole}
+                  onChange={(e) => setEditRole(e.target.value as UserRole)}
+                  style={styles.input}
+                >
+                  <option value="user">User</option>
+                  <option value="admin">Admin</option>
+                  <option value="super_admin">Super Admin</option>
+                </select>
+              </div>
+
+              <div style={styles.formGroup}>
+                <label style={styles.formLabel}>Status</label>
+                <select
+                  value={editStatus}
+                  onChange={(e) => setEditStatus(e.target.value)}
+                  style={styles.input}
+                >
+                  <option value="Active">Active</option>
+                  <option value="Inactive">Inactive</option>
+                </select>
+              </div>
+
+              <div style={styles.formGroup}>
+                <label style={styles.formLabel}>Assigned Price List</label>
+                <select
+                  value={editPriceList}
+                  onChange={(e) => setEditPriceList(e.target.value)}
+                  style={styles.input}
+                >
+                  <option value="price_list_1">Price List 1</option>
+                  <option value="price_list_2">Price List 2</option>
+                </select>
+              </div>
+
+              <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 0" }}>
+                <input
+                  type="checkbox"
+                  id="editSubAgent"
+                  checked={editAllowSubAgent}
+                  onChange={(e) => setEditAllowSubAgent(e.target.checked)}
+                  style={{ width: 18, height: 18, accentColor: "#2563eb", cursor: "pointer" }}
+                />
+                <label htmlFor="editSubAgent" style={{ fontSize: 13, fontWeight: 700, color: "#1e293b", cursor: "pointer" }}>
+                  Allow Sub-Agent Special Option
+                </label>
+              </div>
+
+              <div>
+                <label style={styles.formLabel}>Assigned Districts</label>
+                <div style={styles.checkboxContainer}>
+                  {allDistricts.map((dist) => {
+                    const checked = editDistricts.includes(dist);
+                    return (
+                      <label key={dist} style={{ ...styles.checkboxLabel, background: checked ? "#eff6ff" : "#fff" }}>
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          onChange={() => setEditDistricts(handleMultiSelectToggle(editDistricts, dist))}
+                        />
+                        <span>{dist}</span>
+                      </label>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <div>
+                <label style={styles.formLabel}>Assigned From Locations (Mills / Depots)</label>
+                <div style={styles.checkboxContainer}>
+                  {allLocations.map((loc) => {
+                    const checked = editLocations.includes(loc);
+                    return (
+                      <label key={loc} style={{ ...styles.checkboxLabel, background: checked ? "#eff6ff" : "#fff" }}>
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          onChange={() => setEditLocations(handleMultiSelectToggle(editLocations, loc))}
+                        />
+                        <span>{loc}</span>
+                      </label>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+
+            <div style={{ display: "flex", gap: 8, marginTop: 16, justifyContent: "flex-end" }}>
+              <button onClick={() => setEditingUser(null)} style={styles.cancelModalBtn}>Cancel</button>
+              <button onClick={handleUpdateUser} disabled={updatingUser} style={styles.saveModalBtn}>
+                {updatingUser ? "Saving..." : "Save Changes"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* PASSWORD RECOVERY MODAL */}
+      {resetModalUser && (
+        <div style={styles.overlay}>
+          <div style={styles.modal}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+              <h3 style={{ margin: 0, fontSize: 16, fontWeight: 800 }}>Password Recovery</h3>
+              <button onClick={() => setResetModalUser(null)} style={styles.modalCloseBtn}>✕</button>
+            </div>
+            <p style={{ fontSize: 12, color: "#64748b", marginBottom: 14 }}>
+              User: <b>{resetModalUser.full_name || resetModalUser.email}</b>
+            </p>
+
+            <div style={{ marginBottom: 14, background: "#f8fafc", padding: 12, borderRadius: 10, border: "1px solid #e2e8f0" }}>
+              <div style={{ fontSize: 12, fontWeight: 700, color: "#1e293b", marginBottom: 4 }}>Option 1: Send Reset Email Link</div>
+              <button
+                onClick={() => handleSendResetEmail(resetModalUser.email)}
+                disabled={resettingPassword}
+                style={styles.resetEmailBtn}
+              >
+                📤 Send Password Reset Email
+              </button>
+            </div>
+
+            <div style={{ background: "#f8fafc", padding: 12, borderRadius: 10, border: "1px solid #e2e8f0" }}>
+              <div style={{ fontSize: 12, fontWeight: 700, color: "#1e293b", marginBottom: 4 }}>Option 2: Set New Password Directly</div>
+              <input
+                type="password"
+                value={newManualPassword}
+                onChange={(e) => setNewManualPassword(e.target.value)}
+                placeholder="Enter new password (min 6 chars)"
+                style={{ ...styles.input, marginBottom: 8 }}
+              />
+              <button
+                onClick={handleAdminSetPassword}
+                disabled={resettingPassword || !newManualPassword}
+                style={styles.saveModalBtn}
+              >
+                {resettingPassword ? "Updating..." : "Set New Password"}
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>
   );
 }
 
+const MODERN_CSS = `
+  @keyframes fadeIn { from { opacity: 0; transform: translateY(-6px); } to { opacity: 1; transform: translateY(0); } }
+`;
+
 const styles: Record<string, React.CSSProperties> = {
-  page: { width: "100%", maxWidth: 1250, margin: "0 auto", padding: 16, boxSizing: "border-box" },
-  header: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 },
-  title: { margin: 0, fontSize: 22, fontWeight: 800, color: "#111827" },
-  subtitle: { margin: "4px 0 0", fontSize: 12, color: "#6b7280" },
-  refreshButton: { border: "1px solid #d1d5db", background: "#ffffff", color: "#111827", borderRadius: 9, padding: "9px 12px", fontSize: 12, fontWeight: 700, cursor: "pointer" },
-  error: { marginBottom: 12, padding: 11, borderRadius: 9, background: "#fee2e2", color: "#991b1b", fontSize: 12, fontWeight: 600 },
-  success: { marginBottom: 12, padding: 11, borderRadius: 9, background: "#dcfce7", color: "#166534", fontSize: 12, fontWeight: 600 },
-  addUserBox: { marginBottom: 18, padding: 14, borderRadius: 13, background: "#ffffff", border: "1px solid #e5e7eb" },
+  page: { width: "100%", maxWidth: 1250, margin: "0 auto", padding: 16, boxSizing: "border-box", fontFamily: "'Inter', sans-serif" },
+  header: { display: "grid", gridTemplateColumns: "36px 1fr 36px", alignItems: "center", marginBottom: 16 },
+  title: { margin: 0, fontSize: 21, fontWeight: 800, color: "#0f172a" },
+  subtitle: { margin: "3px 0 0", fontSize: 12, color: "#64748b" },
+  iconBtn: { border: "1px solid #cbd5e1", width: 36, height: 36, borderRadius: "50%", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 1px 3px rgba(0,0,0,0.05)", justifySelf: "end" },
+  error: { marginBottom: 12, padding: 11, borderRadius: 10, background: "#fee2e2", color: "#991b1b", fontSize: 12, fontWeight: 600 },
+  success: { marginBottom: 12, padding: 11, borderRadius: 10, background: "#dcfce7", color: "#166534", fontSize: 12, fontWeight: 600 },
+  searchBar: { display: "flex", alignItems: "center", gap: 10, background: "#fff", border: "1.5px solid #2563eb", padding: "10px 14px", borderRadius: 12, marginBottom: 14, boxShadow: "0 4px 15px rgba(37,99,235,0.08)", animation: "fadeIn 0.2s ease" },
+  searchInput: { border: "none", outline: "none", width: "100%", fontSize: 13.5, background: "transparent", fontWeight: 500 },
+  clearSearchBtn: { border: "none", background: "#f1f5f9", borderRadius: "50%", width: 22, height: 22, cursor: "pointer", fontWeight: 700 },
+  topControlRow: { display: "flex", gap: 10, marginBottom: 16, flexWrap: "wrap", alignItems: "center" },
+  statsCard: { background: "#fff", border: "1px solid #e2e8f0", borderRadius: 12, padding: "10px 16px", display: "flex", alignItems: "center", gap: 8 },
+  refreshBtn: { border: "1px solid #cbd5e1", background: "#fff", color: "#1e293b", borderRadius: 10, padding: "10px 14px", fontSize: 12, fontWeight: 700, cursor: "pointer" },
+  addUserCard: { marginBottom: 18, padding: 16, borderRadius: 16, background: "#ffffff", border: "1px solid #e2e8f0", boxShadow: "0 4px 20px rgba(0,0,0,0.03)" },
   addUserHeader: { display: "flex", justifyContent: "space-between", alignItems: "center" },
-  addUserTitle: { fontSize: 15, fontWeight: 800, color: "#111827" },
-  addUserSubtitle: { marginTop: 3, fontSize: 11, color: "#6b7280" },
-  addUserToggle: { border: "none", background: "#111827", color: "#ffffff", borderRadius: 9, padding: "9px 13px", fontSize: 12, fontWeight: 700, cursor: "pointer" },
-  addUserForm: { marginTop: 16, paddingTop: 16, borderTop: "1px solid #e5e7eb", display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 12 },
+  addUserToggleBtn: { border: "none", background: "#0f172a", color: "#ffffff", borderRadius: 10, padding: "9px 14px", fontSize: 12, fontWeight: 700, cursor: "pointer" },
+  addUserForm: { marginTop: 16, paddingTop: 16, borderTop: "1px solid #e2e8f0", display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 12 },
   formGroup: { minWidth: 0 },
-  formLabel: { display: "block", marginBottom: 5, fontSize: 11, fontWeight: 700, color: "#374151" },
-  input: { width: "100%", boxSizing: "border-box", border: "1px solid #d1d5db", borderRadius: 8, padding: "10px 11px", background: "#ffffff", color: "#111827", fontSize: 12, outline: "none" },
-  checkboxContainer: { display: "flex", flexWrap: "wrap", gap: 6, maxHeight: 120, overflowY: "auto", border: "1px solid #e2e8f0", padding: 8, borderRadius: 8, background: "#f8fafc" },
-  checkboxLabel: { display: "inline-flex", alignItems: "center", gap: 6, padding: "4px 8px", borderRadius: 6, border: "1px solid #cbd5e1", fontSize: 11, cursor: "pointer" },
-  miniCheckboxContainer: { display: "flex", flexWrap: "wrap", gap: 4, maxHeight: 90, overflowY: "auto", border: "1px solid #e2e8f0", padding: 4, borderRadius: 6, background: "#fff", marginBottom: 6 },
-  miniCheckboxLabel: { display: "inline-flex", alignItems: "center", gap: 4, padding: "2px 6px", borderRadius: 4, border: "1px solid #cbd5e1", fontSize: 10, cursor: "pointer" },
-  createButton: { gridColumn: "1 / -1", border: "none", background: "#16a34a", color: "#ffffff", borderRadius: 8, padding: "12px", fontSize: 13, fontWeight: 800, cursor: "pointer" },
-  loading: { padding: 30, textAlign: "center", color: "#6b7280", fontSize: 13 },
-  empty: { padding: 30, textAlign: "center", background: "#ffffff", borderRadius: 12, color: "#6b7280", fontSize: 13 },
-  userList: { display: "flex", flexDirection: "column", gap: 10 },
-  userCard: { background: "#ffffff", border: "1px solid #e5e7eb", borderRadius: 13, padding: 13, display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap" },
-  userInfo: { flex: "1 1 200px", display: "flex", alignItems: "center", gap: 10 },
-  avatar: { width: 42, height: 42, borderRadius: "50%", background: "#111827", color: "#ffffff", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16, fontWeight: 800, flexShrink: 0 },
+  formLabel: { display: "block", marginBottom: 5, fontSize: 11.5, fontWeight: 750, color: "#334155" },
+  input: { width: "100%", boxSizing: "border-box", border: "1.5px solid #cbd5e1", borderRadius: 10, padding: "10px 12px", background: "#ffffff", color: "#0f172a", fontSize: 13, outline: "none" },
+  checkboxContainer: { display: "flex", flexWrap: "wrap", gap: 6, maxHeight: 130, overflowY: "auto", border: "1px solid #e2e8f0", padding: 8, borderRadius: 10, background: "#f8fafc" },
+  checkboxLabel: { display: "inline-flex", alignItems: "center", gap: 6, padding: "5px 10px", borderRadius: 8, border: "1px solid #cbd5e1", fontSize: 11.5, cursor: "pointer", fontWeight: 600 },
+  createButton: { gridColumn: "1 / -1", border: "none", background: "#16a34a", color: "#ffffff", borderRadius: 12, padding: "13px", fontSize: 13.5, fontWeight: 800, cursor: "pointer", boxShadow: "0 4px 12px rgba(22,163,74,0.25)" },
+  loading: { padding: 40, textAlign: "center", color: "#64748b", fontSize: 13, fontWeight: 600 },
+  empty: { padding: 40, textAlign: "center", background: "#ffffff", borderRadius: 16, color: "#64748b", fontSize: 13 },
+  userList: { display: "flex", flexDirection: "column", gap: 12 },
+  userCard: { background: "#ffffff", border: "1px solid #e2e8f0", borderRadius: 16, padding: 16, display: "flex", flexDirection: "column", gap: 12, boxShadow: "0 2px 10px rgba(0,0,0,0.02)" },
+  userInfo: { display: "flex", alignItems: "center", gap: 12 },
+  avatar: { width: 44, height: 44, borderRadius: "50%", background: "#0f172a", color: "#ffffff", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 17, fontWeight: 800, flexShrink: 0 },
   userDetails: { minWidth: 0 },
-  userName: { fontSize: 14, fontWeight: 800, color: "#111827" },
-  email: { marginTop: 2, fontSize: 11, color: "#6b7280", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" },
-  youBadge: { display: "inline-block", marginTop: 4, padding: "2px 6px", borderRadius: 5, background: "#dbeafe", color: "#1d4ed8", fontSize: 8, fontWeight: 800 },
-  controlGroup: { minWidth: 140 },
-  deleteGroup: { minWidth: 55 },
-  label: { display: "block", marginBottom: 4, fontSize: 10, fontWeight: 700, color: "#6b7280" },
-  select: { width: "100%", boxSizing: "border-box", border: "1px solid #d1d5db", borderRadius: 8, padding: "9px 10px", background: "#ffffff", color: "#111827", fontSize: 12, fontWeight: 600, outline: "none" },
-  smallSaveBtn: { border: "none", background: "#2563eb", color: "#fff", borderRadius: 6, padding: "5px 10px", fontSize: 11, fontWeight: 700, cursor: "pointer", width: "100%", marginTop: 4 },
-  deleteButton: { width: 40, height: 38, border: "none", borderRadius: 8, background: "#fee2e2", color: "#991b1b", cursor: "pointer", fontSize: 16, display: "flex", alignItems: "center", justifyContent: "center" },
+  userName: { fontSize: 14.5, fontWeight: 800, color: "#0f172a" },
+  badge: { padding: "2px 8px", borderRadius: 6, fontSize: 10.5, fontWeight: 700, textTransform: "uppercase" },
+  email: { marginTop: 2, fontSize: 12, color: "#64748b", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" },
+  youBadge: { display: "inline-block", marginTop: 4, padding: "2px 6px", borderRadius: 6, background: "#dbeafe", color: "#1d4ed8", fontSize: 9, fontWeight: 800 },
+  assignedInfoBox: { background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: 10, padding: "10px 12px", marginTop: 8 },
+  actionRow: { display: "flex", alignItems: "center", gap: 8, justifyContent: "flex-end", flexWrap: "wrap", borderTop: "1px solid #f1f5f9", paddingTop: 10 },
+  keyBtn: { border: "1px solid #cbd5e1", background: "#f8fafc", color: "#334155", borderRadius: 9, padding: "8px 12px", fontSize: 12, fontWeight: 700, cursor: "pointer" },
+  editBtn: { border: "none", background: "#e0f2fe", color: "#0369a1", borderRadius: 9, padding: "8px 14px", fontSize: 12, fontWeight: 700, cursor: "pointer" },
+  deleteButton: { width: 38, height: 38, border: "none", borderRadius: 9, background: "#fee2e2", color: "#991b1b", cursor: "pointer", fontSize: 15, display: "flex", alignItems: "center", justifyContent: "center" },
+  overlay: { position: "fixed", inset: 0, background: "rgba(15, 23, 42, 0.45)", backdropFilter: "blur(2px)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000, padding: 16 },
+  modal: { width: "100%", maxWidth: 500, background: "#fff", borderRadius: 20, padding: 20, boxShadow: "0 20px 25px -5px rgba(0,0,0,0.15)", boxSizing: "border-box" },
+  modalCloseBtn: { border: "none", background: "#f1f5f9", width: 28, height: 28, borderRadius: "50%", cursor: "pointer", fontWeight: 700, color: "#475569" },
+  cancelModalBtn: { border: "1px solid #cbd5e1", background: "#fff", color: "#334155", borderRadius: 10, padding: "10px 14px", fontSize: 12.5, fontWeight: 700, cursor: "pointer" },
+  saveModalBtn: { border: "none", background: "#2563eb", color: "#fff", borderRadius: 10, padding: "10px 18px", fontSize: 12.5, fontWeight: 700, cursor: "pointer" },
+  resetEmailBtn: { width: "100%", border: "none", background: "#0f172a", color: "#fff", borderRadius: 8, padding: "10px", fontSize: 12, fontWeight: 700, cursor: "pointer" },
   accessDenied: { minHeight: "60vh", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", textAlign: "center", padding: 20 },
   accessIcon: { fontSize: 40, marginBottom: 10 },
   accessTitle: { fontSize: 20, fontWeight: 800, color: "#111827" },
