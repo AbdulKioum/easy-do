@@ -8,7 +8,7 @@ import {
 
 import SideMenu from "./components/common/SideMenu";
 
-import EasyDOPage from "./pages/EasyDOPage";
+import EasyDOPage from "./pages/EasyDOFormat2";
 import EasyDOFormat1 from "./pages/EasyDOFormat1";
 import SavedDOPage from "./pages/do/SavedDOPage";
 import PriceListPage from "./pages/PriceListPage";
