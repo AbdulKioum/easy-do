@@ -505,7 +505,7 @@ function MainApp() {
                               </span>
                             ) : (
                               <span style={{ fontSize: 9.5, color: "#2563eb", fontWeight: 700 }}>
-                                📢 Admin Notice
+                                📢 Notice
                               </span>
                             )}
                             
