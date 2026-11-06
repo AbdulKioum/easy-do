@@ -498,16 +498,7 @@ function MainApp() {
                               From: {senderText}
                             </span>
                             
-                            {/* 👇 SHUDHUMATRO IS_REPLY HOLEI REPLY BADGE ASHBE, NORMAl NOTICE E ASHBE NA */}
-                            {n.is_reply ? (
-                              <span style={{ fontSize: 9.5, color: n.title?.includes("Admin Reply") ? "#16a34a" : "#d97706", fontWeight: 700 }}>
-                                {n.title?.includes("Admin Reply") ? "💬 Admin Reply" : "💬 User Reply"}
-                              </span>
-                            ) : (
-                              <span style={{ fontSize: 9.5, color: "#2563eb", fontWeight: 700 }}>
-                                📢 Notice
-                              </span>
-                            )}
+                            
                             
                             <span style={{ fontSize: 9.5, color: "#94a3b8", fontWeight: 600 }}>
                               {new Date(n.created_at).toLocaleString("en-BD", {
