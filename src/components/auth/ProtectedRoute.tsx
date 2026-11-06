@@ -8,6 +8,7 @@ import {
   useAuth,
   type UserRole,
 } from "../../context/AuthContext";
+import AppSplashLoader from "../common/AppSplashLoader";
 
 
 type ProtectedRouteProps = {
@@ -34,22 +35,7 @@ export default function ProtectedRoute({
   // ==========================================
 
   if (loading) {
-
-    return (
-      <div
-        style={{
-          minHeight: "100vh",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          fontSize: 14,
-          color: "#6b7280",
-          background: "#f3f4f6",
-        }}
-      >
-        Loading...
-      </div>
-    );
+    return <AppSplashLoader />;
   }
 
 
