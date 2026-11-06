@@ -191,14 +191,15 @@ function MainApp() {
   const unreadCount = notifications.filter((n) => !n.is_read).length;
 
   async function markAsRead(id: number) {
+    const nowTime = new Date().toISOString(); // Current read time
     const { error } = await supabase
       .from("notifications")
-      .update({ is_read: true })
+      .update({ is_read: true, read_at: nowTime })
       .eq("id", id);
 
     if (!error) {
       setNotifications((prev) =>
-        prev.map((n) => (n.id === id ? { ...n, is_read: true } : n))
+        prev.map((n) => (n.id === id ? { ...n, is_read: true, read_at: nowTime } : n))
       );
     }
   }
@@ -210,9 +211,27 @@ function MainApp() {
 
     setReplySendingId(notif.id);
     try {
-  
+      // 1. Profile table theke full_name ba name khuja
+      const { data: profileData } = await supabase
+        .from("profiles")
+        .select("full_name, name, username")
+        .eq("id", user.id)
+        .single();
 
-      // 1. Find all admins & super_admins so they get the notification in their bell
+      // 2. Auth user metadata ba email theke fallback ba primary nam ber kora
+      const authUserMeta = user.user_metadata;
+      const realName = 
+        profileData?.full_name || 
+        profileData?.name || 
+        profileData?.username || 
+        authUserMeta?.full_name || 
+        authUserMeta?.name || 
+        user.email?.split("@")[0] || 
+        "User";
+
+      const cleanSenderName = String(realName).replace(/\s*\(.*?\)/g, "").trim();
+
+      // 3. Find all admins & super_admins
       const { data: admins } = await supabase
         .from("profiles")
         .select("id")
@@ -233,17 +252,16 @@ function MainApp() {
       const payloads = targetAdminIds.map((adminId) => ({
         user_id: adminId,
         sender_id: user.id,
-        title: `↩ Reply to: ${notif.title || "Notice"}`,
+        sender_name: cleanSenderName, 
+        title: `User Reply`,
         message: text,
         is_read: false,
         is_reply: true,
         reply_to_id: notif.id,
       }));
-
       const { error } = await supabase.from("notifications").insert(payloads);
       if (error) throw error;
 
-      // Mark original notification as read as well
       if (!notif.is_read) {
         await markAsRead(notif.id);
       }
@@ -479,6 +497,18 @@ function MainApp() {
                             <span style={{ fontSize: 10, fontWeight: 700, color: "#475569", background: "#f1f5f9", padding: "2px 6px", borderRadius: 4 }}>
                               From: {senderText}
                             </span>
+                            
+                            {/* 👇 SHUDHUMATRO IS_REPLY HOLEI REPLY BADGE ASHBE, NORMAl NOTICE E ASHBE NA */}
+                            {n.is_reply ? (
+                              <span style={{ fontSize: 9.5, color: n.title?.includes("Admin Reply") ? "#16a34a" : "#d97706", fontWeight: 700 }}>
+                                {n.title?.includes("Admin Reply") ? "💬 Admin Reply" : "💬 User Reply"}
+                              </span>
+                            ) : (
+                              <span style={{ fontSize: 9.5, color: "#2563eb", fontWeight: 700 }}>
+                                📢 Admin Notice
+                              </span>
+                            )}
+                            
                             <span style={{ fontSize: 9.5, color: "#94a3b8", fontWeight: 600 }}>
                               {new Date(n.created_at).toLocaleString("en-BD", {
                                 month: "short",
@@ -500,8 +530,7 @@ function MainApp() {
                                 {isReplying ? "✕ Cancel" : "↩ Reply"}
                               </button>
                             ) : (
-                              <span style={{ fontSize: 9.5, color: "#d97706", fontWeight: 700 }}>
-                                💬 User Reply
+                              <span >
                               </span>
                             )}
 
@@ -722,7 +751,7 @@ const styles: Record<string, React.CSSProperties> = {
     color: "#334155",
     fontSize: 10,
     fontWeight: 700,
-    padding: "3px 8px",
+    padding: "3px 20px",
     borderRadius: 6,
     cursor: "pointer",
   },

@@ -27,6 +27,7 @@ type NotificationRow = {
   is_reply?: boolean;
   reply_to_id?: number | null;
   created_at: string;
+  read_at?: string | null;
 };
 
 const MINIMAL_NOTIF_CSS = `
@@ -42,8 +43,6 @@ const MINIMAL_NOTIF_CSS = `
     max-width: 820px;
     margin: 0 auto;
   }
-
-  /* Compact Top Header */
   .snp-topbar {
     display: flex;
     justify-content: space-between;
@@ -92,8 +91,6 @@ const MINIMAL_NOTIF_CSS = `
     color: #0f172a;
     box-shadow: 0 1px 2px rgba(0,0,0,0.06);
   }
-
-  /* Compact Card */
   .snp-card {
     background: #ffffff;
     border: 1px solid #e2e8f0;
@@ -102,8 +99,6 @@ const MINIMAL_NOTIF_CSS = `
     margin-bottom: 8px;
     box-shadow: 0 1px 2px rgba(15, 23, 42, 0.02);
   }
-
-  /* Target & Title Row */
   .snp-row-top {
     display: grid;
     grid-template-columns: auto 1fr;
@@ -116,7 +111,6 @@ const MINIMAL_NOTIF_CSS = `
       grid-template-columns: 1fr;
     }
   }
-
   .snp-seg {
     display: inline-flex;
     background: #f1f5f9;
@@ -140,7 +134,6 @@ const MINIMAL_NOTIF_CSS = `
     color: #2563eb;
     box-shadow: 0 1px 2px rgba(15, 23, 42, 0.06);
   }
-
   .snp-input, .snp-select, .snp-textarea {
     width: 100%;
     box-sizing: border-box;
@@ -164,12 +157,6 @@ const MINIMAL_NOTIF_CSS = `
     min-height: 54px;
     line-height: 1.4;
   }
-  .snp-input:focus, .snp-select:focus, .snp-textarea:focus {
-    background: #ffffff;
-    border-color: #3b82f6;
-  }
-
-  /* Compact Specific User Selector */
   .snp-specific-box {
     background: #f8fafc;
     border: 1px solid #e2e8f0;
@@ -219,7 +206,6 @@ const MINIMAL_NOTIF_CSS = `
     color: #1e40af;
     font-weight: 700;
   }
-
   .snp-send-bar {
     display: flex;
     justify-content: space-between;
@@ -253,8 +239,6 @@ const MINIMAL_NOTIF_CSS = `
     cursor: pointer;
     white-space: nowrap;
   }
-
-  /* Logs & Replies List */
   .snp-list {
     display: flex;
     flex-direction: column;
@@ -295,6 +279,9 @@ const MINIMAL_NOTIF_CSS = `
     align-items: center;
     font-size: 10.5px;
     color: #64748b;
+    margin-top: 6px;
+    border-top: 1px dashed #f1f5f9;
+    padding-top: 5px;
   }
   .snp-actions {
     display: flex;
@@ -341,13 +328,11 @@ export default function SendNotificationPage() {
   const { user, role } = useAuth();
   const isAuthorized = role === "admin" || role === "super_admin";
 
-  // Default Title is "Notice"
   const [title, setTitle] = useState("Notice");
   const [message, setMessage] = useState("");
   const [targetMode, setTargetMode] = useState<"all" | "specific">("all");
   const [sending, setSending] = useState(false);
 
-  // Users & Location Filters
   const [users, setUsers] = useState<ProfileRow[]>([]);
   const [upazilaRows, setUpazilaRows] = useState<{ district: string; upazila: string }[]>([]);
   const [selectedDistrict, setSelectedDistrict] = useState("All");
@@ -355,11 +340,9 @@ export default function SendNotificationPage() {
   const [userSearch, setUserSearch] = useState("");
   const [selectedUserIds, setSelectedUserIds] = useState<string[]>([]);
 
-  // Logs & Replies
   const [logs, setLogs] = useState<NotificationRow[]>([]);
   const [activeTab, setActiveTab] = useState<"sent" | "replies">("sent");
 
-  // Edit & Admin Reply state
   const [editingId, setEditingId] = useState<number | null>(null);
   const [editTitle, setEditTitle] = useState("");
   const [editMessage, setEditMessage] = useState("");
@@ -416,7 +399,7 @@ export default function SendNotificationPage() {
       .from("notifications")
       .select("*")
       .order("created_at", { ascending: false })
-      .limit(150);
+      .limit(300);
 
     if (!error && data) {
       setLogs(data as NotificationRow[]);
@@ -521,28 +504,29 @@ export default function SendNotificationPage() {
 
     setSending(true);
     try {
-      const payloads =
-        targetMode === "all"
-          ? [
-              {
-                user_id: null,
-                sender_id: user?.id || null,
-                sender_name: currentSenderLabel,
-                title: cleanTitle,
-                message: cleanMsg,
-                is_read: false,
-                is_reply: false,
-              },
-            ]
-          : selectedUserIds.map((uid) => ({
-              user_id: uid,
-              sender_id: user?.id || null,
-              sender_name: currentSenderLabel,
-              title: cleanTitle,
-              message: cleanMsg,
-              is_read: false,
-              is_reply: false,
-            }));
+      let targetUserIds: string[] = [];
+
+      if (targetMode === "all") {
+        targetUserIds = users.filter((u) => u.id !== user?.id).map((u) => u.id);
+      } else {
+        targetUserIds = selectedUserIds;
+      }
+
+      if (targetUserIds.length === 0) {
+        alert("No target users found.");
+        setSending(false);
+        return;
+      }
+
+      const payloads = targetUserIds.map((uid) => ({
+        user_id: uid,
+        sender_id: user?.id || null,
+        sender_name: currentSenderLabel,
+        title: cleanTitle,
+        message: cleanMsg,
+        is_read: false,
+        is_reply: false,
+      }));
 
       const { error } = await supabase.from("notifications").insert(payloads as any);
       if (error) throw error;
@@ -551,6 +535,7 @@ export default function SendNotificationPage() {
       setMessage("");
       setSelectedUserIds([]);
       await fetchLogs();
+      alert("Notice sent successfully!");
     } catch (err: any) {
       alert(`Failed: ${err.message}`);
     } finally {
@@ -593,19 +578,19 @@ export default function SendNotificationPage() {
         user_id: targetUserId,
         sender_id: user?.id || null,
         sender_name: currentSenderLabel,
-        title: `↩ Reply: ${(replyRow.title || "Notice").replace(/^↩ Reply:\s*/i, "")}`,
+        title: `Admin Reply`,
         message: text,
         is_read: false,
         is_reply: true,
         reply_to_id: replyRow.id,
       },
-    ]);
+    ] as any);
 
     if (!error) {
       if (!replyRow.is_read) {
         await supabase
           .from("notifications")
-          .update({ is_read: true })
+          .update({ is_read: true, read_at: new Date().toISOString() })
           .eq("id", replyRow.id);
       }
       setAdminReplyText("");
@@ -614,7 +599,30 @@ export default function SendNotificationPage() {
     }
   }
 
-  const sentLogs = useMemo(() => logs.filter((l) => !l.is_reply), [logs]);
+  const groupedSentLogs = useMemo(() => {
+    const rawSent = logs.filter((l) => !l.is_reply);
+    const map = new Map<string, { base: NotificationRow; targets: { userId: string | null; name: string; isRead: boolean; readAt?: string | null }[] }>();
+
+    rawSent.forEach((item) => {
+      const timeKey = new Date(item.created_at).toISOString().slice(0, 16);
+      const key = `${item.title || "Notice"}_${item.message}_${timeKey}`;
+
+      const uObj = item.user_id ? userMap[item.user_id] : null;
+      const uName = uObj ? getUserDisplayName(uObj) : "All Users";
+
+      if (!map.has(key)) {
+        map.set(key, {
+          base: item,
+          targets: [{ userId: item.user_id, name: uName, isRead: item.is_read, readAt: item.read_at }],
+        });
+      } else {
+        map.get(key)!.targets.push({ userId: item.user_id, name: uName, isRead: item.is_read, readAt: item.read_at });
+      }
+    });
+
+    return Array.from(map.values());
+  }, [logs, userMap]);
+
   const replyLogs = useMemo(() => logs.filter((l) => l.is_reply), [logs]);
 
   if (!isAuthorized) {
@@ -643,7 +651,7 @@ export default function SendNotificationPage() {
               className={`snp-tab ${activeTab === "sent" ? "active" : ""}`}
               onClick={() => setActiveTab("sent")}
             >
-              Sent ({sentLogs.length})
+              Sent ({groupedSentLogs.length})
             </button>
             <button
               type="button"
@@ -658,7 +666,6 @@ export default function SendNotificationPage() {
         {/* COMPACT COMPOSE CARD */}
         <form className="snp-card" onSubmit={handleSendNotification}>
           <div className="snp-row-top">
-            {/* Small Audience Toggle */}
             <div className="snp-seg">
               <button
                 type="button"
@@ -676,7 +683,6 @@ export default function SendNotificationPage() {
               </button>
             </div>
 
-            {/* Default Notice Title Input */}
             <input
               type="text"
               value={title}
@@ -686,7 +692,6 @@ export default function SendNotificationPage() {
             />
           </div>
 
-          {/* Compact Specific User Picker */}
           {targetMode === "specific" && (
             <div className="snp-specific-box">
               <div className="snp-filter-grid">
@@ -769,7 +774,6 @@ export default function SendNotificationPage() {
             </div>
           )}
 
-          {/* Message Input */}
           <textarea
             value={message}
             onChange={(e) => setMessage(e.target.value)}
@@ -790,32 +794,139 @@ export default function SendNotificationPage() {
 
         {/* SENT / REPLIES LIST */}
         <div className="snp-list">
-          {(activeTab === "sent" ? sentLogs : replyLogs).map((item) => {
-            const isEditing = editingId === item.id;
-            const isReplying = replyingToId === item.id;
-            const recipientName = item.user_id
-              ? getUserDisplayName(userMap[item.user_id])
-              : "All Users";
-            const cleanSender = (item.sender_name || "Admin")
-              .replace(/\s*\(.*?\)/g, "")
-              .trim();
+          {activeTab === "sent" ? (
+            groupedSentLogs.map(({ base, targets }) => {
+              const isEditing = editingId === base.id;
+              const cleanSender = (base.sender_name || "Admin").replace(/\s*\(.*?\)/g, "").trim();
 
-            return (
-              <div key={item.id} className="snp-item">
-                <div className="snp-item-head">
-                  <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                    <span style={{ fontSize: 12, fontWeight: 800, color: "#0f172a" }}>
-                      {item.title || "Notice"}
-                    </span>
-                    <span className="snp-badge">
-                      {item.is_reply
-                        ? `${cleanSender} → ${recipientName}`
-                        : `To: ${recipientName}`}
-                    </span>
+              const totalTargets = targets.length;
+              const allUserSent = totalTargets > 3 || targets.some((t) => t.name === "All Users");
+              const targetNamesStr = allUserSent ? "Sent to All Users" : `To: ${targets.map((t) => t.name).join(", ")}`;
+
+              return (
+                <div key={base.id} className="snp-item">
+                  <div className="snp-item-head">
+                    <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                      <span style={{ fontSize: 12, fontWeight: 800, color: "#0f172a" }}>
+                        {base.title || "Notice"}
+                      </span>
+                      <span className="snp-badge" style={{ color: "#0369a1" }}>
+                        {targetNamesStr}
+                      </span>
+                    </div>
+
+                    <div className="snp-actions">
+                      <button
+                        type="button"
+                        className="snp-act-btn"
+                        onClick={() => {
+                          if (isEditing) {
+                            setEditingId(null);
+                          } else {
+                            setEditingId(base.id);
+                            setEditTitle(base.title || "Notice");
+                            setEditMessage(base.message);
+                          }
+                        }}
+                      >
+                        {isEditing ? "Cancel" : "Edit"}
+                      </button>
+                      <button
+                        type="button"
+                        className="snp-act-btn snp-act-del"
+                        onClick={() => handleDelete(base.id)}
+                      >
+                        Delete
+                      </button>
+                    </div>
                   </div>
 
-                  <div className="snp-actions">
-                    {activeTab === "replies" && (
+                  {isEditing ? (
+                    <div style={{ marginTop: 6, display: "flex", flexDirection: "column", gap: 6 }}>
+                      <input
+                        type="text"
+                        value={editTitle}
+                        onChange={(e) => setEditTitle(e.target.value)}
+                        className="snp-input"
+                      />
+                      <textarea
+                        value={editMessage}
+                        onChange={(e) => setEditMessage(e.target.value)}
+                        className="snp-textarea"
+                      />
+                      <div>
+                        <button
+                          type="button"
+                          onClick={() => handleSaveEdit(base.id)}
+                          className="snp-btn-primary"
+                          style={{ padding: "5px 12px", fontSize: 11.5 }}
+                        >
+                          Save
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="snp-msg">{base.message}</div>
+                  )}
+
+                  {/* READ STATUS PER USER WITH FONT COLOR ONLY (NO BACKGROUND) */}
+                  <div style={{ borderTop: "1px dashed #e2e8f0", marginTop: 6, paddingTop: 6, fontSize: 11 }}>
+                    <div style={{ fontWeight: 700, color: "#475569", marginBottom: 3 }}>Read Status:</div>
+                    <div style={{ display: "flex", flexWrap: "wrap", gap: "8px 12px" }}>
+                      {targets.map((t, idx) => (
+                        <span key={idx} style={{ color: t.isRead ? "#16a34a" : "#dc2626", fontWeight: 700 }}>
+                          {t.name}: {t.isRead ? `✓ Read (${t.readAt ? new Date(t.readAt).toLocaleTimeString("en-BD", { hour: "2-digit", minute: "2-digit" }) : "Yes"})` : "⏳ Unread"}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="snp-meta">
+                    <span>From: {cleanSender}</span>
+                    <span>
+                      {new Date(base.created_at).toLocaleString("en-BD", {
+                        month: "short",
+                        day: "numeric",
+                        hour: "2-digit",
+                        minute: "2-digit",
+                      })}
+                    </span>
+                  </div>
+                </div>
+              );
+            })
+          ) : (
+            replyLogs.map((item) => {
+              const isReplying = replyingToId === item.id;
+              const cleanSender = (item.sender_name || "User").replace(/\s*\(.*?\)/g, "").trim();
+              const isAdminReply = item.title?.includes("Admin Reply");
+
+              const senderObj = item.sender_id ? userMap[item.sender_id] : null;
+              const senderDisplayName = senderObj ? getUserDisplayName(senderObj) : cleanSender;
+              
+              const recipientObj = item.user_id ? userMap[item.user_id] : null;
+              const recipientDisplayName = recipientObj ? getUserDisplayName(recipientObj) : "Admin";
+
+              const directionText = isAdminReply
+                ? `${senderDisplayName} → ${recipientDisplayName}`
+                : `${senderDisplayName} → ${recipientDisplayName}`;
+
+              return (
+                <div key={item.id} className="snp-item">
+                  <div className="snp-item-head">
+                    <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                      <span style={{ fontSize: 12, fontWeight: 800, color: "#0f172a" }}>
+                        {item.title || (isAdminReply ? "Admin Reply" : "User Reply")}
+                      </span>
+                      <span className="snp-badge" style={{
+                        background: isAdminReply ? "" : "",
+                        color: isAdminReply ? "#166534" : "#92400e"
+                      }}>
+                        {directionText}
+                      </span>
+                    </div>
+
+                    <div className="snp-actions">
                       <button
                         type="button"
                         className="snp-act-btn"
@@ -826,99 +937,69 @@ export default function SendNotificationPage() {
                       >
                         {isReplying ? "Cancel" : "Reply"}
                       </button>
-                    )}
-                    <button
-                      type="button"
-                      className="snp-act-btn"
-                      onClick={() => {
-                        if (isEditing) {
-                          setEditingId(null);
-                        } else {
-                          setEditingId(item.id);
-                          setEditTitle(item.title || "Notice");
-                          setEditMessage(item.message);
-                        }
-                      }}
-                    >
-                      {isEditing ? "Cancel" : "Edit"}
-                    </button>
-                    <button
-                      type="button"
-                      className="snp-act-btn snp-act-del"
-                      onClick={() => handleDelete(item.id)}
-                    >
-                      Delete
-                    </button>
-                  </div>
-                </div>
-
-                {isEditing ? (
-                  <div style={{ marginTop: 6, display: "flex", flexDirection: "column", gap: 6 }}>
-                    <input
-                      type="text"
-                      value={editTitle}
-                      onChange={(e) => setEditTitle(e.target.value)}
-                      className="snp-input"
-                    />
-                    <textarea
-                      value={editMessage}
-                      onChange={(e) => setEditMessage(e.target.value)}
-                      className="snp-textarea"
-                    />
-                    <div>
                       <button
                         type="button"
-                        onClick={() => handleSaveEdit(item.id)}
-                        className="snp-btn-primary"
-                        style={{ padding: "5px 12px", fontSize: 11.5 }}
+                        className="snp-act-btn snp-act-del"
+                        onClick={() => handleDelete(item.id)}
                       >
-                        Save
+                        Delete
                       </button>
                     </div>
                   </div>
-                ) : (
+
                   <div className="snp-msg">{item.message}</div>
-                )}
 
-                <div className="snp-meta">
-                  <span>From: {cleanSender}</span>
-                  <span>
-                    {new Date(item.created_at).toLocaleString("en-BD", {
-                      month: "short",
-                      day: "numeric",
-                      hour: "2-digit",
-                      minute: "2-digit",
-                    })}
-                  </span>
-                </div>
-
-                {/* Inline Admin Reply Box */}
-                {isReplying && (
-                  <div style={{ display: "flex", gap: 6, marginTop: 6 }}>
-                    <input
-                      type="text"
-                      value={adminReplyText}
-                      onChange={(e) => setAdminReplyText(e.target.value)}
-                      placeholder={`Reply to ${cleanSender}...`}
-                      className="snp-input"
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter") handleAdminReply(item);
-                      }}
-                    />
-                    <button
-                      type="button"
-                      onClick={() => handleAdminReply(item)}
-                      className="snp-btn-primary"
-                    >
-                      Send
-                    </button>
+                  {/* REPLY READ / UNREAD STATUS WITH FONT COLOR ONLY */}
+                  <div style={{ fontSize: 11, fontWeight: 700, margin: "4px 0" }}>
+                    {item.is_read ? (
+                      <span style={{ color: "#16a34a" }}>
+                        ✓ Read {item.read_at ? `at ${new Date(item.read_at).toLocaleTimeString("en-BD", { hour: "2-digit", minute: "2-digit" })}` : ""}
+                      </span>
+                    ) : (
+                      <span style={{ color: "#dc2626" }}>⏳ Unread</span>
+                    )}
                   </div>
-                )}
-              </div>
-            );
-          })}
 
-          {!(activeTab === "sent" ? sentLogs : replyLogs).length && (
+                  <div className="snp-meta">
+                    <span>From: {senderDisplayName}</span>
+                    <span>
+                      {new Date(item.created_at).toLocaleString("en-BD", {
+                        month: "short",
+                        day: "numeric",
+                        hour: "2-digit",
+                        minute: "2-digit",
+                      })}
+                    </span>
+                  </div>
+
+                  {/* Inline Admin Reply Box */}
+                  {isReplying && (
+                    <div style={{ display: "flex", gap: 6, marginTop: 6 }}>
+                      <input
+                        type="text"
+                        value={adminReplyText}
+                        onChange={(e) => setAdminReplyText(e.target.value)}
+                        placeholder={`Reply to ${senderDisplayName}...`}
+                        className="snp-input"
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") handleAdminReply(item);
+                        }}
+                      />
+                      <button
+                        type="button"
+                        onClick={() => handleAdminReply(item)}
+                        className="snp-btn-primary"
+                      >
+                        Send
+                      </button>
+                    </div>
+                  )}
+                </div>
+              );
+            })
+          )}
+
+          {!(activeTab === "sent" ? groupedSentLogs : replyLogs).length && (
             <div
               className="snp-card"
               style={{ textAlign: "center", color: "#94a3b8", fontSize: 12, padding: 24 }}
