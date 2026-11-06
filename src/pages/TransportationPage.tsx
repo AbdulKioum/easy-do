@@ -52,43 +52,44 @@ function parseList(val: any): string[] {
   return [];
 }
 
-const PROFESSIONAL_CSS = `
-  .tp-page { min-height: 100vh; background: #f8fafc; padding: 16px; color: #0f172a; box-sizing: border-box; font-family: 'Inter', system-ui, -apple-system, sans-serif; }
-  .tp-header { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 16px; flex-wrap: wrap; background: #ffffff; padding: 16px 20px; border-radius: 12px; border: 1px solid #e2e8f0; box-shadow: 0 1px 3px rgba(0,0,0,0.02); }
-  .tp-title { margin: 0; font-size: 21px; font-weight: 800; color: #0f172a; letter-spacing: -0.02em; }
-  .tp-subtitle { margin: 4px 0 0; font-size: 12.5px; color: #64748b; font-weight: 500; }
-  .tp-btn-group { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
-  .tp-btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; padding: 9px 14px; border-radius: 8px; font-size: 12.5px; font-weight: 700; cursor: pointer; transition: all 0.15s ease; white-space: nowrap; border: 1px solid #cbd5e1; background: #ffffff; color: #1e293b; box-shadow: 0 1px 2px rgba(0,0,0,0.02); }
-  .tp-btn:hover { background: #f1f5f9; border-color: #94a3b8; }
-  .tp-btn:active { transform: scale(0.97); }
-  .tp-btn-excel { background: #f0fdf4; border-color: #bbf7d0; color: #15803d; }
-  .tp-btn-excel:hover { background: #dcfce7; }
-  .tp-btn-pdf { background: #fef2f2; border-color: #fecaca; color: #b91c1c; }
-  .tp-btn-pdf:hover { background: #fee2e2; }
-  .tp-btn-import { background: #eff6ff; border-color: #bfdbfe; color: #1d4ed8; }
-  .tp-btn-import:hover { background: #dbeafe; }
-  .tp-btn-add { background: #0f172a; border-color: #0f172a; color: #ffffff; }
-  .tp-btn-add:hover { background: #1e293b; }
-  .tp-toolbar { display: flex; flex-direction: column; gap: 10px; margin-bottom: 14px; }
-  .tp-search { display: flex; align-items: center; gap: 10px; background: #ffffff; border: 1px solid #cbd5e1; padding: 10px 14px; border-radius: 10px; box-shadow: 0 1px 2px rgba(0,0,0,0.02); }
-  .tp-search input { border: none; outline: none; background: transparent; color: #0f172a; width: 100%; font-size: 13.5px; font-weight: 500; }
-  .tp-filters { display: flex; gap: 6px; overflow-x: auto; padding-bottom: 4px; scrollbar-width: none; }
-  .tp-filter-pill { flex-shrink: 0; border: 1px solid #cbd5e1; background: #ffffff; color: #475569; padding: 7px 14px; border-radius: 20px; font-size: 12px; font-weight: 600; cursor: pointer; transition: all 0.15s ease; }
-  .tp-filter-pill.active { background: #0f172a; color: #ffffff; border-color: #0f172a; box-shadow: 0 2px 5px rgba(15,23,42,0.2); }
-  .tp-card { background: #ffffff; border: 1px solid #e2e8f0; border-radius: 12px; overflow: hidden; box-shadow: 0 2px 6px rgba(0,0,0,0.03); }
-  .tp-card-top { padding: 12px 16px; border-bottom: 1px solid #e2e8f0; display: flex; justify-content: space-between; align-items: center; background: #f8fafc; font-size: 12.5px; font-weight: 700; color: #334155; }
-  .tp-table-scroll { width: 100%; overflow-x: auto; }
-  .tp-table { width: 100%; min-width: 720px; border-collapse: collapse; font-size: 13px; color: #0f172a; }
-  .tp-th { background: #f1f5f9; color: #334155; font-weight: 700; padding: 11px 12px; border-bottom: 1px solid #cbd5e1; text-align: left; white-space: nowrap; font-size: 12px; letter-spacing: 0.01em; }
-  .tp-td { padding: 11px 12px; border-bottom: 1px solid #f1f5f9; white-space: nowrap; vertical-align: middle; }
-  .tp-sticky-col { position: sticky; left: 0; z-index: 2; box-shadow: 2px 0 4px -2px rgba(0,0,0,0.06); }
+const COMPACT_TP_CSS = `
+  .tp-page { min-height: calc(100vh - 60px); background: #f8fafc; padding: 10px; box-sizing: border-box; font-family: system-ui, -apple-system, sans-serif; color: #0f172a; }
+  .tp-container { max-width: 1100px; margin: 0 auto; }
   
-  @media (max-width: 640px) {
-    .tp-page { padding: 10px; }
-    .tp-header { padding: 12px; flex-direction: column; align-items: stretch; }
-    .tp-btn-group { display: grid; grid-template-columns: repeat(2, 1fr); gap: 6px; width: 100%; }
-    .tp-btn { width: 100%; padding: 9px 8px; font-size: 11.5px; }
-  }
+  .tp-topbar { background: #ffffff; border: 1px solid #e2e8f0; border-radius: 10px; padding: 8px 12px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px; margin-bottom: 8px; }
+  .tp-title { margin: 0; font-size: 15px; font-weight: 800; color: #0f172a; letter-spacing: -0.2px; }
+  .tp-btn-group { display: flex; gap: 5px; flex-wrap: wrap; }
+  
+  .tp-action-btn { border: 1px solid #cbd5e1; background: #ffffff; color: #334155; padding: 5px 9px; border-radius: 6px; font-size: 11.5px; font-weight: 700; cursor: pointer; display: inline-flex; align-items: center; gap: 4px; transition: all 0.15s ease; }
+  .tp-action-btn:hover { background: #f1f5f9; border-color: #94a3b8; }
+  .tp-primary-btn { background: #0f172a; color: #ffffff; border-color: #0f172a; }
+  .tp-primary-btn:hover { background: #1e293b; }
+  .tp-excel-btn { background: #f0fdf4; border-color: #bbf7d0; color: #15803d; }
+  .tp-pdf-btn { background: #fef2f2; border-color: #fecaca; color: #b91c1c; }
+
+  .tp-search-bar { display: flex; align-items: center; gap: 6px; background: #ffffff; border: 1px solid #e2e8f0; padding: 6px 10px; border-radius: 8px; margin-bottom: 8px; }
+  .tp-search-input { border: none; outline: none; background: transparent; width: 100%; font-size: 12.5px; font-weight: 600; color: #0f172a; }
+
+  .tp-cat-scroll { display: flex; gap: 5px; overflow-x: auto; padding-bottom: 6px; margin-bottom: 8px; scrollbar-width: none; }
+  .tp-cat-scroll::-webkit-scrollbar { display: none; }
+  .tp-cat-pill { flex-shrink: 0; border: 1px solid #cbd5e1; background: #ffffff; color: #475569; padding: 4px 10px; border-radius: 999px; font-size: 11px; font-weight: 700; cursor: pointer; transition: all 0.15s ease; }
+  .tp-cat-pill.active { background: #0f172a; color: #ffffff; border-color: #0f172a; }
+
+  .tp-table-card { background: #ffffff; border: 1px solid #e2e8f0; border-radius: 10px; overflow: hidden; box-shadow: 0 1px 3px rgba(15, 23, 42, 0.03); }
+  .tp-scroll-wrap { width: 100%; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  .tp-table { width: 100%; min-width: 850px; border-collapse: collapse; font-size: 12px; text-align: left; }
+  .tp-th { background: #f8fafc; color: #475569; font-weight: 800; font-size: 11px; text-transform: uppercase; letter-spacing: 0.3px; padding: 8px 9px; border-bottom: 1px solid #e2e8f0; white-space: nowrap; }
+  .tp-td { padding: 7px 9px; border-bottom: 1px solid #f1f5f9; vertical-align: middle; color: #0f172a; white-space: nowrap; }
+  .tp-tr:hover { background: #f8fafc !important; }
+
+  .tp-badge { display: inline-block; padding: 2px 6px; border-radius: 4px; font-size: 10.5px; font-weight: 700; background: #eff6ff; color: #1e40af; border: 1px solid #bfdbfe; }
+  .tp-dist-badge { background: #f1f5f9; color: #334155; padding: 2px 6px; border-radius: 4px; font-size: 10.5px; font-weight: 600; }
+  .tp-status { padding: 2px 5px; border-radius: 4px; font-size: 10px; font-weight: 800; }
+  .tp-status-active { background: #dcfce7; color: #166534; }
+  .tp-status-inactive { background: #fee2e2; color: #991b1b; }
+  
+  .tp-icon-btn { border: 1px solid #e2e8f0; background: #f8fafc; width: 26px; height: 26px; border-radius: 5px; cursor: pointer; display: inline-flex; align-items: center; justifyContent: center; font-size: 11px; }
+  .tp-icon-btn:hover { background: #eff6ff; border-color: #bfdbfe; }
 `;
 
 export default function TransportationPage() {
@@ -113,7 +114,6 @@ export default function TransportationPage() {
   const canManage = role === "admin" || role === "super_admin";
   const isSuperAdmin = role === "super_admin";
 
-  // Track page visit (Fixed with useRef to prevent double logging)
   const hasTrackedVisit = useRef(false);
 
   useEffect(() => {
@@ -550,7 +550,6 @@ export default function TransportationPage() {
 
   const DISTRICT_PASTELS = ["F1F5F9", "EFF6FF", "F0FDF4", "FFFBEB", "FAF5FF", "ECFEFF"];
 
-  // PROFESSIONAL FORMATTED EXCEL EXPORT
   async function exportExcel() {
     if (!filteredItems.length) {
       alert("No transportation data available to export.");
@@ -731,7 +730,6 @@ export default function TransportationPage() {
     saveAs(blob, `Transportation_Chart_${timestamp}.xlsx`);
   }
 
-  // PROFESSIONAL LANDSCAPE PDF EXPORT
   async function exportPDF() {
     if (!filteredItems.length) {
       alert("No transportation data available to export.");
@@ -882,65 +880,61 @@ export default function TransportationPage() {
 
   return (
     <div className="tp-page">
-      <style>{PROFESSIONAL_CSS}</style>
+      <style>{COMPACT_TP_CSS}</style>
 
-      {/* HEADER */}
-      <div className="tp-header">
-        <div>
-          <h1 className="tp-title">🚚 Transportation Rates</h1>
-          
+      <div className="tp-container">
+        {/* COMPACT TOP BAR */}
+        <div className="tp-topbar">
+          <h1 className="tp-title">Transportation Rates</h1>
+
+          <div className="tp-btn-group">
+            <button className="tp-action-btn tp-excel-btn" onClick={exportExcel} title="Download Excel">
+              📥 Download Excel
+            </button>
+            <button className="tp-action-btn tp-pdf-btn" onClick={exportPDF} title="Download PDF">
+              📄 Download PDF
+            </button>
+
+            {canManage && (
+              <>
+                <button
+                  className="tp-action-btn"
+                  onClick={() => fileInputRef.current?.click()}
+                  title="Import Excel"
+                >
+                  📥 Import
+                </button>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept=".xlsx,.xls,.csv"
+                  style={{ display: "none" }}
+                  onChange={handleExcelImport}
+                />
+                <button className="tp-action-btn tp-primary-btn" onClick={openAdd}>
+                  ＋ Add Rate
+                </button>
+              </>
+            )}
+          </div>
         </div>
 
-        <div className="tp-btn-group">
-          <button className="tp-btn tp-btn-excel" onClick={exportExcel}>
-            📊 Download Excel
-          </button>
-          <button className="tp-btn tp-btn-pdf" onClick={exportPDF}>
-            📄 Download PDF
-          </button>
-
-          {canManage && (
-            <>
-              <button
-                className="tp-btn tp-btn-import"
-                onClick={() => fileInputRef.current?.click()}
-              >
-                📥 Import Excel
-              </button>
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept=".xlsx,.xls,.csv"
-                style={{ display: "none" }}
-                onChange={handleExcelImport}
-              />
-              <button className="tp-btn tp-btn-add" onClick={openAdd}>
-                + Add Rate
-              </button>
-            </>
-          )}
-        </div>
-      </div>
-
-      {/* SEARCH & FILTERS */}
-      <div className="tp-toolbar">
-        <div className="tp-search">
+        {/* COMPACT SEARCH BAR */}
+        <div className="tp-search-bar">
           <span>🔍</span>
           <input
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder="Search by Upazila, District, or Mill/Depot..."
+            className="tp-search-input"
           />
           {search && (
             <button
               onClick={() => setSearch("")}
               style={{
                 border: "none",
-                background: "#f1f5f9",
-                color: "#64748b",
-                borderRadius: "50%",
-                width: 22,
-                height: 22,
+                background: "transparent",
+                color: "#94a3b8",
                 fontSize: 12,
                 cursor: "pointer",
               }}
@@ -950,258 +944,212 @@ export default function TransportationPage() {
           )}
         </div>
 
-        <div className="tp-filters">
+        {/* COMPACT CATEGORY PILLS */}
+        <div className="tp-cat-scroll">
           <button
-            className={`tp-filter-pill ${fromFilter === "All" ? "active" : ""}`}
+            className={`tp-cat-pill ${fromFilter === "All" ? "active" : ""}`}
             onClick={() => setFromFilter("All")}
           >
-            🌐 All ({visibleItems.length})
+            All Locations ({visibleItems.length})
           </button>
           {assignedFromLocations.map((option) => {
             const count = visibleItems.filter((i) => i.from_location === option).length;
             return (
               <button
                 key={option}
-                className={`tp-filter-pill ${fromFilter === option ? "active" : ""}`}
+                className={`tp-cat-pill ${fromFilter === option ? "active" : ""}`}
                 onClick={() => setFromFilter(option)}
               >
-                🏭 {option} ({count})
+                {option} ({count})
               </button>
             );
           })}
         </div>
-      </div>
 
-      {/* DATA TABLE */}
-      {isPageLoading ? (
-        <div style={styles.loading}>Loading transportation rates...</div>
-      ) : (
-        <div className="tp-card">
-          <div className="tp-card-top">
-            <span>Transportation Rate List</span>
-            <span
-              style={{
-                background: "#e0e7ff",
-                color: "#1d4ed8",
-                padding: "3px 9px",
-                borderRadius: 12,
-                fontSize: 11,
-                fontWeight: 800,
-              }}
-            >
-              {filteredItems.length} Records
-            </span>
+        {/* COMPACT TABLE */}
+        {isPageLoading ? (
+          <div style={{ padding: 30, textAlign: "center", color: "#64748b", fontSize: 12.5 }}>
+            Loading transportation rates...
           </div>
+        ) : (
+          <div className="tp-table-card">
+            <div className="tp-scroll-wrap">
+              <table className="tp-table">
+                <thead>
+                  <tr>
+                    <th className="tp-th" style={{ width: 35, textAlign: "center" }}>SL</th>
+                    <th className="tp-th">Station / Upazila</th>
+                    <th className="tp-th">District</th>
+                    <th className="tp-th">From (Mill/Depot)</th>
+                    <th className="tp-th" style={{ textAlign: "right" }}>Poultry / Sinking</th>
+                    <th className="tp-th" style={{ textAlign: "right" }}>Floating / Cattle</th>
+                    <th className="tp-th" style={{ textAlign: "center" }}>Status</th>
+                    {canManage && <th className="tp-th" style={{ textAlign: "center" }}>Action</th>}
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredItems.map((item, idx) => {
+                    const rowBg = idx % 2 === 0 ? "#ffffff" : "#f8fafc";
+                    const districtName = getDistrictName(item.to_upazila);
 
-          <div className="tp-table-scroll">
-            <table className="tp-table">
-              <thead>
-                <tr>
-                  <th className="tp-th" style={{ width: 42, textAlign: "center" }}>
-                    SL
-                  </th>
-                  <th className="tp-th tp-sticky-col" style={{ background: "#f1f5f9" }}>
-                    Station / Upazila
-                  </th>
-                  <th className="tp-th">District</th>
-                  <th className="tp-th">From (Mill/Depot)</th>
-                  <th className="tp-th" style={{ textAlign: "right" }}>
-                    Poultry / Sinking
-                    <br />
-                    <small style={{ color: "#64748b", fontWeight: 600 }}>৳ / KG</small>
-                  </th>
-                  <th className="tp-th" style={{ textAlign: "right" }}>
-                    Floating / Cattle
-                    <br />
-                    <small style={{ color: "#64748b", fontWeight: 600 }}>৳ / KG</small>
-                  </th>
-                  <th className="tp-th" style={{ textAlign: "center" }}>
-                    Status
-                  </th>
-                  {canManage && (
-                    <th className="tp-th" style={{ textAlign: "center" }}>
-                      Action
-                    </th>
-                  )}
-                </tr>
-              </thead>
-              <tbody>
-                {filteredItems.map((item, idx) => {
-                  const rowBg = idx % 2 === 0 ? "#ffffff" : "#f8fafc";
-                  const districtName = getDistrictName(item.to_upazila);
-
-                  return (
-                    <tr
-                      key={item.id || `${item.from_location}-${item.to_upazila}`}
-                      style={{ background: rowBg }}
-                    >
-                      <td
-                        className="tp-td"
-                        style={{ textAlign: "center", color: "#64748b", fontWeight: 600 }}
-                      >
-                        {idx + 1}
-                      </td>
-                      <td
-                        className="tp-td tp-sticky-col"
-                        style={{ background: rowBg, fontWeight: 800, color: "#0f172a" }}
-                      >
-                        {item.to_upazila}
-                      </td>
-                      <td className="tp-td">
-                        <span style={styles.districtBadge}>{districtName}</span>
-                      </td>
-                      <td className="tp-td">
-                        <span style={styles.fromBadge}>{item.from_location}</span>
-                      </td>
-                      <td
-                        className="tp-td"
-                        style={{ textAlign: "right", fontWeight: 800, color: "#047857" }}
-                      >
-                        ৳ {Number(item.sinking_broiler_layer_sonali_rate_per_kg).toFixed(2)}
-                      </td>
-                      <td
-                        className="tp-td"
-                        style={{ textAlign: "right", fontWeight: 800, color: "#1d4ed8" }}
-                      >
-                        ৳ {Number(item.floating_cattle_rate_per_kg).toFixed(2)}
-                      </td>
-                      <td className="tp-td" style={{ textAlign: "center" }}>
-                        <span
-                          style={{
-                            ...styles.status,
-                            ...(item.status === "Active"
-                              ? styles.activeStatus
-                              : styles.inactiveStatus),
-                          }}
-                        >
-                          {item.status}
-                        </span>
-                      </td>
-                      {canManage && (
-                        <td className="tp-td" style={{ textAlign: "center" }}>
-                          <div style={styles.actionGroup}>
-                            <button
-                              style={styles.editButton}
-                              onClick={() => openEdit(item)}
-                              title="Edit"
-                            >
-                              ✏️
-                            </button>
-                            <button
-                              style={styles.deleteButton}
-                              onClick={() => deleteTransportation(item.id)}
-                              title="Delete"
-                            >
-                              🗑️
-                            </button>
-                          </div>
+                    return (
+                      <tr key={item.id || `${item.from_location}-${item.to_upazila}`} className="tp-tr" style={{ background: rowBg }}>
+                        <td className="tp-td" style={{ textAlign: "center", color: "#64748b", fontWeight: 600 }}>
+                          {idx + 1}
                         </td>
-                      )}
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+                        <td className="tp-td" style={{ fontWeight: 750, color: "#0f172a" }}>
+                          {item.to_upazila}
+                        </td>
+                        <td className="tp-td">
+                          <span className="tp-dist-badge">{districtName}</span>
+                        </td>
+                        <td className="tp-td">
+                          <span className="tp-badge">{item.from_location}</span>
+                        </td>
+                        <td className="tp-td" style={{ textAlign: "right", fontWeight: 750, color: "#047857" }}>
+                          ৳ {Number(item.sinking_broiler_layer_sonali_rate_per_kg).toFixed(2)}
+                        </td>
+                        <td className="tp-td" style={{ textAlign: "right", fontWeight: 750, color: "#1d4ed8" }}>
+                          ৳ {Number(item.floating_cattle_rate_per_kg).toFixed(2)}
+                        </td>
+                        <td className="tp-td" style={{ textAlign: "center" }}>
+                          <span
+                            className={`tp-status ${
+                              item.status === "Active" ? "tp-status-active" : "tp-status-inactive"
+                            }`}
+                          >
+                            {item.status}
+                          </span>
+                        </td>
+                        {canManage && (
+                          <td className="tp-td" style={{ textAlign: "center" }}>
+                            <div style={{ display: "inline-flex", gap: 4 }}>
+                              <button className="tp-icon-btn" onClick={() => openEdit(item)} title="Edit">
+                                ✏️
+                              </button>
+                              <button
+                                className="tp-icon-btn"
+                                style={{ background: "#fef2f2", borderColor: "#fecaca" }}
+                                onClick={() => deleteTransportation(item.id)}
+                                title="Delete"
+                              >
+                                🗑️
+                              </button>
+                            </div>
+                          </td>
+                        )}
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
 
-            {!filteredItems.length && (
-              <div style={styles.noData}>
-                No transportation data found for your assigned districts.
-              </div>
-            )}
+              {!filteredItems.length && (
+                <div style={{ padding: 30, textAlign: "center", color: "#64748b", fontSize: 12.5 }}>
+                  No transportation data found.
+                </div>
+              )}
+            </div>
           </div>
-        </div>
-      )}
+        )}
+      </div>
 
       {/* ADD / EDIT MODAL */}
       {showForm && canManage && (
-        <div style={styles.overlay}>
-          <div style={styles.modal}>
-            <div style={styles.modalHeader}>
-              <h2 style={styles.modalTitle}>
+        <div style={modalStyles.overlay}>
+          <div style={modalStyles.modal}>
+            <div style={modalStyles.header}>
+              <h3 style={{ margin: 0, fontSize: 15, fontWeight: 800 }}>
                 {editingId ? "Edit Transportation Rate" : "Add Transportation Rate"}
-              </h2>
-              <button style={styles.closeButton} onClick={closeForm}>
-                ×
+              </h3>
+              <button style={modalStyles.closeBtn} onClick={closeForm}>×</button>
+            </div>
+
+            <div style={{ display: "flex", flexDirection: "column", gap: 8, maxHeight: "72vh", overflowY: "auto", paddingRight: 4 }}>
+              <div>
+                <label style={modalStyles.label}>From (Assigned Mills/Depots)</label>
+                <select
+                  value={form.from_location}
+                  onChange={(e) => setForm({ ...form, from_location: e.target.value })}
+                  style={modalStyles.input}
+                >
+                  {assignedFromLocations.map((option) => (
+                    <option key={option} value={option}>{option}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label style={modalStyles.label}>To / Upazila (Assigned Districts)</label>
+                {upazilaLoading ? (
+                  <div style={{ fontSize: 11.5, color: "#64748b" }}>Loading Upazilas...</div>
+                ) : (
+                  <select
+                    value={form.to_upazila}
+                    onChange={(e) => setForm({ ...form, to_upazila: e.target.value })}
+                    style={modalStyles.input}
+                  >
+                    <option value="">Select Upazila</option>
+                    {filteredUpazilaList.map((upazila) => (
+                      <option key={upazila.id} value={upazila.upazila_name}>
+                        {upazila.upazila_name} — {upazila.district}
+                      </option>
+                    ))}
+                  </select>
+                )}
+              </div>
+
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+                <div>
+                  <label style={modalStyles.label}>Poultry / Sinking (৳/KG)</label>
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={form.sinking_broiler_layer_sonali_rate_per_kg}
+                    onChange={(e) =>
+                      setForm({
+                        ...form,
+                        sinking_broiler_layer_sonali_rate_per_kg: Number(e.target.value),
+                      })
+                    }
+                    style={modalStyles.input}
+                  />
+                </div>
+                <div>
+                  <label style={modalStyles.label}>Floating / Cattle (৳/KG)</label>
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={form.floating_cattle_rate_per_kg}
+                    onChange={(e) =>
+                      setForm({ ...form, floating_cattle_rate_per_kg: Number(e.target.value) })
+                    }
+                    style={modalStyles.input}
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label style={modalStyles.label}>Status</label>
+                <select
+                  value={form.status}
+                  onChange={(e) => setForm({ ...form, status: e.target.value })}
+                  style={modalStyles.input}
+                >
+                  <option>Active</option>
+                  <option>Inactive</option>
+                </select>
+              </div>
+            </div>
+
+            <div style={{ display: "flex", gap: 6, marginTop: 12, justifyContent: "flex-end" }}>
+              <button onClick={closeForm} style={modalStyles.cancelBtn}>Cancel</button>
+              <button onClick={saveTransportation} style={modalStyles.saveBtn}>
+                {editingId ? "Update Rate" : "Save Rate"}
               </button>
             </div>
-
-            <label style={styles.label}>From (Assigned Mills/Depots)</label>
-            <select
-              value={form.from_location}
-              onChange={(e) => setForm({ ...form, from_location: e.target.value })}
-              style={styles.input}
-            >
-              {assignedFromLocations.map((option) => (
-                <option key={option} value={option}>
-                  {option}
-                </option>
-              ))}
-            </select>
-
-            <label style={styles.label}>To / Upazila (Assigned Districts)</label>
-            {upazilaLoading ? (
-              <div style={styles.loadingSmall}>Loading Upazila...</div>
-            ) : (
-              <select
-                value={form.to_upazila}
-                onChange={(e) => setForm({ ...form, to_upazila: e.target.value })}
-                style={styles.input}
-              >
-                <option value="">Select Upazila</option>
-                {filteredUpazilaList.map((upazila) => (
-                  <option key={upazila.id} value={upazila.upazila_name}>
-                    {upazila.upazila_name} — {upazila.district}
-                  </option>
-                ))}
-              </select>
-            )}
-
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-              <div>
-                <label style={styles.label}>Poultry / Sinking (৳/KG)</label>
-                <input
-                  type="number"
-                  min="0"
-                  step="0.01"
-                  value={form.sinking_broiler_layer_sonali_rate_per_kg}
-                  onChange={(e) =>
-                    setForm({
-                      ...form,
-                      sinking_broiler_layer_sonali_rate_per_kg: Number(e.target.value),
-                    })
-                  }
-                  style={styles.input}
-                />
-              </div>
-
-              <div>
-                <label style={styles.label}>Floating / Cattle (৳/KG)</label>
-                <input
-                  type="number"
-                  min="0"
-                  step="0.01"
-                  value={form.floating_cattle_rate_per_kg}
-                  onChange={(e) =>
-                    setForm({ ...form, floating_cattle_rate_per_kg: Number(e.target.value) })
-                  }
-                  style={styles.input}
-                />
-              </div>
-            </div>
-
-            <label style={styles.label}>Status</label>
-            <select
-              value={form.status}
-              onChange={(e) => setForm({ ...form, status: e.target.value })}
-              style={styles.input}
-            >
-              <option>Active</option>
-              <option>Inactive</option>
-            </select>
-
-            <button style={styles.saveButton} onClick={saveTransportation}>
-              {editingId ? "Update Transportation Rate" : "Save Transportation Rate"}
-            </button>
           </div>
         </div>
       )}
@@ -1209,137 +1157,13 @@ export default function TransportationPage() {
   );
 }
 
-const styles: Record<string, React.CSSProperties> = {
-  fromBadge: {
-    background: "#eff6ff",
-    color: "#1e40af",
-    border: "1px solid #bfdbfe",
-    padding: "3px 8px",
-    borderRadius: 6,
-    fontSize: 11.5,
-    fontWeight: 700,
-  },
-  districtBadge: {
-    background: "#f1f5f9",
-    color: "#334155",
-    padding: "3px 8px",
-    borderRadius: 6,
-    fontSize: 11.5,
-    fontWeight: 600,
-  },
-  status: {
-    display: "inline-block",
-    padding: "3px 8px",
-    borderRadius: 6,
-    fontSize: 11.5,
-    fontWeight: 700,
-  },
-  activeStatus: { background: "#dcfce7", color: "#166534" },
-  inactiveStatus: { background: "#fee2e2", color: "#991b1b" },
-  actionGroup: { display: "flex", justifyContent: "center", gap: 5 },
-  editButton: {
-    border: "none",
-    background: "#eef2ff",
-    width: 32,
-    height: 32,
-    borderRadius: 7,
-    cursor: "pointer",
-  },
-  deleteButton: {
-    border: "none",
-    background: "#fee2e2",
-    width: 32,
-    height: 32,
-    borderRadius: 7,
-    cursor: "pointer",
-  },
-  loading: {
-    padding: 40,
-    textAlign: "center",
-    color: "#475569",
-    background: "#ffffff",
-    borderRadius: 12,
-    border: "1px solid #e2e8f0",
-    fontSize: 13.5,
-    fontWeight: 600,
-  },
-  noData: { padding: 35, textAlign: "center", color: "#64748b", fontSize: 13 },
-  overlay: {
-    position: "fixed",
-    inset: 0,
-    background: "rgba(15, 23, 42, 0.45)",
-    backdropFilter: "blur(2px)",
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    zIndex: 1000,
-    padding: 14,
-  },
-  modal: {
-    width: "100%",
-    maxWidth: 520,
-    background: "#ffffff",
-    color: "#0f172a",
-    borderRadius: 16,
-    padding: 20,
-    maxHeight: "90vh",
-    overflowY: "auto",
-    boxSizing: "border-box",
-    boxShadow: "0 20px 25px -5px rgba(0,0,0,0.15)",
-  },
-  modalHeader: {
-    display: "flex",
-    justifyContent: "space-between",
-    alignItems: "center",
-    marginBottom: 8,
-  },
-  modalTitle: { margin: 0, color: "#0f172a", fontSize: 18, fontWeight: 800 },
-  closeButton: {
-    border: "none",
-    background: "#f1f5f9",
-    color: "#0f172a",
-    width: 32,
-    height: 32,
-    borderRadius: "50%",
-    fontSize: 20,
-    cursor: "pointer",
-  },
-  label: {
-    display: "block",
-    fontSize: 12.5,
-    fontWeight: 700,
-    marginTop: 12,
-    marginBottom: 5,
-    color: "#334155",
-  },
-  input: {
-    width: "100%",
-    boxSizing: "border-box",
-    border: "1px solid #cbd5e1",
-    background: "#ffffff",
-    color: "#0f172a",
-    borderRadius: 9,
-    padding: "10px 11px",
-    fontSize: 13.5,
-    outline: "none",
-  },
-  loadingSmall: {
-    background: "#f1f5f9",
-    color: "#334155",
-    padding: 10,
-    borderRadius: 9,
-    fontSize: 12.5,
-  },
-  saveButton: {
-    width: "100%",
-    border: "none",
-    background: "#2563eb",
-    color: "#ffffff",
-    padding: 13,
-    borderRadius: 10,
-    marginTop: 20,
-    fontSize: 13.5,
-    fontWeight: 800,
-    cursor: "pointer",
-  },
+const modalStyles: Record<string, React.CSSProperties> = {
+  overlay: { position: "fixed", inset: 0, background: "rgba(15, 23, 42, 0.45)", backdropFilter: "blur(2px)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000, padding: 12 },
+  modal: { width: "100%", maxWidth: 420, background: "#fff", borderRadius: 14, padding: 16, boxShadow: "0 15px 30px rgba(15, 23, 42, 0.15)", boxSizing: "border-box", textAlign: "left" },
+  header: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10, borderBottom: "1px solid #f1f5f9", paddingBottom: 8 },
+  closeBtn: { border: "none", background: "#f1f5f9", width: 26, height: 26, borderRadius: "50%", cursor: "pointer", fontWeight: 700, color: "#475569", fontSize: 11.5 },
+  label: { display: "block", marginBottom: 3, fontSize: 11, fontWeight: 700, color: "#475569" },
+  input: { width: "100%", boxSizing: "border-box", border: "1px solid #cbd5e1", borderRadius: 7, padding: "7px 9px", background: "#ffffff", color: "#0f172a", fontSize: 12, outline: "none" },
+  cancelBtn: { border: "1px solid #cbd5e1", background: "#fff", color: "#334155", borderRadius: 7, padding: "7px 12px", fontSize: 11.5, fontWeight: 700, cursor: "pointer" },
+  saveBtn: { border: "none", background: "#2563eb", color: "#fff", borderRadius: 7, padding: "7px 14px", fontSize: 11.5, fontWeight: 700, cursor: "pointer" },
 };

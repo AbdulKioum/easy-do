@@ -66,6 +66,44 @@ const emptyForm: PriceItem = {
   status: "Active",
 };
 
+const COMPACT_PL_CSS = `
+  .pl-page { min-height: calc(100vh - 60px); background: #f8fafc; padding: 10px; box-sizing: border-box; font-family: system-ui, -apple-system, sans-serif; color: #0f172a; }
+  .pl-container { max-width: 1100px; margin: 0 auto; }
+  .pl-topbar { background: #ffffff; border: 1px solid #e2e8f0; border-radius: 10px; padding: 8px 12px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px; margin-bottom: 8px; }
+  .pl-title { margin: 0; font-size: 15px; font-weight: 800; color: #0f172a; letter-spacing: -0.2px; }
+  .pl-btn-group { display: flex; gap: 5px; flex-wrap: wrap; }
+  
+  .pl-action-btn { border: 1px solid #cbd5e1; background: #ffffff; color: #334155; padding: 5px 9px; border-radius: 6px; font-size: 11.5px; font-weight: 700; cursor: pointer; display: inline-flex; align-items: center; gap: 4px; transition: all 0.15s ease; }
+  .pl-action-btn:hover { background: #f1f5f9; border-color: #94a3b8; }
+  .pl-primary-btn { background: #0f172a; color: #ffffff; border-color: #0f172a; }
+  .pl-primary-btn:hover { background: #1e293b; }
+  .pl-bulk-btn { background: #2563eb; color: #ffffff; border-color: #2563eb; }
+  .pl-bulk-btn:hover { background: #1d4ed8; }
+
+  .pl-search-bar { display: flex; align-items: center; gap: 6px; background: #ffffff; border: 1px solid #e2e8f0; padding: 6px 10px; border-radius: 8px; margin-bottom: 8px; }
+  .pl-search-input { border: none; outline: none; background: transparent; width: 100%; font-size: 12.5px; font-weight: 600; color: #0f172a; }
+
+  .pl-cat-scroll { display: flex; gap: 5px; overflow-x: auto; padding-bottom: 6px; margin-bottom: 8px; scrollbar-width: none; }
+  .pl-cat-scroll::-webkit-scrollbar { display: none; }
+  .pl-cat-pill { flex-shrink: 0; border: 1px solid #cbd5e1; background: #ffffff; color: #475569; padding: 4px 10px; border-radius: 999px; font-size: 11px; font-weight: 700; cursor: pointer; transition: all 0.15s ease; }
+  .pl-cat-pill.active { background: #0f172a; color: #ffffff; border-color: #0f172a; }
+
+  .pl-table-card { background: #ffffff; border: 1px solid #e2e8f0; border-radius: 10px; overflow: hidden; box-shadow: 0 1px 3px rgba(15, 23, 42, 0.03); }
+  .pl-scroll-wrap { width: 100%; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  .pl-table { width: 100%; min-width: 900px; border-collapse: collapse; font-size: 12px; text-align: left; }
+  .pl-th { background: #f8fafc; color: #475569; font-weight: 800; font-size: 11px; text-transform: uppercase; letter-spacing: 0.3px; padding: 8px 9px; border-bottom: 1px solid #e2e8f0; white-space: nowrap; }
+  .pl-td { padding: 7px 9px; border-bottom: 1px solid #f1f5f9; vertical-align: middle; color: #0f172a; }
+  .pl-tr:hover { background: #f8fafc !important; }
+
+  .pl-tag { display: inline-block; padding: 2px 6px; border-radius: 4px; font-size: 10.5px; font-weight: 700; background: #f1f5f9; color: #334155; white-space: nowrap; }
+  .pl-status { padding: 2px 5px; border-radius: 4px; font-size: 10px; font-weight: 800; white-space: nowrap; }
+  .pl-status-active { background: #dcfce7; color: #166534; }
+  .pl-status-inactive { background: #fee2e2; color: #991b1b; }
+  
+  .pl-icon-btn { border: 1px solid #e2e8f0; background: #f8fafc; width: 26px; height: 26px; border-radius: 5px; cursor: pointer; display: inline-flex; align-items: center; justifyContent: center; font-size: 11px; }
+  .pl-icon-btn:hover { background: #eff6ff; border-color: #bfdbfe; }
+`;
+
 export default function PriceListPage2() {
   const { user, role } = useAuth();
   const currentRole = role as UserRole | null;
@@ -87,8 +125,6 @@ export default function PriceListPage2() {
   const [form, setForm] = useState<PriceItem>(emptyForm);
 
   const fileInputRef = useRef<HTMLInputElement | null>(null);
-  const topScrollRef = useRef<HTMLDivElement | null>(null);
-  const tableWrapperRef = useRef<HTMLDivElement | null>(null);
 
   const [showBulkModal, setShowBulkModal] = useState(false);
   const [selectedBulkCategories, setSelectedBulkCategories] = useState<string[]>([]);
@@ -97,18 +133,6 @@ export default function PriceListPage2() {
   const [showConfirmModal, setShowConfirmModal] = useState(false);
   const [previewItems, setPreviewItems] = useState<any[]>([]);
   const [isUpdating, setIsUpdating] = useState(false);
-
-  const handleTopScroll = () => {
-    if (topScrollRef.current && tableWrapperRef.current) {
-      tableWrapperRef.current.scrollLeft = topScrollRef.current.scrollLeft;
-    }
-  };
-
-  const handleTableScroll = () => {
-    if (topScrollRef.current && tableWrapperRef.current) {
-      topScrollRef.current.scrollLeft = tableWrapperRef.current.scrollLeft;
-    }
-  };
 
   useEffect(() => {
     async function trackPageVisit() {
@@ -447,7 +471,7 @@ export default function PriceListPage2() {
       rowsHtml += `
         <tr style="background-color: #${bgHex}; page-break-inside: avoid; break-inside: avoid;">
           <td style="border: 1px solid #cbd5e1; padding: 5px; white-space: nowrap;"><b>${item.category}</b></td>
-          <td style="border: 1px solid #cbd5e1; padding: 5px; white-space: nowrap;"><b>${item.item_name}</b></td>
+          <td style="border: 1px solid #cbd5e1; padding: 5px;"><b>${item.item_name}</b></td>
           <td style="border: 1px solid #cbd5e1; padding: 5px; text-align: right; white-space: nowrap;">${proteinVal}</td>
           <td style="border: 1px solid #cbd5e1; padding: 5px; text-align: right; white-space: nowrap;">${item.kg_per_bag}</td>
           <td style="border: 1px solid #cbd5e1; padding: 5px; text-align: right; white-space: nowrap;">${tpPerBag.toLocaleString()}</td>
@@ -630,466 +654,424 @@ export default function PriceListPage2() {
 
   if (!canView) {
     return (
-      <div style={styles.accessDenied}>
-        <div style={styles.accessIcon}>🔒</div>
-        <div style={styles.accessTitle}>Access Denied</div>
-        <div style={styles.accessText}>You do not have permission to view Price List 2.</div>
+      <div style={{ padding: 40, textAlign: "center" }}>
+        <div style={{ fontSize: 32 }}>🔒</div>
+        <div style={{ fontSize: 16, fontWeight: 700, marginTop: 6 }}>Access Denied</div>
       </div>
     );
   }
 
   return (
-    <div style={styles.page}>
-      <div style={styles.header}>
-        <div>
-          <h1 style={styles.title}>Price List 2</h1>
-          <p style={styles.subtitle}>Feed price management (List 2)</p>
-        </div>
+    <div className="pl-page">
+      <style>{COMPACT_PL_CSS}</style>
 
-        <div style={styles.headerButtons}>
-          <button style={styles.exportButton} onClick={exportExcel}>
-            📤 Download Pricelist in Excel
-          </button>
+      <div className="pl-container">
+        {/* COMPACT TOP BAR */}
+        <div className="pl-topbar">
+          <h1 className="pl-title">Price List 2</h1>
 
-          <button style={styles.exportButton} onClick={exportPDF}>
-            📄 Download Pricelist in pdf
-          </button>
-
-          {canManage && (
-            <>
-              <button
-                style={styles.bulkHeaderButton}
-                onClick={() => setShowBulkModal(true)}
-              >
-                Update Price
-              </button>
-
-              <button
-                style={styles.importButton}
-                onClick={() => fileInputRef.current?.click()}
-              >
-                📥 Import Excel
-              </button>
-
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept=".xlsx,.xls,.csv"
-                style={{ display: "none" }}
-                onChange={handleExcelImport}
-              />
-
-              <button style={styles.addButton} onClick={openAdd}>
-                + Add
-              </button>
-            </>
-          )}
-        </div>
-      </div>
-
-      <div style={styles.searchBox}>
-        <span>🔍</span>
-        <input
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          placeholder="Search item or short name..."
-          style={styles.searchInput}
-        />
-      </div>
-
-      <div style={styles.categoryScroll}>
-        <button
-          style={{
-            ...styles.categoryButton,
-            ...(categoryFilter === "All" ? styles.categoryActive : {}),
-          }}
-          onClick={() => setCategoryFilter("All")}
-        >
-          All
-        </button>
-
-        {categories.map((category) => (
-          <button
-            key={category}
-            style={{
-              ...styles.categoryButton,
-              ...(categoryFilter === category ? styles.categoryActive : {}),
-            }}
-            onClick={() => setCategoryFilter(category)}
-          >
-            {category}
-          </button>
-        ))}
-      </div>
-
-      {loading ? (
-        <div style={styles.loading}>Loading...</div>
-      ) : (
-        <div style={styles.tableContainerOuter}>
-          <div
-            ref={topScrollRef}
-            onScroll={handleTopScroll}
-            style={styles.topScrollbarWrapper}
-          >
-            <div style={styles.topScrollbarContent}></div>
-          </div>
-
-          <div
-            ref={tableWrapperRef}
-            onScroll={handleTableScroll}
-            style={styles.tableWrapper}
-          >
-            <table style={styles.table}>
-              <thead>
-                <tr>
-                  <th style={styles.th}>Category</th>
-                  <th style={styles.th}>Item</th>
-                  <th style={{ ...styles.th, textAlign: "right" }}>Protein %</th>
-                  <th style={styles.th}>Short Name</th>
-                  <th style={{ ...styles.th, textAlign: "right" }}>KG/Bag</th>
-                  <th style={{ ...styles.th, textAlign: "right" }}>TP/Bag</th>
-                  <th style={{ ...styles.th, textAlign: "right" }}>TP/KG</th>
-                  <th style={{ ...styles.th, textAlign: "right" }}>MRP/Bag</th>
-                  <th style={{ ...styles.th, textAlign: "right" }}>MRP/KG</th>
-                  <th style={styles.th}>Status</th>
-                  {canManage && <th style={{ ...styles.th, textAlign: "center" }}>Action</th>}
-                </tr>
-              </thead>
-              <tbody>
-                {filteredItems.map((item, index) => {
-                  const kgPerBag = Number(item.kg_per_bag);
-                  const tpPerBag = Number(item.tp_per_bag);
-                  const mrpPerBag = Number(item.mrp_per_bag);
-                  const tpKg = kgPerBag > 0 ? tpPerBag / kgPerBag : 0;
-                  const mrpKg = kgPerBag > 0 ? mrpPerBag / kgPerBag : 0;
-
-                  const rowBg = index % 2 === 0 ? (CATEGORY_COLORS[item.category] || "#ffffff") : "#ffffff";
-
-                  return (
-                    <tr key={item.id} style={{ ...styles.tr, background: rowBg }}>
-                      <td style={styles.td}>
-                        <span style={styles.categoryTag}>{item.category}</span>
-                      </td>
-                      <td style={{ ...styles.td, fontWeight: 600 }}>{item.item_name}</td>
-                      <td style={{ ...styles.td, textAlign: "right" }}>
-                        {item.protein_percentage ? `${item.protein_percentage}%` : "-"}
-                      </td>
-                      <td style={{ ...styles.td, fontWeight: 700, color: "#2563eb" }}>
-                        {item.short_name || "-"}
-                      </td>
-                      <td style={{ ...styles.td, textAlign: "right" }}>{item.kg_per_bag}</td>
-                      <td style={{ ...styles.td, textAlign: "right" }}>৳{tpPerBag.toLocaleString()}</td>
-                      <td style={{ ...styles.td, textAlign: "right" }}>৳{tpKg.toFixed(2)}</td>
-                      <td style={{ ...styles.td, textAlign: "right" }}>৳{mrpPerBag.toLocaleString()}</td>
-                      <td style={{ ...styles.td, textAlign: "right" }}>৳{mrpKg.toFixed(2)}</td>
-                      <td style={styles.td}>
-                        <span
-                          style={{
-                            ...styles.status,
-                            ...(item.status === "Active" ? styles.activeStatus : styles.inactiveStatus),
-                          }}
-                        >
-                          {item.status}
-                        </span>
-                      </td>
-                      {canManage && (
-                        <td style={{ ...styles.td, textAlign: "center" }}>
-                          <div style={styles.actionGroup}>
-                            <button style={styles.editButton} onClick={() => openEdit(item)} title="Edit">
-                              ✏️
-                            </button>
-                            <button style={styles.deleteButton} onClick={() => deleteItem(item.id)} title="Delete">
-                              🗑️
-                            </button>
-                          </div>
-                        </td>
-                      )}
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-            {!filteredItems.length && <div style={styles.noData}>No price items found.</div>}
-          </div>
-        </div>
-      )}
-
-      {showForm && canManage && (
-        <div style={styles.overlay}>
-          <div style={styles.modal}>
-            <div style={styles.modalHeader}>
-              <h2 style={{ margin: 0 }}>{editingId ? "Edit Price (List 2)" : "Add Price (List 2)"}</h2>
-              <button style={styles.closeButton} onClick={closeForm}>×</button>
-            </div>
-
-            <label style={styles.label}>Category</label>
-            <select
-              value={form.category}
-              onChange={(e) => setForm({ ...form, category: e.target.value })}
-              style={styles.input}
-            >
-              {categories.map((cat) => (
-                <option key={cat} value={cat}>{cat}</option>
-              ))}
-            </select>
-
-            <label style={styles.label}>Item Name</label>
-            <input
-              value={form.item_name}
-              onChange={(e) => setForm({ ...form, item_name: e.target.value })}
-              placeholder="Feed item name"
-              style={styles.input}
-            />
-
-            <label style={styles.label}>Protein %</label>
-            <input
-              type="number"
-              min="0"
-              step="0.01"
-              value={form.protein_percentage}
-              onChange={(e) => setForm({ ...form, protein_percentage: Number(e.target.value) })}
-              placeholder="e.g. 20.5"
-              style={styles.input}
-            />
-
-            <label style={styles.label}>Short Name</label>
-            <input
-              value={form.short_name}
-              onChange={(e) => setForm({ ...form, short_name: e.target.value })}
-              placeholder="Example: BR-S"
-              style={styles.input}
-            />
-            <div style={styles.helperText}>This short name will be used in the DO Message.</div>
-
-            <label style={styles.label}>KG / Bag</label>
-            <input
-              type="number"
-              min="0"
-              step="0.01"
-              value={form.kg_per_bag}
-              onChange={(e) => setForm({ ...form, kg_per_bag: Number(e.target.value) })}
-              style={styles.input}
-            />
-
-            <label style={styles.label}>TP / Bag</label>
-            <input
-              type="number"
-              min="0"
-              step="0.01"
-              value={form.tp_per_bag}
-              onChange={(e) => setForm({ ...form, tp_per_bag: Number(e.target.value) })}
-              style={styles.input}
-            />
-
-            <div style={styles.calculated}>
-              TP / KG: ৳{form.kg_per_bag > 0 ? (Number(form.tp_per_bag) / Number(form.kg_per_bag)).toFixed(2) : "0.00"}
-            </div>
-
-            <label style={styles.label}>MRP / Bag</label>
-            <input
-              type="number"
-              min="0"
-              step="0.01"
-              value={form.mrp_per_bag}
-              onChange={(e) => setForm({ ...form, mrp_per_bag: Number(e.target.value) })}
-              style={styles.input}
-            />
-
-            <div style={styles.calculated}>
-              MRP / KG: ৳{form.kg_per_bag > 0 ? (Number(form.mrp_per_bag) / Number(form.kg_per_bag)).toFixed(2) : "0.00"}
-            </div>
-
-            <label style={styles.label}>Status</label>
-            <select
-              value={form.status}
-              onChange={(e) => setForm({ ...form, status: e.target.value })}
-              style={styles.input}
-            >
-              <option value="Active">Active</option>
-              <option value="Inactive">Inactive</option>
-            </select>
-
-            <button style={styles.saveButton} onClick={savePriceItem}>
-              {editingId ? "Update Price" : "Save Price"}
+          <div className="pl-btn-group">
+            <button className="pl-action-btn" onClick={exportExcel} title="Download Excel">
+              📥 Download Excel
             </button>
+            <button className="pl-action-btn" onClick={exportPDF} title="Download PDF">
+              📄 Download PDF
+            </button>
+
+            {canManage && (
+              <>
+                <button className="pl-action-btn pl-bulk-btn" onClick={() => setShowBulkModal(true)}>
+                  ⚡ Adjust Price
+                </button>
+                <button className="pl-action-btn" onClick={() => fileInputRef.current?.click()}>
+                  📤 Import
+                </button>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept=".xlsx,.xls,.csv"
+                  style={{ display: "none" }}
+                  onChange={handleExcelImport}
+                />
+                <button className="pl-action-btn pl-primary-btn" onClick={openAdd}>
+                  ＋ Add
+                </button>
+              </>
+            )}
+          </div>
+        </div>
+
+        {/* COMPACT SEARCH BAR */}
+        <div className="pl-search-bar">
+          <span>🔍</span>
+          <input
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search item or short name..."
+            className="pl-search-input"
+          />
+        </div>
+
+        {/* COMPACT CATEGORY PILLS */}
+        <div className="pl-cat-scroll">
+          <button
+            className={`pl-cat-pill ${categoryFilter === "All" ? "active" : ""}`}
+            onClick={() => setCategoryFilter("All")}
+          >
+            All
+          </button>
+          {categories.map((category) => (
+            <button
+              key={category}
+              className={`pl-cat-pill ${categoryFilter === category ? "active" : ""}`}
+              onClick={() => setCategoryFilter(category)}
+            >
+              {category}
+            </button>
+          ))}
+        </div>
+
+        {/* COMPACT TABLE */}
+        {loading ? (
+          <div style={{ padding: 30, textAlign: "center", color: "#64748b", fontSize: 12.5 }}>
+            Loading price list 2...
+          </div>
+        ) : (
+          <div className="pl-table-card">
+            <div className="pl-scroll-wrap">
+              <table className="pl-table">
+                <thead>
+                  <tr>
+                    <th className="pl-th" style={{ width: "110px" }}>Category</th>
+                    <th className="pl-th" style={{ minWidth: "220px" }}>Item Name</th>
+                    <th className="pl-th" style={{ textAlign: "right", width: "70px" }}>Protein</th>
+                    <th className="pl-th" style={{ width: "70px" }}>Short</th>
+                    <th className="pl-th" style={{ textAlign: "right", width: "70px" }}>Bag(KG)</th>
+                    <th className="pl-th" style={{ textAlign: "right", width: "80px" }}>TP/Bag</th>
+                    <th className="pl-th" style={{ textAlign: "right", width: "75px" }}>TP/KG</th>
+                    <th className="pl-th" style={{ textAlign: "right", width: "80px" }}>MRP/Bag</th>
+                    <th className="pl-th" style={{ textAlign: "right", width: "75px" }}>MRP/KG</th>
+                    <th className="pl-th" style={{ width: "70px" }}>Status</th>
+                    {canManage && <th className="pl-th" style={{ textAlign: "center", width: "70px" }}>Action</th>}
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredItems.map((item, index) => {
+                    const kgPerBag = Number(item.kg_per_bag);
+                    const tpPerBag = Number(item.tp_per_bag);
+                    const mrpPerBag = Number(item.mrp_per_bag);
+                    const tpKg = kgPerBag > 0 ? tpPerBag / kgPerBag : 0;
+                    const mrpKg = kgPerBag > 0 ? mrpPerBag / kgPerBag : 0;
+
+                    const rowBg = index % 2 === 0 ? (CATEGORY_COLORS[item.category] || "#ffffff") : "#ffffff";
+
+                    return (
+                      <tr key={item.id} className="pl-tr" style={{ background: rowBg }}>
+                        <td className="pl-td" style={{ whiteSpace: "nowrap" }}>
+                          <span className="pl-tag">{item.category}</span>
+                        </td>
+                        <td className="pl-td" style={{ fontWeight: 700, whiteSpace: "normal", wordBreak: "break-word" }}>
+                          {item.item_name}
+                        </td>
+                        <td className="pl-td" style={{ textAlign: "right", color: "#475569", whiteSpace: "nowrap" }}>
+                          {item.protein_percentage ? `${item.protein_percentage}%` : "-"}
+                        </td>
+                        <td className="pl-td" style={{ fontWeight: 700, color: "#2563eb", whiteSpace: "nowrap" }}>
+                          {item.short_name || "-"}
+                        </td>
+                        <td className="pl-td" style={{ textAlign: "right", whiteSpace: "nowrap" }}>{item.kg_per_bag}</td>
+                        <td className="pl-td" style={{ textAlign: "right", fontWeight: 750, whiteSpace: "nowrap" }}>৳{tpPerBag.toLocaleString()}</td>
+                        <td className="pl-td" style={{ textAlign: "right", color: "#64748b", whiteSpace: "nowrap" }}>৳{tpKg.toFixed(2)}</td>
+                        <td className="pl-td" style={{ textAlign: "right", fontWeight: 750, color: "#16a34a", whiteSpace: "nowrap" }}>৳{mrpPerBag.toLocaleString()}</td>
+                        <td className="pl-td" style={{ textAlign: "right", color: "#64748b", whiteSpace: "nowrap" }}>৳{mrpKg.toFixed(2)}</td>
+                        <td className="pl-td" style={{ whiteSpace: "nowrap" }}>
+                          <span
+                            className={`pl-status ${item.status === "Active" ? "pl-status-active" : "pl-status-inactive"}`}
+                          >
+                            {item.status}
+                          </span>
+                        </td>
+                        {canManage && (
+                          <td className="pl-td" style={{ textAlign: "center", whiteSpace: "nowrap" }}>
+                            <div style={{ display: "inline-flex", gap: 4 }}>
+                              <button className="pl-icon-btn" onClick={() => openEdit(item)} title="Edit">
+                                ✏️
+                              </button>
+                              <button className="pl-icon-btn" style={{ background: "#fef2f2", borderColor: "#fecaca" }} onClick={() => deleteItem(item.id)} title="Delete">
+                                🗑️
+                              </button>
+                            </div>
+                          </td>
+                        )}
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+              {!filteredItems.length && (
+                <div style={{ padding: 30, textAlign: "center", color: "#64748b", fontSize: 12.5 }}>
+                  No price items found.
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* ADD / EDIT MODAL */}
+      {showForm && canManage && (
+        <div style={modalStyles.overlay}>
+          <div style={modalStyles.modal}>
+            <div style={modalStyles.header}>
+              <h3 style={{ margin: 0, fontSize: 15, fontWeight: 800 }}>{editingId ? "Edit Price (List 2)" : "Add Price (List 2)"}</h3>
+              <button style={modalStyles.closeBtn} onClick={closeForm}>×</button>
+            </div>
+
+            <div style={{ display: "flex", flexDirection: "column", gap: 8, maxHeight: "72vh", overflowY: "auto", paddingRight: 4 }}>
+              <div>
+                <label style={modalStyles.label}>Category</label>
+                <select
+                  value={form.category}
+                  onChange={(e) => setForm({ ...form, category: e.target.value })}
+                  style={modalStyles.input}
+                >
+                  {categories.map((cat) => (
+                    <option key={cat} value={cat}>{cat}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label style={modalStyles.label}>Item Name</label>
+                <input
+                  value={form.item_name}
+                  onChange={(e) => setForm({ ...form, item_name: e.target.value })}
+                  placeholder="Feed item name"
+                  style={modalStyles.input}
+                />
+              </div>
+
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+                <div>
+                  <label style={modalStyles.label}>Protein %</label>
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={form.protein_percentage}
+                    onChange={(e) => setForm({ ...form, protein_percentage: Number(e.target.value) })}
+                    placeholder="e.g. 20.5"
+                    style={modalStyles.input}
+                  />
+                </div>
+                <div>
+                  <label style={modalStyles.label}>Short Name</label>
+                  <input
+                    value={form.short_name}
+                    onChange={(e) => setForm({ ...form, short_name: e.target.value })}
+                    placeholder="e.g. BR-S"
+                    style={modalStyles.input}
+                  />
+                </div>
+              </div>
+
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+                <div>
+                  <label style={modalStyles.label}>KG / Bag</label>
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={form.kg_per_bag}
+                    onChange={(e) => setForm({ ...form, kg_per_bag: Number(e.target.value) })}
+                    style={modalStyles.input}
+                  />
+                </div>
+                <div>
+                  <label style={modalStyles.label}>Status</label>
+                  <select
+                    value={form.status}
+                    onChange={(e) => setForm({ ...form, status: e.target.value })}
+                    style={modalStyles.input}
+                  >
+                    <option value="Active">Active</option>
+                    <option value="Inactive">Inactive</option>
+                  </select>
+                </div>
+              </div>
+
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+                <div>
+                  <label style={modalStyles.label}>TP / Bag (৳)</label>
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={form.tp_per_bag}
+                    onChange={(e) => setForm({ ...form, tp_per_bag: Number(e.target.value) })}
+                    style={modalStyles.input}
+                  />
+                  <div style={{ fontSize: 10.5, color: "#64748b", marginTop: 2 }}>
+                    TP/KG: ৳{form.kg_per_bag > 0 ? (Number(form.tp_per_bag) / Number(form.kg_per_bag)).toFixed(2) : "0.00"}
+                  </div>
+                </div>
+                <div>
+                  <label style={modalStyles.label}>MRP / Bag (৳)</label>
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={form.mrp_per_bag}
+                    onChange={(e) => setForm({ ...form, mrp_per_bag: Number(e.target.value) })}
+                    style={modalStyles.input}
+                  />
+                  <div style={{ fontSize: 10.5, color: "#64748b", marginTop: 2 }}>
+                    MRP/KG: ৳{form.kg_per_bag > 0 ? (Number(form.mrp_per_bag) / Number(form.kg_per_bag)).toFixed(2) : "0.00"}
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div style={{ display: "flex", gap: 6, marginTop: 12, justifyContent: "flex-end" }}>
+              <button onClick={closeForm} style={modalStyles.cancelBtn}>Cancel</button>
+              <button onClick={savePriceItem} style={modalStyles.saveBtn}>
+                {editingId ? "Update Price" : "Save Price"}
+              </button>
+            </div>
           </div>
         </div>
       )}
 
+      {/* BULK ADJUST MODAL */}
       {showBulkModal && canManage && (
-        <div style={styles.overlay}>
-          <div style={{ ...styles.modal, maxWidth: 680 }}>
-            <div style={styles.modalHeader}>
+        <div style={modalStyles.overlay}>
+          <div style={{ ...modalStyles.modal, maxWidth: 540 }}>
+            <div style={modalStyles.header}>
+              <h3 style={{ margin: 0, fontSize: 15, fontWeight: 800 }}>⚡ Price Adjustment (List 2)</h3>
+              <button style={modalStyles.closeBtn} onClick={() => setShowBulkModal(false)}>×</button>
+            </div>
+
+            <div style={{ maxHeight: "72vh", overflowY: "auto", display: "flex", flexDirection: "column", gap: 10, paddingRight: 4 }}>
               <div>
-                <h2 style={{ margin: 0, fontSize: 18, fontWeight: 700 }}>⚡ Bulk Price Adjustment (List 2)</h2>
-                <p style={{ margin: "2px 0 0", fontSize: 12, color: "#6b7280" }}>
-                  Adjust feed prices per KG across multiple categories
-                </p>
-              </div>
-              <button style={styles.closeButton} onClick={() => setShowBulkModal(false)}>×</button>
-            </div>
-
-            <div style={{ marginTop: 12 }}>
-              <label style={styles.label}>1. Select Categories:</label>
-              <div style={styles.checkboxGrid}>
-                {categories.map((cat) => {
-                  const isChecked = selectedBulkCategories.includes(cat);
-                  return (
-                    <label
-                      key={cat}
-                      style={{
-                        ...styles.checkboxTile,
-                        ...(isChecked ? styles.checkboxTileActive : {}),
-                      }}
-                    >
-                      <input
-                        type="checkbox"
-                        checked={isChecked}
-                        onChange={() => toggleBulkCategory(cat)}
-                        style={{ accentColor: "#111827" }}
-                      />
-                      <span>{cat}</span>
-                    </label>
-                  );
-                })}
-              </div>
-            </div>
-
-            {selectedBulkCategories.length > 0 && (
-              <div style={{ marginTop: 16 }}>
-                <label style={styles.label}>2. Category-Wise Rate Adjustments (Tk/kg):</label>
-                <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-                  {selectedBulkCategories.map((cat) => {
-                    const cfg = categoryConfigs[cat] || { action: "increase", tpChange: "", mrpChange: "" };
+                <label style={modalStyles.label}>1. Select Categories</label>
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: 5, marginTop: 4 }}>
+                  {categories.map((cat) => {
+                    const isChecked = selectedBulkCategories.includes(cat);
                     return (
-                      <div key={cat} style={styles.categoryCard}>
-                        <div style={styles.categoryCardHeader}>
-                          <span style={styles.categoryCardTitle}>{cat}</span>
-                          <select
-                            value={cfg.action}
-                            onChange={(e) => handleConfigChange(cat, "action", e.target.value)}
-                            style={styles.actionSelect}
-                          >
-                            <option value="increase">📈 Price Increase (+)</option>
-                            <option value="decrease">📉 Price Decrease (-)</option>
-                          </select>
-                        </div>
-
-                        <div style={{ display: "flex", gap: 10, marginTop: 8 }}>
-                          <div style={{ flex: 1 }}>
-                            <span style={styles.subInputLabel}>TP Change (Tk/kg):</span>
-                            <input
-                              type="number"
-                              step="0.01"
-                              placeholder="e.g. 1.50"
-                              value={cfg.tpChange}
-                              onChange={(e) => handleConfigChange(cat, "tpChange", e.target.value)}
-                              style={styles.input}
-                            />
-                          </div>
-
-                          <div style={{ flex: 1 }}>
-                            <span style={styles.subInputLabel}>MRP Change (Tk/kg):</span>
-                            <input
-                              type="number"
-                              step="0.01"
-                              placeholder="e.g. 2.00"
-                              value={cfg.mrpChange}
-                              onChange={(e) => handleConfigChange(cat, "mrpChange", e.target.value)}
-                              style={styles.input}
-                            />
-                          </div>
-                        </div>
-                      </div>
+                      <label
+                        key={cat}
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          gap: 6,
+                          padding: "6px 8px",
+                          borderRadius: 6,
+                          border: `1px solid ${isChecked ? "#93c5fd" : "#cbd5e1"}`,
+                          background: isChecked ? "#eff6ff" : "#ffffff",
+                          fontSize: 11.5,
+                          fontWeight: 600,
+                          cursor: "pointer",
+                        }}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={isChecked}
+                          onChange={() => toggleBulkCategory(cat)}
+                          style={{ accentColor: "#2563eb" }}
+                        />
+                        <span>{cat}</span>
+                      </label>
                     );
                   })}
                 </div>
               </div>
-            )}
 
-            <div style={{ marginTop: 16 }}>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                <label style={styles.label}>Items Selected ({targetBulkItems.length}):</label>
-              </div>
-
-              <div style={styles.previewBox}>
-                {targetBulkItems.length === 0 ? (
-                  <p style={{ color: "#9ca3af", fontSize: 12, margin: 0 }}>
-                    No category selected yet. Please check categories above.
-                  </p>
-                ) : (
-                  targetBulkItems.map((item) => (
-                    <div key={item.id} style={styles.previewItemRow}>
-                      <span style={{ fontWeight: 600 }}>{item.item_name}</span>
-                      <span style={{ color: "#4b5563", fontSize: 11 }}>
-                        {item.category} • {item.kg_per_bag} kg/bag
-                      </span>
-                    </div>
-                  ))
-                )}
-              </div>
+              {selectedBulkCategories.length > 0 && (
+                <div>
+                  <label style={modalStyles.label}>2. Rate Adjustments (Tk/kg)</label>
+                  <div style={{ display: "flex", flexDirection: "column", gap: 6, marginTop: 4 }}>
+                    {selectedBulkCategories.map((cat) => {
+                      const cfg = categoryConfigs[cat] || { action: "increase", tpChange: "", mrpChange: "" };
+                      return (
+                        <div key={cat} style={{ background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: 8, padding: 8 }}>
+                          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+                            <span style={{ fontSize: 12, fontWeight: 700, color: "#0f172a" }}>{cat}</span>
+                            <select
+                              value={cfg.action}
+                              onChange={(e) => handleConfigChange(cat, "action", e.target.value)}
+                              style={{ ...modalStyles.input, width: 130, height: 28, fontSize: 11 }}
+                            >
+                              <option value="increase">Increase (+)</option>
+                              <option value="decrease">Decrease (-)</option>
+                            </select>
+                          </div>
+                          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6 }}>
+                            <input
+                              type="number"
+                              step="0.01"
+                              placeholder="TP change Tk/kg"
+                              value={cfg.tpChange}
+                              onChange={(e) => handleConfigChange(cat, "tpChange", e.target.value)}
+                              style={modalStyles.input}
+                            />
+                            <input
+                              type="number"
+                              step="0.01"
+                              placeholder="MRP change Tk/kg"
+                              value={cfg.mrpChange}
+                              onChange={(e) => handleConfigChange(cat, "mrpChange", e.target.value)}
+                              style={modalStyles.input}
+                            />
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
             </div>
 
-            <button style={styles.saveButton} onClick={handleApplyBulkChanges}>
-              Apply Changes & Preview
-            </button>
+            <div style={{ display: "flex", gap: 6, marginTop: 12, justifyContent: "flex-end" }}>
+              <button style={modalStyles.cancelBtn} onClick={() => setShowBulkModal(false)}>Cancel</button>
+              <button style={modalStyles.saveBtn} onClick={handleApplyBulkChanges}>Preview Changes</button>
+            </div>
           </div>
         </div>
       )}
 
+      {/* CONFIRM BULK MODAL */}
       {showConfirmModal && canManage && (
-        <div style={styles.overlay}>
-          <div style={{ ...styles.modal, maxWidth: 750 }}>
-            <div style={styles.modalHeader}>
-              <div>
-                <h2 style={{ margin: 0, fontSize: 18, color: "#111827", fontWeight: 800 }}>
-                  📋 Confirm Bulk Price Update (List 2)
-                </h2>
-                <p style={{ margin: "3px 0 0", fontSize: 12, color: "#6b7280" }}>
-                  Please review the calculated bag price adjustments before applying to the database.
-                </p>
-              </div>
-              <button style={styles.closeButton} onClick={() => setShowConfirmModal(false)}>×</button>
+        <div style={modalStyles.overlay}>
+          <div style={{ ...modalStyles.modal, maxWidth: 600 }}>
+            <div style={modalStyles.header}>
+              <h3 style={{ margin: 0, fontSize: 15, fontWeight: 800 }}>📋 Confirm Bulk Price Update (List 2)</h3>
+              <button style={modalStyles.closeBtn} onClick={() => setShowConfirmModal(false)}>×</button>
             </div>
 
-            <div style={{ maxHeight: 360, overflowY: "auto", margin: "14px 0", border: "1px solid #e5e7eb", borderRadius: 8 }}>
-              <table style={{ ...styles.table, fontSize: 12 }}>
+            <div style={{ maxHeight: 280, overflowY: "auto", border: "1px solid #e2e8f0", borderRadius: 8, margin: "8px 0" }}>
+              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 11.5, textAlign: "left" }}>
                 <thead>
-                  <tr>
-                    <th style={styles.th}>Item</th>
-                    <th style={styles.th}>KG/Bag</th>
-                    <th style={{ ...styles.th, textAlign: "right" }}>Old TP</th>
-                    <th style={{ ...styles.th, textAlign: "right" }}>New TP (Bag)</th>
-                    <th style={{ ...styles.th, textAlign: "right" }}>Old MRP</th>
-                    <th style={{ ...styles.th, textAlign: "right" }}>New MRP (Bag)</th>
+                  <tr style={{ background: "#f8fafc", borderBottom: "1px solid #e2e8f0" }}>
+                    <th style={{ padding: 6 }}>Item</th>
+                    <th style={{ padding: 6, textAlign: "right" }}>Old TP</th>
+                    <th style={{ padding: 6, textAlign: "right" }}>New TP (Bag)</th>
+                    <th style={{ padding: 6, textAlign: "right" }}>Old MRP</th>
+                    <th style={{ padding: 6, textAlign: "right" }}>New MRP (Bag)</th>
                   </tr>
                 </thead>
                 <tbody>
                   {previewItems.map((item) => (
-                    <tr key={item.id} style={{ borderBottom: "1px solid #f3f4f6" }}>
-                      <td style={styles.td}>
-                        <strong>{item.item_name}</strong>
-                        <br />
-                        <small style={{ color: "#6b7280" }}>{item.category}</small>
+                    <tr key={item.id} style={{ borderBottom: "1px solid #f1f5f9" }}>
+                      <td style={{ padding: 6 }}>
+                        <b>{item.item_name}</b> <small style={{ color: "#64748b" }}>({item.category})</small>
                       </td>
-                      <td style={styles.td}>{item.kg_per_bag} kg</td>
-                      <td style={{ ...styles.td, textAlign: "right", color: "#6b7280" }}>
-                        ৳{Number(item.tp_per_bag).toLocaleString()}
-                      </td>
-                      <td style={{ ...styles.td, textAlign: "right", color: "#2563eb", fontWeight: 700 }}>
+                      <td style={{ padding: 6, textAlign: "right", color: "#64748b" }}>৳{Number(item.tp_per_bag).toLocaleString()}</td>
+                      <td style={{ padding: 6, textAlign: "right", fontWeight: 700, color: "#2563eb" }}>
                         ৳{item.newTpBag.toLocaleString()}
-                        <div style={{ fontSize: 10, color: item.tpBagDiff >= 0 ? "#166534" : "#991b1b" }}>
-                          ({item.tpBagDiff >= 0 ? `+৳${item.tpBagDiff}` : `-৳${Math.abs(item.tpBagDiff)}`})
-                        </div>
                       </td>
-                      <td style={{ ...styles.td, textAlign: "right", color: "#6b7280" }}>
-                        ৳{Number(item.mrp_per_bag).toLocaleString()}
-                      </td>
-                      <td style={{ ...styles.td, textAlign: "right", color: "#16a34a", fontWeight: 700 }}>
+                      <td style={{ padding: 6, textAlign: "right", color: "#64748b" }}>৳{Number(item.mrp_per_bag).toLocaleString()}</td>
+                      <td style={{ padding: 6, textAlign: "right", fontWeight: 700, color: "#16a34a" }}>
                         ৳{item.newMrpBag.toLocaleString()}
-                        <div style={{ fontSize: 10, color: item.mrpBagDiff >= 0 ? "#166534" : "#991b1b" }}>
-                          ({item.mrpBagDiff >= 0 ? `+৳${item.mrpBagDiff}` : `-৳${Math.abs(item.mrpBagDiff)}`})
-                        </div>
                       </td>
                     </tr>
                   ))}
@@ -1097,20 +1079,12 @@ export default function PriceListPage2() {
               </table>
             </div>
 
-            <div style={{ display: "flex", gap: 10, justifyContent: "flex-end", marginTop: 14 }}>
-              <button
-                style={{ ...styles.exportButton, padding: "10px 18px" }}
-                onClick={() => setShowConfirmModal(false)}
-                disabled={isUpdating}
-              >
-                Back to Edit
+            <div style={{ display: "flex", gap: 6, justifyContent: "flex-end" }}>
+              <button style={modalStyles.cancelBtn} onClick={() => setShowConfirmModal(false)} disabled={isUpdating}>
+                Back
               </button>
-              <button
-                style={{ ...styles.addButton, padding: "10px 22px", background: "#16a34a" }}
-                onClick={executeBulkUpdate}
-                disabled={isUpdating}
-              >
-                {isUpdating ? "Updating Prices..." : "✓ Confirm & Save Prices"}
+              <button style={modalStyles.saveBtn} onClick={executeBulkUpdate} disabled={isUpdating}>
+                {isUpdating ? "Updating..." : "✓ Confirm & Save"}
               </button>
             </div>
           </div>
@@ -1120,59 +1094,13 @@ export default function PriceListPage2() {
   );
 }
 
-const styles: Record<string, React.CSSProperties> = {
-  page: { padding: 14, color: "#111827", background: "#f8fafc", minHeight: "100vh", boxSizing: "border-box" },
-  header: { display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, marginBottom: 10, flexWrap: "wrap" },
-  title: { margin: 0, fontSize: 23, color: "#111827" },
-  subtitle: { margin: "3px 0 0", fontSize: 12, color: "#6b7280" },
-  headerButtons: { display: "flex", gap: 6, flexWrap: "wrap" },
-  exportButton: { border: "1px solid #d1d5db", background: "#ffffff", color: "#111827", padding: "9px 10px", borderRadius: 9, fontWeight: 600, cursor: "pointer" },
-  bulkHeaderButton: { border: "none", background: "#2563eb", color: "#ffffff", padding: "9px 12px", borderRadius: 9, fontWeight: 700, cursor: "pointer", boxShadow: "0 1px 2px rgba(37,99,235,0.2)" },
-  importButton: { border: "1px solid #d1d5db", background: "#ffffff", color: "#111827", padding: "9px 10px", borderRadius: 9, fontWeight: 600, cursor: "pointer" },
-  addButton: { border: "none", background: "#111827", color: "#ffffff", padding: "9px 11px", borderRadius: 9, fontWeight: 600, cursor: "pointer" },
-  searchBox: { display: "flex", alignItems: "center", gap: 8, background: "#ffffff", border: "1px solid #e5e7eb", padding: "11px 13px", borderRadius: 10, marginBottom: 10 },
-  searchInput: { border: "none", outline: "none", background: "#ffffff", color: "#111827", width: "100%", fontSize: 14 },
-  categoryScroll: { display: "flex", gap: 7, overflowX: "auto", paddingBottom: 10 },
-  categoryButton: { flexShrink: 0, border: "1px solid #d1d5db", background: "#ffffff", color: "#374151", padding: "7px 12px", borderRadius: 20, fontSize: 12, cursor: "pointer" },
-  categoryActive: { background: "#111827", color: "#ffffff", borderColor: "#111827" },
-  tableContainerOuter: { background: "#ffffff", border: "1px solid #e5e7eb", borderRadius: 12, boxShadow: "0 1px 3px rgba(0,0,0,.05)", overflow: "hidden" },
-  topScrollbarWrapper: { overflowX: "auto", overflowY: "hidden", height: 14, backgroundColor: "#f8fafc", borderBottom: "1px solid #e5e7eb" },
-  topScrollbarContent: { width: "1250px", height: 1 },
-  tableWrapper: { width: "100%", overflowX: "auto", background: "#ffffff" },
-  table: { width: "100%", minWidth: 1200, borderCollapse: "collapse", fontSize: 13, color: "#111827" },
-  th: { position: "sticky", top: 0, background: "#f3f4f6", color: "#374151", fontWeight: 700, padding: "11px 10px", borderBottom: "1px solid #d1d5db", textAlign: "left", whiteSpace: "nowrap" },
-  tr: { background: "#ffffff" },
-  td: { padding: "11px 10px", borderBottom: "1px solid #eef0f2", whiteSpace: "nowrap", color: "#111827" },
-  categoryTag: { background: "#eef2ff", color: "#3730a3", padding: "4px 7px", borderRadius: 6, fontSize: 11, fontWeight: 600 },
-  status: { padding: "4px 7px", borderRadius: 6, fontSize: 11, fontWeight: 600 },
-  activeStatus: { background: "#dcfce7", color: "#166534" },
-  inactiveStatus: { background: "#fee2e2", color: "#991b1b" },
-  actionGroup: { display: "flex", justifyContent: "center", gap: 5 },
-  editButton: { border: "none", background: "#eef2ff", width: 34, height: 34, borderRadius: 7, cursor: "pointer" },
-  deleteButton: { border: "none", background: "#fee2e2", width: 34, height: 34, borderRadius: 7, cursor: "pointer" },
-  noData: { padding: 35, textAlign: "center", color: "#6b7280" },
-  loading: { padding: 40, textAlign: "center", color: "#374151" },
-  overlay: { position: "fixed", inset: 0, background: "rgba(0,0,0,.45)", backdropFilter: "blur(3px)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000, padding: 16 },
-  modal: { width: "100%", maxWidth: 600, background: "#ffffff", color: "#111827", borderRadius: 16, padding: 20, maxHeight: "90vh", overflowY: "auto", boxSizing: "border-box", boxShadow: "0 20px 25px -5px rgba(0,0,0,0.1), 0 10px 10px -5px rgba(0,0,0,0.04)" },
-  modalHeader: { display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 8 },
-  closeButton: { border: "none", background: "#f3f4f6", color: "#111827", width: 32, height: 32, borderRadius: "50%", fontSize: 20, cursor: "pointer" },
-  label: { display: "block", fontSize: 13, fontWeight: 700, marginTop: 10, marginBottom: 6, color: "#374151" },
-  input: { width: "100%", boxSizing: "border-box", border: "1px solid #cbd5e1", background: "#ffffff", color: "#111827", borderRadius: 9, padding: "9px 11px", fontSize: 13, outline: "none" },
-  helperText: { marginTop: 5, fontSize: 11, color: "#6b7280" },
-  calculated: { marginTop: 6, background: "#f3f4f6", color: "#111827", padding: "8px 10px", borderRadius: 8, fontSize: 13, fontWeight: 600 },
-  saveButton: { width: "100%", border: "none", background: "#111827", color: "#ffffff", padding: 13, borderRadius: 10, marginTop: 20, fontWeight: 700, cursor: "pointer" },
-  checkboxGrid: { display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(130px, 1fr))", gap: 8, marginTop: 6 },
-  checkboxTile: { display: "flex", alignItems: "center", gap: 8, padding: "8px 10px", borderRadius: 8, border: "1px solid #e5e7eb", background: "#f9fafb", fontSize: 12, cursor: "pointer", userSelect: "none" },
-  checkboxTileActive: { background: "#f0fdf4", borderColor: "#86efac", fontWeight: 600 },
-  categoryCard: { background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: 10, padding: 12 },
-  categoryCardHeader: { display: "flex", justifyContent: "space-between", alignItems: "center" },
-  categoryCardTitle: { fontWeight: 700, fontSize: 13, color: "#1e293b" },
-  actionSelect: { padding: "4px 8px", borderRadius: 6, border: "1px solid #cbd5e1", fontSize: 12, background: "#ffffff", color: "#1e293b", fontWeight: 600 },
-  subInputLabel: { fontSize: 11, color: "#64748b", display: "block", marginBottom: 4 },
-  previewBox: { background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: 8, padding: 10, maxHeight: 120, overflowY: "auto", marginTop: 6 },
-  previewItemRow: { display: "flex", justifyContent: "space-between", fontSize: 12, padding: "4px 0", borderBottom: "1px dashed #e2e8f0" },
-  accessDenied: { minHeight: "60vh", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", textAlign: "center", padding: 20 },
-  accessIcon: { fontSize: 40, marginBottom: 10 },
-  accessTitle: { fontSize: 20, fontWeight: 800, color: "#111827" },
-  accessText: { marginTop: 5, fontSize: 12, color: "#6b7280" },
+const modalStyles: Record<string, React.CSSProperties> = {
+  overlay: { position: "fixed", inset: 0, background: "rgba(15, 23, 42, 0.45)", backdropFilter: "blur(2px)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000, padding: 12 },
+  modal: { width: "100%", maxWidth: 420, background: "#fff", borderRadius: 14, padding: 16, boxShadow: "0 15px 30px rgba(15, 23, 42, 0.15)", boxSizing: "border-box", textAlign: "left" },
+  header: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10, borderBottom: "1px solid #f1f5f9", paddingBottom: 8 },
+  closeBtn: { border: "none", background: "#f1f5f9", width: 26, height: 26, borderRadius: "50%", cursor: "pointer", fontWeight: 700, color: "#475569", fontSize: 11.5 },
+  label: { display: "block", marginBottom: 3, fontSize: 11, fontWeight: 700, color: "#475569" },
+  input: { width: "100%", boxSizing: "border-box", border: "1px solid #cbd5e1", borderRadius: 7, padding: "7px 9px", background: "#ffffff", color: "#0f172a", fontSize: 12, outline: "none" },
+  cancelBtn: { border: "1px solid #cbd5e1", background: "#fff", color: "#334155", borderRadius: 7, padding: "7px 12px", fontSize: 11.5, fontWeight: 700, cursor: "pointer" },
+  saveBtn: { border: "none", background: "#2563eb", color: "#fff", borderRadius: 7, padding: "7px 14px", fontSize: 11.5, fontWeight: 700, cursor: "pointer" },
 };

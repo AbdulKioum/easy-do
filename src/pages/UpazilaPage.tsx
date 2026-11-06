@@ -30,6 +30,44 @@ function parseList(val: any): string[] {
   return [];
 }
 
+const COMPACT_UZ_CSS = `
+  .uz-page { min-height: calc(100vh - 60px); background: #f8fafc; padding: 10px; box-sizing: border-box; font-family: system-ui, -apple-system, sans-serif; color: #0f172a; }
+  .uz-container { max-width: 920px; margin: 0 auto; }
+  
+  .uz-topbar { background: #ffffff; border: 1px solid #e2e8f0; border-radius: 10px; padding: 8px 12px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px; margin-bottom: 8px; }
+  .uz-title { margin: 0; font-size: 15px; font-weight: 800; color: #0f172a; letter-spacing: -0.2px; }
+  .uz-btn-group { display: flex; gap: 5px; flex-wrap: wrap; }
+  
+  .uz-action-btn { border: 1px solid #cbd5e1; background: #ffffff; color: #334155; padding: 5px 9px; border-radius: 6px; font-size: 11.5px; font-weight: 700; cursor: pointer; display: inline-flex; align-items: center; gap: 4px; transition: all 0.15s ease; }
+  .uz-action-btn:hover { background: #f1f5f9; border-color: #94a3b8; }
+  .uz-primary-btn { background: #0f172a; color: #ffffff; border-color: #0f172a; }
+  .uz-primary-btn:hover { background: #1e293b; }
+  .uz-excel-btn { background: #f0fdf4; border-color: #bbf7d0; color: #15803d; }
+
+  .uz-toolbar { display: flex; gap: 6px; align-items: center; margin-bottom: 8px; flex-wrap: wrap; }
+  .uz-search-bar { flex: 1; min-width: 200px; display: flex; align-items: center; gap: 6px; background: #ffffff; border: 1px solid #e2e8f0; padding: 6px 10px; border-radius: 8px; }
+  .uz-search-input { border: none; outline: none; background: transparent; width: 100%; font-size: 12.5px; font-weight: 600; color: #0f172a; }
+
+  .uz-filters { display: flex; gap: 4px; }
+  .uz-filter-pill { border: 1px solid #cbd5e1; background: #ffffff; color: #475569; padding: 5px 10px; border-radius: 6px; font-size: 11.5px; font-weight: 700; cursor: pointer; }
+  .uz-filter-pill.active { background: #0f172a; color: #ffffff; border-color: #0f172a; }
+
+  .uz-table-card { background: #ffffff; border: 1px solid #e2e8f0; border-radius: 10px; overflow: hidden; box-shadow: 0 1px 3px rgba(15, 23, 42, 0.03); }
+  .uz-scroll-wrap { width: 100%; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  .uz-table { width: 100%; min-width: 600px; border-collapse: collapse; font-size: 12px; text-align: left; }
+  .uz-th { background: #f8fafc; color: #475569; font-weight: 800; font-size: 11px; text-transform: uppercase; letter-spacing: 0.3px; padding: 8px 10px; border-bottom: 1px solid #e2e8f0; white-space: nowrap; }
+  .uz-td { padding: 7px 10px; border-bottom: 1px solid #f1f5f9; vertical-align: middle; color: #0f172a; white-space: nowrap; }
+  .uz-tr:hover { background: #f8fafc !important; }
+
+  .uz-district-badge { display: inline-block; background: #eef2ff; color: #3730a3; padding: 2px 7px; border-radius: 5px; font-size: 10.5px; font-weight: 700; border: 1px solid #c7d2fe; }
+  .uz-status { padding: 2px 5px; border-radius: 4px; font-size: 10px; font-weight: 800; }
+  .uz-active { background: #dcfce7; color: #166534; }
+  .uz-inactive { background: #fee2e2; color: #991b1b; }
+  
+  .uz-icon-btn { border: 1px solid #e2e8f0; background: #f8fafc; width: 26px; height: 26px; border-radius: 5px; cursor: pointer; display: inline-flex; align-items: center; justifyContent: center; font-size: 11px; }
+  .uz-icon-btn:hover { background: #eff6ff; border-color: #bfdbfe; }
+`;
+
 export default function UpazilaPage() {
   const { user, role } = useAuth();
 
@@ -92,7 +130,6 @@ export default function UpazilaPage() {
     setLoading(false);
   }
 
-  // Strict filtering: Only show upazilas of assigned districts (except for Super Admin)
   const visibleItems = useMemo(() => {
     if (isSuperAdmin) return items;
     if (profileLoading) return [];
@@ -170,7 +207,6 @@ export default function UpazilaPage() {
         return;
       }
     } else {
-      // Check existing to avoid duplicate on manual add
       const existing = items.find(
         (i) =>
           i.district.trim().toLowerCase() === payload.district.toLowerCase() &&
@@ -217,7 +253,6 @@ export default function UpazilaPage() {
     loadUpazilas();
   }
 
-  // EXCEL IMPORT: Update existing or Insert new (No Duplicates)
   function handleExcelImport(event: React.ChangeEvent<HTMLInputElement>) {
     if (!canManage) {
       event.target.value = "";
@@ -357,195 +392,218 @@ export default function UpazilaPage() {
   const isPageLoading = loading || profileLoading;
 
   return (
-    <div style={styles.page}>
-      <div style={styles.header}>
-        <div>
-          <h1 style={styles.title}>Upazila</h1>
-        
-        </div>
+    <div className="uz-page">
+      <style>{COMPACT_UZ_CSS}</style>
 
-        <div style={styles.headerButtons}>
-          <button style={styles.exportButton} onClick={exportExcel}>
-            📤 Download Upazila List
-          </button>
+      <div className="uz-container">
+        {/* COMPACT TOP BAR */}
+        <div className="uz-topbar">
+          <h1 className="uz-title">Upazilas</h1>
 
-          {canManage && (
-            <>
-              <button style={styles.importButton} onClick={() => fileInputRef.current?.click()}>
-                📥 Import Excel
-              </button>
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept=".xlsx,.xls,.csv"
-                style={{ display: "none" }}
-                onChange={handleExcelImport}
-              />
-            </>
-          )}
-
-          {canManage && (
-            <button style={styles.addButton} onClick={openAdd}>
-              + Add
+          <div className="uz-btn-group">
+            <button className="uz-action-btn uz-excel-btn" onClick={exportExcel} title="Download Excel">
+              📥 Download Excel
             </button>
-          )}
-        </div>
-      </div>
 
-      <div style={styles.toolbar}>
-        <div style={styles.searchBox}>
-          <span>🔍</span>
-          <input
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search district or Upazila..."
-            style={styles.searchInput}
-          />
-        </div>
-
-        <div style={styles.filterRow}>
-          <button
-            style={{ ...styles.filterButton, ...(statusFilter === "All" ? styles.filterActive : {}) }}
-            onClick={() => setStatusFilter("All")}
-          >
-            All
-          </button>
-          <button
-            style={{ ...styles.filterButton, ...(statusFilter === "Active" ? styles.filterActive : {}) }}
-            onClick={() => setStatusFilter("Active")}
-          >
-            Active
-          </button>
-          <button
-            style={{ ...styles.filterButton, ...(statusFilter === "Inactive" ? styles.filterActive : {}) }}
-            onClick={() => setStatusFilter("Inactive")}
-          >
-            Inactive
-          </button>
-        </div>
-      </div>
-
-      {isPageLoading ? (
-        <div style={styles.loading}>Loading Upazila...</div>
-      ) : (
-        <div style={styles.tableCard}>
-          <div style={styles.tableTop}>
-            <div>
-              <strong>Upazila List</strong>
-              <span style={styles.count}>{filteredItems.length} records</span>
-            </div>
-          </div>
-
-          <div style={styles.tableScroll}>
-            <table style={styles.table}>
-              <thead>
-                <tr>
-                  <th style={styles.thSl}>SL</th>
-                  <th style={styles.th}>District</th>
-                  <th style={styles.th}>Upazila</th>
-                  <th style={styles.th}>Status</th>
-                  <th style={styles.thCenter}>Action</th>
-                </tr>
-              </thead>
-
-              <tbody>
-                {filteredItems.map((item, index) => (
-                  <tr key={item.id}>
-                    <td style={styles.tdSl}>{index + 1}</td>
-                    <td style={styles.td}>
-                      <span style={styles.districtBadge}>{item.district}</span>
-                    </td>
-                    <td style={{ ...styles.td, fontWeight: 600 }}>{item.upazila_name}</td>
-                    <td style={styles.td}>
-                      <span
-                        style={{
-                          ...styles.status,
-                          ...(item.status === "Active" ? styles.activeStatus : styles.inactiveStatus),
-                        }}
-                      >
-                        {item.status}
-                      </span>
-                    </td>
-                    <td style={styles.tdCenter}>
-                      <div style={styles.actions}>
-                        {canManage && (
-                          <button style={styles.editButton} onClick={() => openEdit(item)} title="Edit">
-                            ✏️
-                          </button>
-                        )}
-                        {canManage && (
-                          <button style={styles.deleteButton} onClick={() => deleteUpazila(item.id)} title="Delete">
-                            🗑️
-                          </button>
-                        )}
-                        {!canManage && <span style={styles.viewOnlyBadge}>View Only</span>}
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-
-            {!filteredItems.length && (
-              <div style={styles.noData}>No Upazila found for your assigned districts.</div>
+            {canManage && (
+              <>
+                <button
+                  className="uz-action-btn"
+                  onClick={() => fileInputRef.current?.click()}
+                  title="Import Excel"
+                >
+                  📥 Import
+                </button>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept=".xlsx,.xls,.csv"
+                  style={{ display: "none" }}
+                  onChange={handleExcelImport}
+                />
+                <button className="uz-action-btn uz-primary-btn" onClick={openAdd}>
+                  ＋ Add Upazila
+                </button>
+              </>
             )}
           </div>
         </div>
-      )}
 
-      {showForm && canManage && (
-        <div style={styles.overlay}>
-          <div style={styles.modal}>
-            <div style={styles.modalHeader}>
-              <h2 style={styles.modalTitle}>{editingId ? "Edit Upazila" : "Add Upazila"}</h2>
-              <button style={styles.closeButton} onClick={closeForm}>
-                ×
-              </button>
-            </div>
-
-            <label style={styles.label}>District</label>
-            {!isSuperAdmin && assignedDistricts.length > 0 ? (
-              <select
-                value={form.district}
-                onChange={(e) => setForm({ ...form, district: e.target.value })}
-                style={styles.input}
-              >
-                {assignedDistricts.map((d) => (
-                  <option key={d} value={d}>
-                    {d}
-                  </option>
-                ))}
-              </select>
-            ) : (
-              <input
-                value={form.district}
-                onChange={(e) => setForm({ ...form, district: e.target.value })}
-                placeholder="Example: Mymensingh"
-                style={styles.input}
-              />
-            )}
-
-            <label style={styles.label}>Upazila</label>
+        {/* TOOLBAR: SEARCH & STATUS FILTER */}
+        <div className="uz-toolbar">
+          <div className="uz-search-bar">
+            <span>🔍</span>
             <input
-              value={form.upazila_name}
-              onChange={(e) => setForm({ ...form, upazila_name: e.target.value })}
-              placeholder="Example: Trishal"
-              style={styles.input}
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search district or Upazila..."
+              className="uz-search-input"
             />
+            {search && (
+              <button
+                onClick={() => setSearch("")}
+                style={{ border: "none", background: "transparent", color: "#94a3b8", cursor: "pointer", fontSize: 12 }}
+              >
+                ✕
+              </button>
+            )}
+          </div>
 
-            <label style={styles.label}>Status</label>
-            <select
-              value={form.status}
-              onChange={(e) => setForm({ ...form, status: e.target.value })}
-              style={styles.input}
-            >
-              <option>Active</option>
-              <option>Inactive</option>
-            </select>
+          <div className="uz-filters">
+            {["All", "Active", "Inactive"].map((status) => (
+              <button
+                key={status}
+                className={`uz-filter-pill ${statusFilter === status ? "active" : ""}`}
+                onClick={() => setStatusFilter(status)}
+              >
+                {status}
+              </button>
+            ))}
+          </div>
+        </div>
 
-            <button style={styles.saveButton} onClick={saveUpazila}>
-              {editingId ? "Update Upazila" : "Save Upazila"}
-            </button>
+        {/* TABLE CARD */}
+        {isPageLoading ? (
+          <div style={{ padding: 30, textAlign: "center", color: "#64748b", fontSize: 12.5 }}>
+            Loading Upazila list...
+          </div>
+        ) : (
+          <div className="uz-table-card">
+            <div style={{ padding: "8px 12px", borderBottom: "1px solid #e2e8f0", background: "#f8fafc", fontSize: 11.5, fontWeight: 700, color: "#475569", display: "flex", justifyContent: "space-between" }}>
+              <span>Upazila List</span>
+              <span>{filteredItems.length} records</span>
+            </div>
+
+            <div className="uz-scroll-wrap">
+              <table className="uz-table">
+                <thead>
+                  <tr>
+                    <th className="uz-th" style={{ width: 35, textAlign: "center" }}>SL</th>
+                    <th className="uz-th">District</th>
+                    <th className="uz-th">Upazila Name</th>
+                    <th className="uz-th" style={{ textAlign: "center" }}>Status</th>
+                    {canManage && <th className="uz-th" style={{ textAlign: "center" }}>Action</th>}
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredItems.map((item, index) => {
+                    const rowBg = index % 2 === 0 ? "#ffffff" : "#f8fafc";
+                    return (
+                      <tr key={item.id} className="uz-tr" style={{ background: rowBg }}>
+                        <td className="uz-td" style={{ textAlign: "center", color: "#64748b", fontWeight: 600 }}>
+                          {index + 1}
+                        </td>
+                        <td className="uz-td">
+                          <span className="uz-district-badge">{item.district}</span>
+                        </td>
+                        <td className="uz-td" style={{ fontWeight: 750, color: "#0f172a" }}>
+                          {item.upazila_name}
+                        </td>
+                        <td className="uz-td" style={{ textAlign: "center" }}>
+                          <span
+                            className={`uz-status ${
+                              item.status === "Active" ? "uz-active" : "uz-inactive"
+                            }`}
+                          >
+                            {item.status}
+                          </span>
+                        </td>
+                        {canManage && (
+                          <td className="uz-td" style={{ textAlign: "center" }}>
+                            <div style={{ display: "inline-flex", gap: 4 }}>
+                              <button className="uz-icon-btn" onClick={() => openEdit(item)} title="Edit">
+                                ✏️
+                              </button>
+                              <button
+                                className="uz-icon-btn"
+                                style={{ background: "#fef2f2", borderColor: "#fecaca" }}
+                                onClick={() => deleteUpazila(item.id)}
+                                title="Delete"
+                              >
+                                🗑️
+                              </button>
+                            </div>
+                          </td>
+                        )}
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+
+              {!filteredItems.length && (
+                <div style={{ padding: 30, textAlign: "center", color: "#64748b", fontSize: 12.5 }}>
+                  No Upazila found.
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* ADD / EDIT MODAL */}
+      {showForm && canManage && (
+        <div style={modalStyles.overlay}>
+          <div style={modalStyles.modal}>
+            <div style={modalStyles.header}>
+              <h3 style={{ margin: 0, fontSize: 15, fontWeight: 800 }}>
+                {editingId ? "Edit Upazila" : "Add Upazila"}
+              </h3>
+              <button style={modalStyles.closeBtn} onClick={closeForm}>×</button>
+            </div>
+
+            <div style={{ display: "flex", flexDirection: "column", gap: 8, maxHeight: "72vh", overflowY: "auto", paddingRight: 4 }}>
+              <div>
+                <label style={modalStyles.label}>District</label>
+                {!isSuperAdmin && assignedDistricts.length > 0 ? (
+                  <select
+                    value={form.district}
+                    onChange={(e) => setForm({ ...form, district: e.target.value })}
+                    style={modalStyles.input}
+                  >
+                    {assignedDistricts.map((d) => (
+                      <option key={d} value={d}>{d}</option>
+                    ))}
+                  </select>
+                ) : (
+                  <input
+                    value={form.district}
+                    onChange={(e) => setForm({ ...form, district: e.target.value })}
+                    placeholder="Example: Mymensingh"
+                    style={modalStyles.input}
+                  />
+                )}
+              </div>
+
+              <div>
+                <label style={modalStyles.label}>Upazila Name</label>
+                <input
+                  value={form.upazila_name}
+                  onChange={(e) => setForm({ ...form, upazila_name: e.target.value })}
+                  placeholder="Example: Trishal"
+                  style={modalStyles.input}
+                />
+              </div>
+
+              <div>
+                <label style={modalStyles.label}>Status</label>
+                <select
+                  value={form.status}
+                  onChange={(e) => setForm({ ...form, status: e.target.value })}
+                  style={modalStyles.input}
+                >
+                  <option>Active</option>
+                  <option>Inactive</option>
+                </select>
+              </div>
+            </div>
+
+            <div style={{ display: "flex", gap: 6, marginTop: 12, justifyContent: "flex-end" }}>
+              <button onClick={closeForm} style={modalStyles.cancelBtn}>Cancel</button>
+              <button onClick={saveUpazila} style={modalStyles.saveBtn}>
+                {editingId ? "Update Upazila" : "Save Upazila"}
+              </button>
+            </div>
           </div>
         </div>
       )}
@@ -553,48 +611,13 @@ export default function UpazilaPage() {
   );
 }
 
-const styles: Record<string, React.CSSProperties> = {
-  page: { minHeight: "100vh", background: "#f3f4f6", padding: 14, color: "#111827", boxSizing: "border-box" },
-  header: { display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, marginBottom: 14 },
-  title: { margin: 0, fontSize: 23, fontWeight: 800, color: "#111827" },
-  subtitle: { margin: "3px 0 0", fontSize: 12, color: "#6b7280" },
-  headerButtons: { display: "flex", gap: 6, flexWrap: "wrap", justifyContent: "flex-end" },
-  exportButton: { border: "1px solid #d1d5db", background: "#ffffff", color: "#111827", padding: "9px 10px", borderRadius: 9, fontWeight: 600, cursor: "pointer" },
-  importButton: { border: "1px solid #d1d5db", background: "#ffffff", color: "#111827", padding: "9px 10px", borderRadius: 9, fontWeight: 600, cursor: "pointer" },
-  addButton: { border: "none", background: "#111827", color: "#ffffff", padding: "9px 11px", borderRadius: 9, fontWeight: 600, cursor: "pointer" },
-  toolbar: { display: "flex", gap: 8, alignItems: "center", marginBottom: 12 },
-  searchBox: { flex: 1, minWidth: 200, display: "flex", alignItems: "center", gap: 8, background: "#ffffff", border: "1px solid #e5e7eb", padding: "11px 13px", borderRadius: 10 },
-  searchInput: { border: "none", outline: "none", background: "#ffffff", color: "#111827", width: "100%", fontSize: 14 },
-  filterRow: { display: "flex", gap: 6 },
-  filterButton: { border: "1px solid #d1d5db", background: "#ffffff", color: "#374151", padding: "8px 12px", borderRadius: 8, fontSize: 12, cursor: "pointer" },
-  filterActive: { background: "#111827", color: "#ffffff", borderColor: "#111827" },
-  tableCard: { background: "#ffffff", border: "1px solid #e5e7eb", borderRadius: 12, overflow: "hidden", boxShadow: "0 1px 3px rgba(0,0,0,0.05)" },
-  tableTop: { padding: "13px 15px", borderBottom: "1px solid #e5e7eb", display: "flex", justifyContent: "space-between", alignItems: "center", color: "#111827" },
-  count: { marginLeft: 8, fontSize: 12, color: "#6b7280", fontWeight: 400 },
-  tableScroll: { width: "100%", overflowX: "auto" },
-  table: { width: "100%", minWidth: 650, borderCollapse: "collapse", color: "#111827", fontSize: 13 },
-  thSl: { background: "#f3f4f6", color: "#374151", fontWeight: 700, padding: "11px 10px", borderBottom: "1px solid #d1d5db", textAlign: "center", width: 55 },
-  th: { background: "#f3f4f6", color: "#374151", fontWeight: 700, padding: "11px 10px", borderBottom: "1px solid #d1d5db", textAlign: "left", whiteSpace: "nowrap" },
-  thCenter: { background: "#f3f4f6", color: "#374151", fontWeight: 700, padding: "11px 10px", borderBottom: "1px solid #d1d5db", textAlign: "center", whiteSpace: "nowrap" },
-  tdSl: { padding: "11px 10px", borderBottom: "1px solid #eef0f2", textAlign: "center", color: "#6b7280", background: "#ffffff" },
-  td: { padding: "11px 10px", borderBottom: "1px solid #eef0f2", whiteSpace: "nowrap", color: "#111827", background: "#ffffff" },
-  tdCenter: { padding: "11px 10px", borderBottom: "1px solid #eef0f2", whiteSpace: "nowrap", color: "#111827", background: "#ffffff", textAlign: "center" },
-  districtBadge: { display: "inline-block", background: "#eef2ff", color: "#3730a3", padding: "4px 8px", borderRadius: 6, fontSize: 11, fontWeight: 700 },
-  status: { display: "inline-block", padding: "4px 8px", borderRadius: 6, fontSize: 11, fontWeight: 700 },
-  activeStatus: { background: "#dcfce7", color: "#166534" },
-  inactiveStatus: { background: "#fee2e2", color: "#991b1b" },
-  actions: { display: "flex", justifyContent: "center", alignItems: "center", gap: 5 },
-  editButton: { border: "none", background: "#eef2ff", width: 34, height: 34, borderRadius: 7, cursor: "pointer" },
-  deleteButton: { border: "none", background: "#fee2e2", width: 34, height: 34, borderRadius: 7, cursor: "pointer" },
-  viewOnlyBadge: { display: "inline-block", background: "#f3f4f6", color: "#6b7280", padding: "5px 9px", borderRadius: 7, fontSize: 11, fontWeight: 600 },
-  loading: { padding: 40, textAlign: "center", color: "#374151" },
-  noData: { padding: 35, textAlign: "center", color: "#6b7280" },
-  overlay: { position: "fixed", inset: 0, background: "rgba(0,0,0,.45)", display: "flex", alignItems: "flex-end", justifyContent: "center", zIndex: 1000 },
-  modal: { width: "100%", maxWidth: 600, background: "#ffffff", color: "#111827", borderRadius: "20px 20px 0 0", padding: 20, maxHeight: "90vh", overflowY: "auto", boxSizing: "border-box" },
-  modalHeader: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 },
-  modalTitle: { margin: 0, color: "#111827", fontSize: 20 },
-  closeButton: { border: "none", background: "#f3f4f6", color: "#111827", width: 35, height: 35, borderRadius: "50%", fontSize: 22, cursor: "pointer" },
-  label: { display: "block", fontSize: 13, fontWeight: 600, marginTop: 13, marginBottom: 6, color: "#374151" },
-  input: { width: "100%", boxSizing: "border-box", border: "1px solid #cbd5e1", background: "#ffffff", color: "#111827", borderRadius: 9, padding: 11, fontSize: 14, outline: "none" },
-  saveButton: { width: "100%", border: "none", background: "#111827", color: "#ffffff", padding: 13, borderRadius: 10, marginTop: 20, fontWeight: 700, cursor: "pointer" },
+const modalStyles: Record<string, React.CSSProperties> = {
+  overlay: { position: "fixed", inset: 0, background: "rgba(15, 23, 42, 0.45)", backdropFilter: "blur(2px)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000, padding: 12 },
+  modal: { width: "100%", maxWidth: 420, background: "#fff", borderRadius: 14, padding: 16, boxShadow: "0 15px 30px rgba(15, 23, 42, 0.15)", boxSizing: "border-box", textAlign: "left" },
+  header: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10, borderBottom: "1px solid #f1f5f9", paddingBottom: 8 },
+  closeBtn: { border: "none", background: "#f1f5f9", width: 26, height: 26, borderRadius: "50%", cursor: "pointer", fontWeight: 700, color: "#475569", fontSize: 11.5 },
+  label: { display: "block", marginBottom: 3, fontSize: 11, fontWeight: 700, color: "#475569" },
+  input: { width: "100%", boxSizing: "border-box", border: "1px solid #cbd5e1", borderRadius: 7, padding: "7px 9px", background: "#ffffff", color: "#0f172a", fontSize: 12, outline: "none" },
+  cancelBtn: { border: "1px solid #cbd5e1", background: "#fff", color: "#334155", borderRadius: 7, padding: "7px 12px", fontSize: 11.5, fontWeight: 700, cursor: "pointer" },
+  saveBtn: { border: "none", background: "#2563eb", color: "#fff", borderRadius: 7, padding: "7px 14px", fontSize: 11.5, fontWeight: 700, cursor: "pointer" },
 };
