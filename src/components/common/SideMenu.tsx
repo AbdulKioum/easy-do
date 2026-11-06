@@ -52,6 +52,23 @@ export default function SideMenu({
     onClose();
   }
 
+  // Track APK download inside page_visits so it shows on VisitStatusPage
+  async function handleTrackAppDownload() {
+    if (!user?.id) return;
+    try {
+      const todayStr = new Date().toISOString().split("T")[0];
+      await supabase.from("page_visits").insert([
+        {
+          user_id: user.id,
+          page_name: "App Download APK",
+          visit_date: todayStr,
+        },
+      ]);
+    } catch (err) {
+      console.error("Failed to track app download:", err);
+    }
+  }
+
   const isAdminOrSuper = role === "admin" || role === "super_admin";
   const userTargetPricePage =
     assignedPriceList === "price_list_2" ? "price-list-2" : "price-list";
@@ -80,7 +97,7 @@ export default function SideMenu({
                 display: "block",
               }}
             />
-            <div style={styles.subtitle}>Feed Order Management</div>
+            <div style={styles.subtitle}>Make easy your D/O with Easy-DO</div>
           </div>
 
           <button onClick={onClose} style={styles.closeButton}>
@@ -154,7 +171,7 @@ export default function SideMenu({
               />
               <MenuItem
                 icon="👥"
-                label="User Management"
+                label="Users"
                 active={currentPage === "user-management"}
                 onClick={() => navigate("user-management")}
               />
@@ -164,7 +181,7 @@ export default function SideMenu({
           {isAdminOrSuper && (
             <MenuItem
               icon="📢"
-              label="Send Notification"
+              label="Notification"
               active={currentPage === "send-notification"}
               onClick={() => navigate("send-notification")}
             />
@@ -177,6 +194,7 @@ export default function SideMenu({
             <a
               href={APK_DOWNLOAD_URL}
               download="Easy-DO.apk"
+              onClick={handleTrackAppDownload}
               style={styles.downloadAppBtn}
             >
               <span>📲</span>

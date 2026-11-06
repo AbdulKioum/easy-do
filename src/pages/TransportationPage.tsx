@@ -888,11 +888,7 @@ export default function TransportationPage() {
       <div className="tp-header">
         <div>
           <h1 className="tp-title">🚚 Transportation Rates</h1>
-          <p className="tp-subtitle">
-            {isSuperAdmin
-              ? "Manage all mill & depot transport rates"
-              : `Assigned Districts: ${assignedDistricts.join(", ") || "None"}`}
-          </p>
+          
         </div>
 
         <div className="tp-btn-group">
@@ -959,7 +955,7 @@ export default function TransportationPage() {
             className={`tp-filter-pill ${fromFilter === "All" ? "active" : ""}`}
             onClick={() => setFromFilter("All")}
           >
-            🌐 All Assigned ({visibleItems.length})
+            🌐 All ({visibleItems.length})
           </button>
           {assignedFromLocations.map((option) => {
             const count = visibleItems.filter((i) => i.from_location === option).length;

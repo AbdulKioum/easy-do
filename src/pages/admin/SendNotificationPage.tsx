@@ -1,34 +1,27 @@
-import React, { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { supabase } from "../../lib/supabase";
 import { useAuth } from "../../context/AuthContext";
 
-type ProfileUser = {
+type ProfileRow = {
   id: string;
-  name?: string;
   full_name?: string;
+  name?: string;
   username?: string;
   email?: string;
   phone?: string;
   role?: string;
   district?: string;
   upazila?: string;
-  assigned_districts?: string[] | null;
-  assigned_upazilas?: string[] | null;
+  assigned_districts?: string[] | string | null;
+  assigned_upazilas?: string[] | string | null;
 };
 
-type UpazilaRow = {
-  id: number;
-  district: string;
-  upazila_name: string;
-  status: string;
-};
-
-type SentNotification = {
+type NotificationRow = {
   id: number;
   user_id: string | null;
   sender_id?: string | null;
   sender_name?: string | null;
-  title: string;
+  title?: string | null;
   message: string;
   is_read: boolean;
   is_reply?: boolean;
@@ -36,67 +29,354 @@ type SentNotification = {
   created_at: string;
 };
 
-const PAGE_CSS = `
-  .snp-page { min-height: calc(100vh - 60px); background: #f1f5f9; padding: 14px 12px 90px; box-sizing: border-box; font-family: system-ui, -apple-system, sans-serif; color: #0f172a; }
-  .snp-container { max-width: 780px; margin: 0 auto; }
-  .snp-hero { background: linear-gradient(135deg, #1e3a8a 0%, #2563eb 60%, #3b82f6 100%); border-radius: 18px; padding: 18px; color: #fff; box-shadow: 0 10px 25px -5px rgba(37, 99, 235, 0.35); margin-bottom: 14px; }
-  .snp-title { margin: 0; font-size: 19px; font-weight: 800; display: flex; align-items: center; gap: 8px; }
-  .snp-subtitle { margin: 4px 0 0; font-size: 12px; color: #dbeafe; font-weight: 500; }
-  .snp-tabs { display: grid; grid-template-columns: repeat(3, 1fr); background: rgba(15, 23, 42, 0.28); padding: 4px; border-radius: 12px; margin-top: 14px; gap: 4px; }
-  .snp-tab-btn { border: none; padding: 10px 8px; border-radius: 9px; font-size: 11.5px; font-weight: 800; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 5px; transition: all 0.2s ease; white-space: nowrap; }
-  .snp-card { background: #ffffff; border-radius: 16px; border: 1px solid #e2e8f0; padding: 16px; box-shadow: 0 4px 12px rgba(15, 23, 42, 0.04); margin-bottom: 14px; }
-  .snp-label { display: block; font-size: 12px; font-weight: 800; color: #334155; margin-bottom: 8px; text-align: left; }
-  .snp-audience-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
-  .snp-aud-card { border-radius: 12px; padding: 12px; cursor: pointer; display: flex; align-items: center; gap: 10px; transition: all 0.18s ease; text-align: left; }
-  .snp-filter-box { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 14px; padding: 14px; margin-top: 14px; }
-  .snp-filter-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
-  @media (max-width: 520px) {
-    .snp-filter-grid { grid-template-columns: 1fr; }
+const MINIMAL_NOTIF_CSS = `
+  .snp-wrap {
+    min-height: calc(100vh - 60px);
+    background: #f8fafc;
+    padding: 10px 10px 60px;
+    box-sizing: border-box;
+    font-family: system-ui, -apple-system, sans-serif;
+    color: #1e293b;
   }
-  .snp-select, .snp-input, .snp-textarea { width: 100%; box-sizing: border-box; padding: 10px 12px; border-radius: 10px; border: 1px solid #cbd5e1; font-size: 13px; background: #ffffff; color: #0f172a; outline: none; font-family: inherit; }
-  .snp-user-list { max-height: 250px; overflow-y: auto; border: 1px solid #e2e8f0; border-radius: 12px; background: #ffffff; padding: 6px; margin-top: 8px; }
-  .snp-user-item { display: flex; align-items: center; gap: 10px; padding: 9px 10px; border-radius: 10px; cursor: pointer; border-bottom: 1px solid #f1f5f9; text-align: left; }
-  .snp-avatar { width: 36px; height: 36px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: 800; font-size: 13px; flex-shrink: 0; }
-  .snp-chip { display: inline-flex; align-items: center; padding: 2px 7px; border-radius: 20px; font-size: 10px; font-weight: 700; background: #e0f2fe; color: #0369a1; margin-right: 4px; margin-top: 3px; }
-  .snp-btn-primary { width: 100%; padding: 14px 18px; border: none; border-radius: 12px; background: linear-gradient(135deg, #2563eb, #1d4ed8); color: #ffffff; font-size: 14px; font-weight: 800; cursor: pointer; box-shadow: 0 6px 16px rgba(37, 99, 235, 0.32); display: flex; align-items: center; justify-content: center; gap: 8px; }
-  .snp-reset-btn { border: 1px solid #fecaca; background: #fef2f2; color: #dc2626; border-radius: 8px; padding: 5px 10px; font-size: 11px; font-weight: 800; cursor: pointer; display: inline-flex; align-items: center; gap: 5px; }
-  .snp-history-card { background: #ffffff; border: 1px solid #e2e8f0; border-radius: 14px; padding: 14px; margin-bottom: 10px; text-align: left; box-shadow: 0 2px 6px rgba(15, 23, 42, 0.03); }
-  .snp-action-btn { border: none; padding: 6px 11px; border-radius: 8px; font-size: 11.5px; font-weight: 750; cursor: pointer; display: inline-flex; align-items: center; gap: 4px; }
+  .snp-box {
+    max-width: 820px;
+    margin: 0 auto;
+  }
+
+  /* Compact Top Header */
+  .snp-topbar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    background: #ffffff;
+    border: 1px solid #e2e8f0;
+    border-radius: 10px;
+    padding: 8px 12px;
+    margin-bottom: 8px;
+  }
+  .snp-title {
+    margin: 0;
+    font-size: 15px;
+    font-weight: 800;
+    color: #0f172a;
+    display: flex;
+    align-items: center;
+    gap: 7px;
+  }
+  .snp-dot {
+    width: 7px;
+    height: 7px;
+    background: #10b981;
+    border-radius: 50%;
+    box-shadow: 0 0 0 2px #d1fae5;
+  }
+  .snp-tabs {
+    display: flex;
+    gap: 4px;
+    background: #f1f5f9;
+    padding: 3px;
+    border-radius: 8px;
+  }
+  .snp-tab {
+    border: none;
+    background: transparent;
+    color: #64748b;
+    font-size: 11.5px;
+    font-weight: 700;
+    padding: 4px 10px;
+    border-radius: 6px;
+    cursor: pointer;
+  }
+  .snp-tab.active {
+    background: #ffffff;
+    color: #0f172a;
+    box-shadow: 0 1px 2px rgba(0,0,0,0.06);
+  }
+
+  /* Compact Card */
+  .snp-card {
+    background: #ffffff;
+    border: 1px solid #e2e8f0;
+    border-radius: 10px;
+    padding: 10px 12px;
+    margin-bottom: 8px;
+    box-shadow: 0 1px 2px rgba(15, 23, 42, 0.02);
+  }
+
+  /* Target & Title Row */
+  .snp-row-top {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    gap: 8px;
+    align-items: center;
+    margin-bottom: 8px;
+  }
+  @media (max-width: 520px) {
+    .snp-row-top {
+      grid-template-columns: 1fr;
+    }
+  }
+
+  .snp-seg {
+    display: inline-flex;
+    background: #f1f5f9;
+    padding: 3px;
+    border-radius: 8px;
+    border: 1px solid #e2e8f0;
+  }
+  .snp-seg-btn {
+    border: none;
+    background: transparent;
+    color: #475569;
+    font-size: 11.5px;
+    font-weight: 700;
+    padding: 5px 10px;
+    border-radius: 6px;
+    cursor: pointer;
+    white-space: nowrap;
+  }
+  .snp-seg-btn.active {
+    background: #ffffff;
+    color: #2563eb;
+    box-shadow: 0 1px 2px rgba(15, 23, 42, 0.06);
+  }
+
+  .snp-input, .snp-select, .snp-textarea {
+    width: 100%;
+    box-sizing: border-box;
+    border: 1px solid #cbd5e1;
+    background: #f8fafc;
+    border-radius: 7px;
+    font-size: 12.5px;
+    font-weight: 600;
+    color: #0f172a;
+    outline: none;
+    font-family: inherit;
+    transition: all 0.15s ease;
+  }
+  .snp-input, .snp-select {
+    height: 32px;
+    padding: 0 9px;
+  }
+  .snp-textarea {
+    padding: 8px 9px;
+    resize: vertical;
+    min-height: 54px;
+    line-height: 1.4;
+  }
+  .snp-input:focus, .snp-select:focus, .snp-textarea:focus {
+    background: #ffffff;
+    border-color: #3b82f6;
+  }
+
+  /* Compact Specific User Selector */
+  .snp-specific-box {
+    background: #f8fafc;
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    padding: 8px;
+    margin-bottom: 8px;
+  }
+  .snp-filter-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1.2fr auto;
+    gap: 6px;
+    margin-bottom: 6px;
+  }
+  @media (max-width: 640px) {
+    .snp-filter-grid {
+      grid-template-columns: 1fr 1fr;
+    }
+  }
+  .snp-user-list {
+    max-height: 125px;
+    overflow-y: auto;
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(175px, 1fr));
+    gap: 4px;
+    background: #ffffff;
+    border: 1px solid #e2e8f0;
+    border-radius: 6px;
+    padding: 6px;
+  }
+  .snp-user-item {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 6px;
+    border-radius: 5px;
+    font-size: 11.5px;
+    cursor: pointer;
+    border: 1px solid transparent;
+    text-align: left;
+  }
+  .snp-user-item:hover {
+    background: #f1f5f9;
+  }
+  .snp-user-item.selected {
+    background: #eff6ff;
+    border-color: #bfdbfe;
+    color: #1e40af;
+    font-weight: 700;
+  }
+
+  .snp-send-bar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 8px;
+    margin-top: 8px;
+  }
+  .snp-btn-primary {
+    border: none;
+    background: #2563eb;
+    color: #ffffff;
+    font-size: 12px;
+    font-weight: 700;
+    padding: 7px 14px;
+    border-radius: 7px;
+    cursor: pointer;
+    white-space: nowrap;
+  }
+  .snp-btn-primary:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+  }
+  .snp-btn-ghost {
+    border: 1px solid #cbd5e1;
+    background: #ffffff;
+    color: #475569;
+    font-size: 11px;
+    font-weight: 700;
+    padding: 4px 8px;
+    border-radius: 6px;
+    cursor: pointer;
+    white-space: nowrap;
+  }
+
+  /* Logs & Replies List */
+  .snp-list {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+  .snp-item {
+    background: #ffffff;
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    padding: 8px 10px;
+    text-align: left;
+  }
+  .snp-item-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 6px;
+    margin-bottom: 3px;
+  }
+  .snp-badge {
+    font-size: 10px;
+    font-weight: 700;
+    padding: 2px 6px;
+    border-radius: 4px;
+    background: #f1f5f9;
+    color: #475569;
+  }
+  .snp-msg {
+    font-size: 12.5px;
+    color: #0f172a;
+    line-height: 1.35;
+    white-space: pre-wrap;
+    margin: 3px 0 6px;
+  }
+  .snp-meta {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 10.5px;
+    color: #64748b;
+  }
+  .snp-actions {
+    display: flex;
+    gap: 5px;
+  }
+  .snp-act-btn {
+    border: 1px solid #e2e8f0;
+    background: #f8fafc;
+    color: #334155;
+    font-size: 10.5px;
+    font-weight: 700;
+    padding: 2px 7px;
+    border-radius: 5px;
+    cursor: pointer;
+  }
+  .snp-act-del {
+    color: #dc2626;
+    border-color: #fecaca;
+    background: #fef2f2;
+  }
 `;
+
+function parseArrayField(val: any): string[] {
+  if (!val) return [];
+  if (Array.isArray(val)) return val.map(String);
+  if (typeof val === "string") {
+    try {
+      const parsed = JSON.parse(val);
+      if (Array.isArray(parsed)) return parsed.map(String);
+    } catch {
+      return val.split(",").map((s) => s.trim()).filter(Boolean);
+    }
+  }
+  return [];
+}
+
+function getUserDisplayName(u?: ProfileRow | null): string {
+  if (!u) return "User";
+  const raw = u.full_name || u.name || u.username || u.email?.split("@")[0] || "User";
+  return raw.replace(/\s*\(.*?\)/g, "").trim();
+}
 
 export default function SendNotificationPage() {
   const { user, role } = useAuth();
-  const [activeTab, setActiveTab] = useState<"send" | "history" | "replies">("send");
-  const [sendType, setSendType] = useState<"all" | "specific">("all");
+  const isAuthorized = role === "admin" || role === "super_admin";
 
-  const [users, setUsers] = useState<ProfileUser[]>([]);
-  const [upazilaRows, setUpazilaRows] = useState<UpazilaRow[]>([]);
+  // Default Title is "Notice"
+  const [title, setTitle] = useState("Notice");
+  const [message, setMessage] = useState("");
+  const [targetMode, setTargetMode] = useState<"all" | "specific">("all");
+  const [sending, setSending] = useState(false);
+
+  // Users & Location Filters
+  const [users, setUsers] = useState<ProfileRow[]>([]);
+  const [upazilaRows, setUpazilaRows] = useState<{ district: string; upazila: string }[]>([]);
+  const [selectedDistrict, setSelectedDistrict] = useState("All");
+  const [selectedUpazila, setSelectedUpazila] = useState("All");
+  const [userSearch, setUserSearch] = useState("");
   const [selectedUserIds, setSelectedUserIds] = useState<string[]>([]);
 
-  const [selectedDistrict, setSelectedDistrict] = useState<string>("");
-  const [selectedUpazila, setSelectedUpazila] = useState<string>("");
-  const [userSearch, setUserSearch] = useState<string>("");
+  // Logs & Replies
+  const [logs, setLogs] = useState<NotificationRow[]>([]);
+  const [activeTab, setActiveTab] = useState<"sent" | "replies">("sent");
 
-  const [title, setTitle] = useState<string>("Admin Announcement");
-  const [message, setMessage] = useState<string>("");
-  const [sending, setSending] = useState<boolean>(false);
+  // Edit & Admin Reply state
+  const [editingId, setEditingId] = useState<number | null>(null);
+  const [editTitle, setEditTitle] = useState("");
+  const [editMessage, setEditMessage] = useState("");
+  const [replyingToId, setReplyingToId] = useState<number | null>(null);
+  const [adminReplyText, setAdminReplyText] = useState("");
 
-  const [allLogs, setAllLogs] = useState<SentNotification[]>([]);
-  const [historySearch, setHistorySearch] = useState<string>("");
-  const [editingNotif, setEditingNotif] = useState<SentNotification | null>(null);
-  const [loadingData, setLoadingData] = useState<boolean>(true);
-
-  // SendNotificationPage.tsx er vitore real-time listener add kora
   useEffect(() => {
+    if (!isAuthorized) return;
     loadInitialData();
 
     const channel = supabase
-      .channel("admin:notifications:realtime")
+      .channel("admin:notifications:live")
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "notifications" },
         () => {
-          fetchLogs(); // Konota insert, update ba delete hole sathe sathe list refresh hobe
+          fetchLogs();
         }
       )
       .subscribe();
@@ -104,22 +384,30 @@ export default function SendNotificationPage() {
     return () => {
       supabase.removeChannel(channel);
     };
-  }, []);
+  }, [isAuthorized]);
 
   async function loadInitialData() {
-    setLoadingData(true);
-    try {
-      const [profRes, upzRes, notifRes] = await Promise.all([
-        supabase.from("profiles").select("*"),
-        supabase.from("upazilas").select("*").eq("status", "Active"),
-        supabase.from("notifications").select("*").order("created_at", { ascending: false }),
-      ]);
+    await Promise.all([fetchUsersAndLocations(), fetchLogs()]);
+  }
 
-      if (!profRes.error && profRes.data) setUsers(profRes.data);
-      if (!upzRes.error && upzRes.data) setUpazilaRows(upzRes.data);
-      if (!notifRes.error && notifRes.data) setAllLogs(notifRes.data);
-    } finally {
-      setLoadingData(false);
+  async function fetchUsersAndLocations() {
+    const [profRes, upzRes] = await Promise.all([
+      supabase.from("profiles").select("*"),
+      supabase.from("upazilas").select("district, upazila, name, district_name"),
+    ]);
+
+    if (!profRes.error && profRes.data) {
+      setUsers(profRes.data as ProfileRow[]);
+    }
+
+    if (!upzRes.error && upzRes.data) {
+      const mapped = upzRes.data
+        .map((r: any) => ({
+          district: r.district || r.district_name || "",
+          upazila: r.upazila || r.name || "",
+        }))
+        .filter((r: any) => r.district || r.upazila);
+      setUpazilaRows(mapped);
     }
   }
 
@@ -127,78 +415,12 @@ export default function SendNotificationPage() {
     const { data, error } = await supabase
       .from("notifications")
       .select("*")
-      .order("created_at", { ascending: false });
-    if (!error && data) setAllLogs(data);
-  }
+      .order("created_at", { ascending: false })
+      .limit(150);
 
-  function getUserDistricts(u: ProfileUser): string[] {
-    const list: string[] = [];
-    if (Array.isArray(u.assigned_districts)) list.push(...u.assigned_districts.filter(Boolean));
-    if (u.district && !list.includes(u.district)) list.push(u.district);
-    return list;
-  }
-
-  function getUserUpazilas(u: ProfileUser): string[] {
-    const list: string[] = [];
-    if (Array.isArray(u.assigned_upazilas)) list.push(...u.assigned_upazilas.filter(Boolean));
-    if (u.upazila && !list.includes(u.upazila)) list.push(u.upazila);
-    const userDists = getUserDistricts(u);
-    if (userDists.length > 0 && upazilaRows.length > 0) {
-      upazilaRows.forEach((row) => {
-        if (userDists.includes(row.district) && !list.includes(row.upazila_name)) {
-          list.push(row.upazila_name);
-        }
-      });
+    if (!error && data) {
+      setLogs(data as NotificationRow[]);
     }
-    return list;
-  }
-
-  const districts = useMemo(() => {
-    const set = new Set<string>();
-    upazilaRows.forEach((r) => r.district && set.add(r.district));
-    users.forEach((u) => getUserDistricts(u).forEach((d) => set.add(d)));
-    return Array.from(set).sort();
-  }, [upazilaRows, users]);
-
-  const upazilas = useMemo(() => {
-    const set = new Set<string>();
-    upazilaRows.forEach((r) => {
-      if (!selectedDistrict || r.district === selectedDistrict) {
-        if (r.upazila_name) set.add(r.upazila_name);
-      }
-    });
-    return Array.from(set).sort();
-  }, [upazilaRows, selectedDistrict]);
-
-  const filteredUsers = useMemo(() => {
-    return users.filter((u) => {
-      const uDists = getUserDistricts(u);
-      const uUpzs = getUserUpazilas(u);
-
-      if (selectedDistrict && !uDists.includes(selectedDistrict)) return false;
-
-      if (selectedUpazila) {
-        const upzObj = upazilaRows.find((r) => r.upazila_name === selectedUpazila);
-        const matchesUpz = uUpzs.includes(selectedUpazila);
-        const matchesDist = upzObj ? uDists.includes(upzObj.district) : false;
-        if (!matchesUpz && !matchesDist) return false;
-      }
-
-      if (userSearch.trim()) {
-        const q = userSearch.toLowerCase().trim();
-        const nameStr = (u.name || u.full_name || u.username || u.email || "").toLowerCase();
-        const phoneStr = (u.phone || "").toLowerCase();
-        const distStr = uDists.join(" ").toLowerCase();
-        if (!nameStr.includes(q) && !phoneStr.includes(q) && !distStr.includes(q)) return false;
-      }
-
-      return true;
-    });
-  }, [users, upazilaRows, selectedDistrict, selectedUpazila, userSearch]);
-
-  function getUserDisplayName(u?: ProfileUser | null) {
-    if (!u) return "Unknown User";
-    return u.name || u.full_name || u.username || u.email?.split("@")[0] || "User";
   }
 
   const currentSenderLabel = useMemo(() => {
@@ -207,76 +429,128 @@ export default function SendNotificationPage() {
     return myName.replace(/\s*\(.*?\)/g, "").trim();
   }, [users, user?.id]);
 
-  function resetFilters() {
-    setSelectedDistrict("");
-    setSelectedUpazila("");
-    setUserSearch("");
+  const userMap = useMemo(() => {
+    const map: Record<string, ProfileRow> = {};
+    users.forEach((u) => {
+      map[u.id] = u;
+    });
+    return map;
+  }, [users]);
+
+  const districts = useMemo(() => {
+    const set = new Set<string>();
+    upazilaRows.forEach((r) => r.district && set.add(r.district));
+    users.forEach((u) => {
+      if (u.district) set.add(u.district);
+      parseArrayField(u.assigned_districts).forEach((d) => set.add(d));
+    });
+    return ["All", ...Array.from(set).sort()];
+  }, [upazilaRows, users]);
+
+  const upazilas = useMemo(() => {
+    const set = new Set<string>();
+    upazilaRows.forEach((r) => {
+      if (selectedDistrict === "All" || r.district === selectedDistrict) {
+        if (r.upazila) set.add(r.upazila);
+      }
+    });
+    users.forEach((u) => {
+      if (u.upazila) set.add(u.upazila);
+      parseArrayField(u.assigned_upazilas).forEach((upz) => set.add(upz));
+    });
+    return ["All", ...Array.from(set).sort()];
+  }, [upazilaRows, users, selectedDistrict]);
+
+  const filteredUsers = useMemo(() => {
+    return users.filter((u) => {
+      if (u.id === user?.id) return false;
+      const uDistricts = [
+        ...(u.district ? [u.district] : []),
+        ...parseArrayField(u.assigned_districts),
+      ].map((s) => s.toLowerCase());
+
+      const uUpazilas = [
+        ...(u.upazila ? [u.upazila] : []),
+        ...parseArrayField(u.assigned_upazilas),
+      ].map((s) => s.toLowerCase());
+
+      const matchDist =
+        selectedDistrict === "All" ||
+        uDistricts.includes(selectedDistrict.toLowerCase());
+      const matchUpz =
+        selectedUpazila === "All" ||
+        uUpazilas.includes(selectedUpazila.toLowerCase());
+
+      const q = userSearch.toLowerCase().trim();
+      const name = getUserDisplayName(u).toLowerCase();
+      const email = (u.email || "").toLowerCase();
+      const matchSearch = !q || name.includes(q) || email.includes(q);
+
+      return matchDist && matchUpz && matchSearch;
+    });
+  }, [users, user?.id, selectedDistrict, selectedUpazila, userSearch]);
+
+  function toggleUser(id: string) {
+    setSelectedUserIds((prev) =>
+      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]
+    );
   }
 
-  function toggleAllFiltered() {
+  function toggleSelectAllFiltered() {
     const filteredIds = filteredUsers.map((u) => u.id);
-    const allSelected = filteredIds.every((id) => selectedUserIds.includes(id));
+    const allSelected =
+      filteredIds.length > 0 &&
+      filteredIds.every((id) => selectedUserIds.includes(id));
+
     if (allSelected) {
       setSelectedUserIds((prev) => prev.filter((id) => !filteredIds.includes(id)));
     } else {
-      setSelectedUserIds(Array.from(new Set([...selectedUserIds, ...filteredIds])));
+      setSelectedUserIds((prev) => Array.from(new Set([...prev, ...filteredIds])));
     }
   }
 
-  async function handleSend(e: React.FormEvent) {
+  async function handleSendNotification(e: React.FormEvent) {
     e.preventDefault();
-    if (!message.trim()) return alert("Please enter a notification message.");
-    if (!editingNotif && sendType === "specific" && selectedUserIds.length === 0) {
-      return alert("Please select at least one recipient.");
+    const cleanTitle = title.trim() || "Notice";
+    const cleanMsg = message.trim();
+
+    if (!cleanMsg) return alert("Write a message first.");
+    if (targetMode === "specific" && selectedUserIds.length === 0) {
+      return alert("Select at least one user.");
     }
 
     setSending(true);
     try {
-      if (editingNotif) {
-        const { error } = await supabase
-          .from("notifications")
-          .update({
-            title: title.trim() || "Admin Announcement",
-            message: message.trim(),
-          })
-          .eq("id", editingNotif.id);
-        if (error) throw error;
-        alert("Notification updated!");
-        setEditingNotif(null);
-      } else {
-        if (sendType === "all") {
-          const { error } = await supabase.from("notifications").insert([
-            {
-              user_id: null,
+      const payloads =
+        targetMode === "all"
+          ? [
+              {
+                user_id: null,
+                sender_id: user?.id || null,
+                sender_name: currentSenderLabel,
+                title: cleanTitle,
+                message: cleanMsg,
+                is_read: false,
+                is_reply: false,
+              },
+            ]
+          : selectedUserIds.map((uid) => ({
+              user_id: uid,
               sender_id: user?.id || null,
               sender_name: currentSenderLabel,
-              title: title.trim() || "Admin Announcement",
-              message: message.trim(),
+              title: cleanTitle,
+              message: cleanMsg,
               is_read: false,
               is_reply: false,
-            },
-          ]);
-          if (error) throw error;
-        } else {
-          const payloads = selectedUserIds.map((uid) => ({
-            user_id: uid,
-            sender_id: user?.id || null,
-            sender_name: currentSenderLabel,
-            title: title.trim() || "Admin Announcement",
-            message: message.trim(),
-            is_read: false,
-            is_reply: false,
-          }));
-          const { error } = await supabase.from("notifications").insert(payloads);
-          if (error) throw error;
-        }
-        alert("Notification sent successfully!");
-      }
+            }));
 
+      const { error } = await supabase.from("notifications").insert(payloads as any);
+      if (error) throw error;
+
+      setTitle("Notice");
       setMessage("");
-      setTitle("Admin Announcement");
       setSelectedUserIds([]);
-      fetchLogs();
+      await fetchLogs();
     } catch (err: any) {
       alert(`Failed: ${err.message}`);
     } finally {
@@ -284,361 +558,375 @@ export default function SendNotificationPage() {
     }
   }
 
+  async function handleSaveEdit(id: number) {
+    if (!editMessage.trim()) return;
+    const { error } = await supabase
+      .from("notifications")
+      .update({
+        title: editTitle.trim() || "Notice",
+        message: editMessage.trim(),
+      })
+      .eq("id", id);
+
+    if (!error) {
+      setEditingId(null);
+      fetchLogs();
+    }
+  }
+
   async function handleDelete(id: number) {
-    if (!window.confirm("Delete this notification permanently?")) return;
+    if (!window.confirm("Delete this notification?")) return;
     const { error } = await supabase.from("notifications").delete().eq("id", id);
-    if (!error) setAllLogs((prev) => prev.filter((n) => n.id !== id));
+    if (!error) {
+      setLogs((prev) => prev.filter((l) => l.id !== id));
+    }
   }
 
-  function handleEdit(n: SentNotification) {
-    setEditingNotif(n);
-    setTitle(n.title || "Admin Announcement");
-    setMessage(n.message || "");
-    setActiveTab("send");
-    window.scrollTo({ top: 0, behavior: "smooth" });
+  async function handleAdminReply(replyRow: NotificationRow) {
+    const text = adminReplyText.trim();
+    if (!text) return;
+    const targetUserId = replyRow.sender_id || replyRow.user_id;
+    if (!targetUserId) return alert("User ID not found.");
+
+    const { error } = await supabase.from("notifications").insert([
+      {
+        user_id: targetUserId,
+        sender_id: user?.id || null,
+        sender_name: currentSenderLabel,
+        title: `↩ Reply: ${(replyRow.title || "Notice").replace(/^↩ Reply:\s*/i, "")}`,
+        message: text,
+        is_read: false,
+        is_reply: true,
+        reply_to_id: replyRow.id,
+      },
+    ]);
+
+    if (!error) {
+      if (!replyRow.is_read) {
+        await supabase
+          .from("notifications")
+          .update({ is_read: true })
+          .eq("id", replyRow.id);
+      }
+      setAdminReplyText("");
+      setReplyingToId(null);
+      fetchLogs();
+    }
   }
 
-  const sentHistory = useMemo(() => allLogs.filter((n) => !n.is_reply), [allLogs]);
+  const sentLogs = useMemo(() => logs.filter((l) => !l.is_reply), [logs]);
+  const replyLogs = useMemo(() => logs.filter((l) => l.is_reply), [logs]);
 
-  // Unique user replies (deduplicated by sender_id + created_at + message so admin sees one clean card per reply)
-  const userReplies = useMemo(() => {
-    const rawReplies = allLogs.filter((n) => n.is_reply);
-    const seen = new Set<string>();
-    return rawReplies.filter((r) => {
-      const key = `${r.sender_id}_${r.reply_to_id}_${r.message}`;
-      if (seen.has(key)) return false;
-      seen.add(key);
-      return true;
-    });
-  }, [allLogs]);
-
-  const displayedHistory = useMemo(() => {
-    if (!historySearch.trim()) return sentHistory;
-    const q = historySearch.toLowerCase().trim();
-    return sentHistory.filter((n) => {
-      const targetUser = users.find((u) => u.id === n.user_id);
-      const uName = getUserDisplayName(targetUser).toLowerCase();
-      return (
-        (n.title || "").toLowerCase().includes(q) ||
-        (n.message || "").toLowerCase().includes(q) ||
-        uName.includes(q)
-      );
-    });
-  }, [sentHistory, historySearch, users]);
-
-  if (role !== "super_admin" && role !== "admin") {
-    return <div style={{ padding: 40, textAlign: "center", color: "#dc2626", fontWeight: 800 }}>⛔ Access Denied</div>;
+  if (!isAuthorized) {
+    return (
+      <div style={{ padding: 30, textAlign: "center", color: "#64748b", fontSize: 13 }}>
+        Access Denied
+      </div>
+    );
   }
 
   return (
-    <div className="snp-page">
-      <style>{PAGE_CSS}</style>
+    <div className="snp-wrap">
+      <style>{MINIMAL_NOTIF_CSS}</style>
 
-      <div className="snp-container">
-        <div className="snp-hero">
+      <div className="snp-box">
+        {/* COMPACT TOP BAR */}
+        <div className="snp-topbar">
           <h1 className="snp-title">
-            <span>📢</span> Notification Center
+            <span className="snp-dot" />
+            <span>Notifications</span>
           </h1>
-          <p className="snp-subtitle">
-            Broadcast messages, manage sent logs, and view user replies
-          </p>
 
           <div className="snp-tabs">
             <button
               type="button"
-              onClick={() => setActiveTab("send")}
-              className="snp-tab-btn"
-              style={{
-                background: activeTab === "send" ? "#ffffff" : "transparent",
-                color: activeTab === "send" ? "#1d4ed8" : "#e2e8f0",
-              }}
+              className={`snp-tab ${activeTab === "sent" ? "active" : ""}`}
+              onClick={() => setActiveTab("sent")}
             >
-              <span>{editingNotif ? "✏️" : "🚀"}</span>
-              <span>{editingNotif ? "Edit" : "Compose"}</span>
+              Sent ({sentLogs.length})
             </button>
-
             <button
               type="button"
-              onClick={() => setActiveTab("history")}
-              className="snp-tab-btn"
-              style={{
-                background: activeTab === "history" ? "#ffffff" : "transparent",
-                color: activeTab === "history" ? "#1d4ed8" : "#e2e8f0",
-              }}
-            >
-              <span>📋</span>
-              <span>Sent ({sentHistory.length})</span>
-            </button>
-
-            <button
-              type="button"
+              className={`snp-tab ${activeTab === "replies" ? "active" : ""}`}
               onClick={() => setActiveTab("replies")}
-              className="snp-tab-btn"
-              style={{
-                background: activeTab === "replies" ? "#ffffff" : "transparent",
-                color: activeTab === "replies" ? "#1d4ed8" : "#e2e8f0",
-              }}
             >
-              <span>💬</span>
-              <span>Replies ({userReplies.length})</span>
+              Replies ({replyLogs.length})
             </button>
           </div>
         </div>
 
-        {/* TAB 1: COMPOSE */}
-        {activeTab === "send" && (
-          <form onSubmit={handleSend}>
-            {!editingNotif && (
-              <div className="snp-card">
-                <label className="snp-label">1. Choose Target Audience</label>
-                <div className="snp-audience-grid">
-                  <div
-                    onClick={() => setSendType("all")}
-                    className="snp-aud-card"
-                    style={{
-                      border: sendType === "all" ? "2px solid #2563eb" : "1px solid #cbd5e1",
-                      background: sendType === "all" ? "#eff6ff" : "#f8fafc",
-                    }}
-                  >
-                    <span style={{ fontSize: 20 }}>🌐</span>
-                    <div>
-                      <div style={{ fontSize: 13, fontWeight: 800 }}>To All Users</div>
-                      <div style={{ fontSize: 11, color: "#64748b" }}>Everyone gets alert</div>
-                    </div>
-                  </div>
+        {/* COMPACT COMPOSE CARD */}
+        <form className="snp-card" onSubmit={handleSendNotification}>
+          <div className="snp-row-top">
+            {/* Small Audience Toggle */}
+            <div className="snp-seg">
+              <button
+                type="button"
+                className={`snp-seg-btn ${targetMode === "all" ? "active" : ""}`}
+                onClick={() => setTargetMode("all")}
+              >
+                To All Users
+              </button>
+              <button
+                type="button"
+                className={`snp-seg-btn ${targetMode === "specific" ? "active" : ""}`}
+                onClick={() => setTargetMode("specific")}
+              >
+                Specific ({selectedUserIds.length})
+              </button>
+            </div>
 
-                  <div
-                    onClick={() => setSendType("specific")}
-                    className="snp-aud-card"
-                    style={{
-                      border: sendType === "specific" ? "2px solid #2563eb" : "1px solid #cbd5e1",
-                      background: sendType === "specific" ? "#eff6ff" : "#f8fafc",
-                    }}
-                  >
-                    <span style={{ fontSize: 20 }}>🎯</span>
-                    <div>
-                      <div style={{ fontSize: 13, fontWeight: 800 }}>Specific Users</div>
-                      <div style={{ fontSize: 11, color: "#64748b" }}>Filter by Area / Name</div>
-                    </div>
-                  </div>
-                </div>
+            {/* Default Notice Title Input */}
+            <input
+              type="text"
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              placeholder="Notice Title"
+              className="snp-input"
+            />
+          </div>
 
-                {sendType === "specific" && (
-                  <div className="snp-filter-box">
-                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
-                      <span style={{ fontSize: 12, fontWeight: 800 }}>🔍 Filter by Assigned District & Upazila</span>
-                      {(selectedDistrict || selectedUpazila || userSearch) && (
-                        <button type="button" onClick={resetFilters} className="snp-reset-btn">
-                          🔄 Reset Filter
-                        </button>
-                      )}
-                    </div>
+          {/* Compact Specific User Picker */}
+          {targetMode === "specific" && (
+            <div className="snp-specific-box">
+              <div className="snp-filter-grid">
+                <select
+                  value={selectedDistrict}
+                  onChange={(e) => {
+                    setSelectedDistrict(e.target.value);
+                    setSelectedUpazila("All");
+                  }}
+                  className="snp-select"
+                >
+                  {districts.map((d) => (
+                    <option key={d} value={d}>
+                      {d === "All" ? "All Districts" : d}
+                    </option>
+                  ))}
+                </select>
 
-                    <div className="snp-filter-grid">
-                      <div>
-                        <label style={{ fontSize: 11, fontWeight: 700, display: "block", marginBottom: 4 }}>
-                          District ({districts.length})
-                        </label>
-                        <select
-                          value={selectedDistrict}
-                          onChange={(e) => {
-                            setSelectedDistrict(e.target.value);
-                            setSelectedUpazila("");
-                          }}
-                          className="snp-select"
-                        >
-                          <option value="">All Districts</option>
-                          {districts.map((d) => <option key={d} value={d}>{d}</option>)}
-                        </select>
-                      </div>
+                <select
+                  value={selectedUpazila}
+                  onChange={(e) => setSelectedUpazila(e.target.value)}
+                  className="snp-select"
+                >
+                  {upazilas.map((u) => (
+                    <option key={u} value={u}>
+                      {u === "All" ? "All Upazilas" : u}
+                    </option>
+                  ))}
+                </select>
 
-                      <div>
-                        <label style={{ fontSize: 11, fontWeight: 700, display: "block", marginBottom: 4 }}>
-                          Upazila ({upazilas.length})
-                        </label>
-                        <select
-                          value={selectedUpazila}
-                          onChange={(e) => setSelectedUpazila(e.target.value)}
-                          className="snp-select"
-                        >
-                          <option value="">All Upazilas</option>
-                          {upazilas.map((upz) => <option key={upz} value={upz}>{upz}</option>)}
-                        </select>
-                      </div>
-                    </div>
+                <input
+                  type="text"
+                  value={userSearch}
+                  onChange={(e) => setUserSearch(e.target.value)}
+                  placeholder="Search user..."
+                  className="snp-input"
+                />
 
-                    <div style={{ marginTop: 10 }}>
+                <button
+                  type="button"
+                  onClick={toggleSelectAllFiltered}
+                  className="snp-btn-ghost"
+                >
+                  Select All
+                </button>
+              </div>
+
+              <div className="snp-user-list">
+                {filteredUsers.map((u) => {
+                  const checked = selectedUserIds.includes(u.id);
+                  return (
+                    <label
+                      key={u.id}
+                      className={`snp-user-item ${checked ? "selected" : ""}`}
+                    >
                       <input
-                        type="text"
-                        value={userSearch}
-                        onChange={(e) => setUserSearch(e.target.value)}
-                        placeholder="🔎 Search user by name, phone, or district..."
-                        className="snp-input"
+                        type="checkbox"
+                        checked={checked}
+                        onChange={() => toggleUser(u.id)}
+                        style={{ margin: 0 }}
                       />
-                    </div>
-
-                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 12 }}>
-                      <span style={{ fontSize: 11.5, fontWeight: 800 }}>
-                        Selected: <span style={{ color: "#2563eb" }}>{selectedUserIds.length}</span> / {filteredUsers.length}
-                      </span>
-                      <button
-                        type="button"
-                        onClick={toggleAllFiltered}
-                        style={{ background: "none", border: "none", color: "#2563eb", fontSize: 11.5, fontWeight: 800, cursor: "pointer" }}
+                      <span
+                        style={{
+                          overflow: "hidden",
+                          textOverflow: "ellipsis",
+                          whiteSpace: "nowrap",
+                        }}
                       >
-                        ✓ Select All Filtered
-                      </button>
-                    </div>
-
-                    <div className="snp-user-list">
-                      {loadingData ? (
-                        <div style={{ padding: 20, textAlign: "center", fontSize: 12 }}>Loading users...</div>
-                      ) : filteredUsers.map((u) => {
-                        const isChecked = selectedUserIds.includes(u.id);
-                        const displayName = getUserDisplayName(u);
-                        const uDists = getUserDistricts(u);
-                        return (
-                          <label key={u.id} className="snp-user-item" style={{ background: isChecked ? "#eff6ff" : "transparent" }}>
-                            <input
-                              type="checkbox"
-                              checked={isChecked}
-                              onChange={(e) => {
-                                if (e.target.checked) setSelectedUserIds((prev) => [...prev, u.id]);
-                                else setSelectedUserIds((prev) => prev.filter((id) => id !== u.id));
-                              }}
-                              style={{ width: 17, height: 17, accentColor: "#2563eb" }}
-                            />
-                            <div className="snp-avatar" style={{ background: isChecked ? "#2563eb" : "#e2e8f0", color: isChecked ? "#fff" : "#334155" }}>
-                              {displayName.substring(0, 2).toUpperCase()}
-                            </div>
-                            <div style={{ flex: 1 }}>
-                              <div style={{ fontSize: 13, fontWeight: 800 }}>{displayName}</div>
-                              {u.phone && <div style={{ fontSize: 11, color: "#64748b" }}>📞 {u.phone}</div>}
-                              <div>
-                                {uDists.map((d) => <span key={d} className="snp-chip">📍 {d}</span>)}
-                              </div>
-                            </div>
-                          </label>
-                        );
-                      })}
-                    </div>
+                        {getUserDisplayName(u)}
+                      </span>
+                    </label>
+                  );
+                })}
+                {!filteredUsers.length && (
+                  <div style={{ fontSize: 11, color: "#94a3b8", padding: 4 }}>
+                    No users found
                   </div>
                 )}
               </div>
-            )}
-
-            <div className="snp-card">
-              <label className="snp-label">2. Notification Content (Sending From: {currentSenderLabel})</label>
-              <div style={{ marginBottom: 12 }}>
-                <input
-                  type="text"
-                  value={title}
-                  onChange={(e) => setTitle(e.target.value)}
-                  placeholder="Notice Title"
-                  className="snp-input"
-                />
-              </div>
-              <div>
-                <textarea
-                  rows={5}
-                  value={message}
-                  onChange={(e) => setMessage(e.target.value)}
-                  placeholder="Type your announcement message here..."
-                  className="snp-textarea"
-                  required
-                />
-              </div>
-              <div style={{ marginTop: 16 }}>
-                <button type="submit" disabled={sending} className="snp-btn-primary">
-                  <span>🚀</span>
-                  <span>{sending ? "Sending..." : editingNotif ? "Update Notification" : "Send Notification"}</span>
-                </button>
-              </div>
             </div>
-          </form>
-        )}
+          )}
 
-        {/* TAB 2: SENT LOGS */}
-        {activeTab === "history" && (
-          <div>
-            <div className="snp-card" style={{ padding: 12 }}>
-              <input
-                type="text"
-                value={historySearch}
-                onChange={(e) => setHistorySearch(e.target.value)}
-                placeholder="🔎 Search sent notifications..."
-                className="snp-input"
-              />
-            </div>
+          {/* Message Input */}
+          <textarea
+            value={message}
+            onChange={(e) => setMessage(e.target.value)}
+            placeholder="Write notification message..."
+            className="snp-textarea"
+          />
 
-            {displayedHistory.map((n) => {
-              const targetUser = users.find((u) => u.id === n.user_id);
-              const isGlobal = n.user_id === null;
-              return (
-                <div key={n.id} className="snp-history-card">
-                  <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6, flexWrap: "wrap", gap: 6 }}>
-                    <span style={{ fontSize: 11, fontWeight: 800, background: isGlobal ? "#dbeafe" : "#fef3c7", color: isGlobal ? "#1e40af" : "#92400e", padding: "3px 9px", borderRadius: 20 }}>
-                      {isGlobal ? "🌐 To All Users" : `🎯 To: ${getUserDisplayName(targetUser)}`}
+          <div className="snp-send-bar">
+            <span style={{ fontSize: 11, color: "#64748b", fontWeight: 600 }}>
+              From: <b style={{ color: "#0f172a" }}>{currentSenderLabel}</b>
+            </span>
+
+            <button type="submit" disabled={sending} className="snp-btn-primary">
+              {sending ? "Sending..." : "Send Notice"}
+            </button>
+          </div>
+        </form>
+
+        {/* SENT / REPLIES LIST */}
+        <div className="snp-list">
+          {(activeTab === "sent" ? sentLogs : replyLogs).map((item) => {
+            const isEditing = editingId === item.id;
+            const isReplying = replyingToId === item.id;
+            const recipientName = item.user_id
+              ? getUserDisplayName(userMap[item.user_id])
+              : "All Users";
+            const cleanSender = (item.sender_name || "Admin")
+              .replace(/\s*\(.*?\)/g, "")
+              .trim();
+
+            return (
+              <div key={item.id} className="snp-item">
+                <div className="snp-item-head">
+                  <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                    <span style={{ fontSize: 12, fontWeight: 800, color: "#0f172a" }}>
+                      {item.title || "Notice"}
                     </span>
-                    <span style={{ fontSize: 10.5, color: "#64748b", fontWeight: 700 }}>
-                      From: {n.sender_name || "Admin"} • {new Date(n.created_at).toLocaleString("en-BD", { dateStyle: "medium", timeStyle: "short" })}
+                    <span className="snp-badge">
+                      {item.is_reply
+                        ? `${cleanSender} → ${recipientName}`
+                        : `To: ${recipientName}`}
                     </span>
                   </div>
-                  <div style={{ fontSize: 13.5, fontWeight: 800, marginBottom: 4 }}>{n.title}</div>
-                  <div style={{ fontSize: 12.5, background: "#f8fafc", padding: 10, borderRadius: 8, whiteSpace: "pre-wrap" }}>{n.message}</div>
-                  <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 10 }}>
-                    <button type="button" onClick={() => handleEdit(n)} className="snp-action-btn" style={{ background: "#eff6ff", color: "#1d4ed8" }}>✏️ Edit</button>
-                    <button type="button" onClick={() => handleDelete(n.id)} className="snp-action-btn" style={{ background: "#fef2f2", color: "#dc2626" }}>🗑️ Delete</button>
+
+                  <div className="snp-actions">
+                    {activeTab === "replies" && (
+                      <button
+                        type="button"
+                        className="snp-act-btn"
+                        onClick={() => {
+                          setReplyingToId(isReplying ? null : item.id);
+                          setAdminReplyText("");
+                        }}
+                      >
+                        {isReplying ? "Cancel" : "Reply"}
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      className="snp-act-btn"
+                      onClick={() => {
+                        if (isEditing) {
+                          setEditingId(null);
+                        } else {
+                          setEditingId(item.id);
+                          setEditTitle(item.title || "Notice");
+                          setEditMessage(item.message);
+                        }
+                      }}
+                    >
+                      {isEditing ? "Cancel" : "Edit"}
+                    </button>
+                    <button
+                      type="button"
+                      className="snp-act-btn snp-act-del"
+                      onClick={() => handleDelete(item.id)}
+                    >
+                      Delete
+                    </button>
                   </div>
                 </div>
-              );
-            })}
-          </div>
-        )}
 
-        {/* TAB 3: USER REPLIES */}
-        {activeTab === "replies" && (
-          <div>
-            {userReplies.length === 0 ? (
-              <div className="snp-card" style={{ padding: 40, textAlign: "center", color: "#64748b" }}>
-                💬 No user replies yet.
-              </div>
-            ) : (
-              userReplies.map((r) => {
-                const senderUser = users.find((u) => u.id === r.sender_id);
-                const senderDists = senderUser ? getUserDistricts(senderUser) : [];
-                return (
-                  <div key={r.id} className="snp-history-card" style={{ borderLeft: "4px solid #f59e0b" }}>
-                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6, flexWrap: "wrap", gap: 6 }}>
-                      <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
-                        <span style={{ fontSize: 11.5, fontWeight: 800, background: "#fef3c7", color: "#92400e", padding: "3px 9px", borderRadius: 20 }}>
-                          👤 From: {r.sender_name || getUserDisplayName(senderUser)}
-                        </span>
-                        {senderDists.map((d) => (
-                          <span key={d} className="snp-chip" style={{ marginTop: 0 }}>📍 {d}</span>
-                        ))}
-                      </div>
-                      <span style={{ fontSize: 10.5, color: "#94a3b8", fontWeight: 600 }}>
-                        {new Date(r.created_at).toLocaleString("en-BD", { dateStyle: "medium", timeStyle: "short" })}
-                      </span>
-                    </div>
-                    <div style={{ fontSize: 12, fontWeight: 800, color: "#475569", marginBottom: 4 }}>
-                      {r.title}
-                    </div>
-                    <div style={{ fontSize: 13, fontWeight: 600, color: "#0f172a", background: "#fffbeb", padding: "10px 12px", borderRadius: 8, border: "1px solid #fde68a", whiteSpace: "pre-wrap" }}>
-                      {r.message}
-                    </div>
-                    <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 8 }}>
-                      <button type="button" onClick={() => handleDelete(r.id)} className="snp-action-btn" style={{ background: "#fef2f2", color: "#dc2626" }}>
-                        🗑️ Delete Reply
+                {isEditing ? (
+                  <div style={{ marginTop: 6, display: "flex", flexDirection: "column", gap: 6 }}>
+                    <input
+                      type="text"
+                      value={editTitle}
+                      onChange={(e) => setEditTitle(e.target.value)}
+                      className="snp-input"
+                    />
+                    <textarea
+                      value={editMessage}
+                      onChange={(e) => setEditMessage(e.target.value)}
+                      className="snp-textarea"
+                    />
+                    <div>
+                      <button
+                        type="button"
+                        onClick={() => handleSaveEdit(item.id)}
+                        className="snp-btn-primary"
+                        style={{ padding: "5px 12px", fontSize: 11.5 }}
+                      >
+                        Save
                       </button>
                     </div>
                   </div>
-                );
-              })
-            )}
-          </div>
-        )}
+                ) : (
+                  <div className="snp-msg">{item.message}</div>
+                )}
+
+                <div className="snp-meta">
+                  <span>From: {cleanSender}</span>
+                  <span>
+                    {new Date(item.created_at).toLocaleString("en-BD", {
+                      month: "short",
+                      day: "numeric",
+                      hour: "2-digit",
+                      minute: "2-digit",
+                    })}
+                  </span>
+                </div>
+
+                {/* Inline Admin Reply Box */}
+                {isReplying && (
+                  <div style={{ display: "flex", gap: 6, marginTop: 6 }}>
+                    <input
+                      type="text"
+                      value={adminReplyText}
+                      onChange={(e) => setAdminReplyText(e.target.value)}
+                      placeholder={`Reply to ${cleanSender}...`}
+                      className="snp-input"
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") handleAdminReply(item);
+                      }}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => handleAdminReply(item)}
+                      className="snp-btn-primary"
+                    >
+                      Send
+                    </button>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+
+          {!(activeTab === "sent" ? sentLogs : replyLogs).length && (
+            <div
+              className="snp-card"
+              style={{ textAlign: "center", color: "#94a3b8", fontSize: 12, padding: 24 }}
+            >
+              No notifications found.
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );

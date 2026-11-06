@@ -1568,10 +1568,6 @@ From: ${finalFrom}`;
           <h1 style={styles.title}>
             Saved DO
           </h1>
-
-          <p style={styles.subtitle}>
-            Manage saved delivery orders
-          </p>
         </div>
 
         <div style={styles.count}>

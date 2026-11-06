@@ -661,7 +661,7 @@ export default function PriceListPage2() {
                 style={styles.bulkHeaderButton}
                 onClick={() => setShowBulkModal(true)}
               >
-                ⚡ Bulk Update Price
+                Update Price
               </button>
 
               <button

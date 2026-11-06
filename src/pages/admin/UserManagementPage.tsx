@@ -18,6 +18,189 @@ type Profile = {
   updated_at?: string;
 };
 
+const COMPACT_UMP_CSS = `
+  .ump-wrap {
+    min-height: calc(100vh - 60px);
+    background: #f8fafc;
+    padding: 10px 10px 60px;
+    box-sizing: border-box;
+    font-family: system-ui, -apple-system, sans-serif;
+    color: #1e293b;
+  }
+  .ump-box {
+    max-width: 920px;
+    margin: 0 auto;
+  }
+
+  /* Compact Top Bar */
+  .ump-topbar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    background: #ffffff;
+    border: 1px solid #e2e8f0;
+    border-radius: 10px;
+    padding: 8px 12px;
+    margin-bottom: 8px;
+  }
+  .ump-title-area {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .ump-title {
+    margin: 0;
+    font-size: 15px;
+    font-weight: 800;
+    color: #0f172a;
+    letter-spacing: -0.2px;
+  }
+  .ump-live-dot {
+    width: 7px;
+    height: 7px;
+    background: #10b981;
+    border-radius: 50%;
+    display: inline-block;
+    box-shadow: 0 0 0 2px #d1fae5;
+  }
+  .ump-top-right {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .ump-icon-btn {
+    border: 1px solid #cbd5e1;
+    background: #f8fafc;
+    color: #475569;
+    width: 30px;
+    height: 30px;
+    border-radius: 7px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 13px;
+    transition: all 0.15s ease;
+  }
+  .ump-icon-btn:hover {
+    background: #eff6ff;
+    border-color: #93c5fd;
+    color: #1d4ed8;
+  }
+  .ump-icon-btn.active {
+    background: #2563eb;
+    color: #ffffff;
+    border-color: #2563eb;
+  }
+
+  /* Compact Toolbar */
+  .ump-toolbar {
+    background: #ffffff;
+    border: 1px solid #e2e8f0;
+    border-radius: 10px;
+    padding: 8px;
+    margin-bottom: 8px;
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: 6px;
+    align-items: center;
+  }
+  @media (max-width: 500px) {
+    .ump-toolbar {
+      grid-template-columns: 1fr;
+    }
+  }
+
+  .ump-select {
+    width: 100%;
+    box-sizing: border-box;
+    height: 32px;
+    padding: 0 9px;
+    border-radius: 7px;
+    border: 1px solid #cbd5e1;
+    background: #f8fafc;
+    font-size: 12px;
+    font-weight: 600;
+    color: #1e293b;
+    outline: none;
+  }
+  .ump-select:focus {
+    background: #ffffff;
+    border-color: #3b82f6;
+  }
+
+  .ump-search-wrap {
+    position: relative;
+    display: flex;
+    align-items: center;
+    margin-bottom: 8px;
+  }
+  .ump-search-icon {
+    position: absolute;
+    left: 9px;
+    color: #94a3b8;
+    pointer-events: none;
+    display: flex;
+    align-items: center;
+  }
+  .ump-search-input {
+    width: 100%;
+    box-sizing: border-box;
+    height: 36px;
+    padding-left: 28px !important;
+    padding-right: 24px !important;
+    border-radius: 8px;
+    border: 1px solid #cbd5e1;
+    background: #ffffff;
+    font-size: 12.5px;
+    font-weight: 600;
+    color: #0f172a;
+    outline: none;
+  }
+  .ump-clear-btn {
+    position: absolute;
+    right: 8px;
+    border: none;
+    background: transparent;
+    color: #94a3b8;
+    font-size: 12px;
+    cursor: pointer;
+  }
+
+  /* Compact Add User Card */
+  .ump-add-card {
+    background: #ffffff;
+    border: 1px solid #e2e8f0;
+    border-radius: 10px;
+    padding: 10px 12px;
+    margin-bottom: 8px;
+    box-shadow: 0 1px 2px rgba(15, 23, 42, 0.02);
+  }
+  .ump-add-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  .ump-add-toggle-btn {
+    border: 1px solid #cbd5e1;
+    background: #f8fafc;
+    color: #0f172a;
+    border-radius: 7px;
+    padding: 5px 11px;
+    fontSize: 11.5px;
+    font-weight: 700;
+    cursor: pointer;
+  }
+  .ump-add-form {
+    margin-top: 10px;
+    padding-top: 10px;
+    border-top: 1px solid #f1f5f9;
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 8px;
+  }
+`;
+
 export default function UserManagementPage() {
   const { profile: currentProfile, role: currentRole } = useAuth();
 
@@ -49,7 +232,7 @@ export default function UserManagementPage() {
   const [newAssignedLocations, setNewAssignedLocations] = useState<string[]>([]);
   const [creatingUser, setCreatingUser] = useState(false);
 
-  // EDIT MODAL STATES (Full Form Layout Like Add User)
+  // EDIT MODAL STATES
   const [editingUser, setEditingUser] = useState<Profile | null>(null);
   const [editFullName, setEditFullName] = useState("");
   const [editRole, setEditRole] = useState<UserRole>("user");
@@ -350,30 +533,37 @@ export default function UserManagementPage() {
   }
 
   return (
-    <div style={styles.page}>
-      <style>{MODERN_CSS}</style>
+    <div className="ump-wrap">
+      <style>{COMPACT_UMP_CSS}</style>
 
-      {/* HEADER WITH CENTERED TITLE & SEARCH ICON */}
-      <div style={styles.header}>
-        <div />
-        <div style={{ textAlign: "center" }}>
-          <h1 style={styles.title}>User Management</h1>
-          <p style={styles.subtitle}>Manage system users and permissions</p>
+      {/* COMPACT TOP BAR */}
+      <div className="ump-topbar">
+        <div className="ump-title-area">
+          <span className="ump-live-dot" />
+          <h1 className="ump-title">User Management</h1>
         </div>
-        <button
-          onClick={() => setShowSearchBox(!showSearchBox)}
-          style={{
-            ...styles.iconBtn,
-            background: showSearchBox ? "#2563eb" : "#ffffff",
-            color: showSearchBox ? "#ffffff" : "#1e293b",
-          }}
-          title="Toggle Search"
-        >
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-            <circle cx="11" cy="11" r="8"></circle>
-            <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
-          </svg>
-        </button>
+
+        <div className="ump-top-right">
+          <button
+            type="button"
+            className={`ump-icon-btn ${showSearchBox ? "active" : ""}`}
+            onClick={() => setShowSearchBox(!showSearchBox)}
+            title="Toggle Search"
+          >
+            🔍
+          </button>
+          <button
+            type="button"
+            className="ump-icon-btn"
+            onClick={() => {
+              loadUsers();
+              loadMetadata();
+            }}
+            title="Refresh"
+          >
+            ↻
+          </button>
+        </div>
       </div>
 
       {error && <div style={styles.error}>{error}</div>}
@@ -381,38 +571,42 @@ export default function UserManagementPage() {
 
       {/* EXPANDABLE SEARCH BAR */}
       {showSearchBox && (
-        <div className="edo-search-bar" style={styles.searchBar}>
-          <span>🔍</span>
+        <div className="ump-search-wrap">
+          <span className="ump-search-icon">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+              <circle cx="11" cy="11" r="8" />
+              <line x1="21" y1="21" x2="16.65" y2="16.65" />
+            </svg>
+          </span>
           <input
             type="text"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             placeholder="Search user by name or email..."
             autoFocus
-            style={styles.searchInput}
+            className="ump-search-input"
           />
           {searchQuery && (
-            <button onClick={() => setSearchQuery("")} style={styles.clearSearchBtn}>
+            <button
+              type="button"
+              onClick={() => setSearchQuery("")}
+              className="ump-clear-btn"
+            >
               ✕
             </button>
           )}
         </div>
       )}
 
-      {/* STATS & USER SELECT DROPDOWN */}
-      <div style={styles.topControlRow}>
-        <div style={styles.statsCard}>
-          <span style={{ fontSize: 13, fontWeight: 700, color: "#64748b" }}>Total Users:</span>
-          <span style={{ fontSize: 15, fontWeight: 800, color: "#2563eb" }}>{users.length}</span>
-        </div>
-
-        <div style={{ flex: "1 1 240px", minWidth: 200 }}>
+      {/* COMPACT TOOLBAR: DROPDOWN & TOTAL */}
+      <div className="ump-toolbar">
+        <div>
           <select
             value={selectedUserDropdown}
             onChange={(e) => setSelectedUserDropdown(e.target.value)}
-            style={styles.input}
+            className="ump-select"
           >
-            <option value="All">📂 All Users ({users.length})</option>
+            <option value="All"> All Users ({users.length})</option>
             {users.map((u) => (
               <option key={u.id} value={u.id}>
                 👤 {u.full_name || u.email} ({u.role})
@@ -420,32 +614,27 @@ export default function UserManagementPage() {
             ))}
           </select>
         </div>
-
-        <button
-          onClick={() => {
-            loadUsers();
-            loadMetadata();
-          }}
-          style={styles.refreshBtn}
-        >
-          ↻ Refresh
-        </button>
+        <div style={{ fontSize: 11.5, color: "#64748b", fontWeight: 600, textAlign: "right" }}>
+          Total Users: <b style={{ color: "#0f172a" }}>{users.length}</b>
+        </div>
       </div>
 
-      {/* ADD USER SECTION */}
-      <div style={styles.addUserCard}>
-        <div style={styles.addUserHeader}>
+      {/* COMPACT ADD USER SECTION */}
+      <div className="ump-add-card">
+        <div className="ump-add-header">
           <div>
-            <div style={{ fontSize: 16, fontWeight: 800, color: "#0f172a" }}>➕ Add New User</div>
-            <div style={{ fontSize: 11.5, color: "#64748b", marginTop: 2 }}>Create account with role and district access.</div>
-          </div>
-          <button onClick={() => setShowAddUser(!showAddUser)} style={styles.addUserToggleBtn}>
+           </div>
+          <button
+            type="button"
+            onClick={() => setShowAddUser(!showAddUser)}
+            className="ump-add-toggle-btn"
+          >
             {showAddUser ? "✕ Close" : "＋ Add User"}
           </button>
         </div>
 
         {showAddUser && (
-          <div style={styles.addUserForm}>
+          <div className="ump-add-form">
             <div style={styles.formGroup}>
               <label style={styles.formLabel}>Full Name</label>
               <input
@@ -517,16 +706,16 @@ export default function UserManagementPage() {
               </select>
             </div>
 
-            <div style={{ gridColumn: "1 / -1", display: "flex", alignItems: "center", gap: 8, padding: "4px 0" }}>
+            <div style={{ gridColumn: "1 / -1", display: "flex", alignItems: "center", gap: 6, padding: "2px 0" }}>
               <input
                 type="checkbox"
                 id="newSubAgent"
                 checked={newAllowSubAgentSpecial}
                 onChange={(e) => setNewAllowSubAgentSpecial(e.target.checked)}
-                style={{ width: 18, height: 18, accentColor: "#2563eb", cursor: "pointer" }}
+                style={{ width: 16, height: 16, accentColor: "#2563eb", cursor: "pointer" }}
                 disabled={creatingUser}
               />
-              <label htmlFor="newSubAgent" style={{ fontSize: 13, fontWeight: 700, color: "#1e293b", cursor: "pointer" }}>
+              <label htmlFor="newSubAgent" style={{ fontSize: 11.5, fontWeight: 700, color: "#1e293b", cursor: "pointer" }}>
                 Allow Sub-Agent Special Option
               </label>
             </div>
@@ -662,7 +851,7 @@ export default function UserManagementPage() {
         </div>
       )}
 
-      {/* FULL EDIT MODAL (Like Add User Form Layout) */}
+      {/* FULL EDIT MODAL */}
       {editingUser && (
         <div style={styles.overlay}>
           <div style={styles.modal}>
@@ -828,58 +1017,37 @@ export default function UserManagementPage() {
   );
 }
 
-const MODERN_CSS = `
-  @keyframes fadeIn { from { opacity: 0; transform: translateY(-6px); } to { opacity: 1; transform: translateY(0); } }
-`;
-
 const styles: Record<string, React.CSSProperties> = {
-  page: { width: "100%", maxWidth: 1250, margin: "0 auto", padding: 16, boxSizing: "border-box", fontFamily: "'Inter', sans-serif" },
-  header: { display: "grid", gridTemplateColumns: "36px 1fr 36px", alignItems: "center", marginBottom: 16 },
-  title: { margin: 0, fontSize: 21, fontWeight: 800, color: "#0f172a" },
-  subtitle: { margin: "3px 0 0", fontSize: 12, color: "#64748b" },
-  iconBtn: { border: "1px solid #cbd5e1", width: 36, height: 36, borderRadius: "50%", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 1px 3px rgba(0,0,0,0.05)", justifySelf: "end" },
-  error: { marginBottom: 12, padding: 11, borderRadius: 10, background: "#fee2e2", color: "#991b1b", fontSize: 12, fontWeight: 600 },
-  success: { marginBottom: 12, padding: 11, borderRadius: 10, background: "#dcfce7", color: "#166534", fontSize: 12, fontWeight: 600 },
-  searchBar: { display: "flex", alignItems: "center", gap: 10, background: "#fff", border: "1.5px solid #2563eb", padding: "10px 14px", borderRadius: 12, marginBottom: 14, boxShadow: "0 4px 15px rgba(37,99,235,0.08)", animation: "fadeIn 0.2s ease" },
-  searchInput: { border: "none", outline: "none", width: "100%", fontSize: 13.5, background: "transparent", fontWeight: 500 },
-  clearSearchBtn: { border: "none", background: "#f1f5f9", borderRadius: "50%", width: 22, height: 22, cursor: "pointer", fontWeight: 700 },
-  topControlRow: { display: "flex", gap: 10, marginBottom: 16, flexWrap: "wrap", alignItems: "center" },
-  statsCard: { background: "#fff", border: "1px solid #e2e8f0", borderRadius: 12, padding: "10px 16px", display: "flex", alignItems: "center", gap: 8 },
-  refreshBtn: { border: "1px solid #cbd5e1", background: "#fff", color: "#1e293b", borderRadius: 10, padding: "10px 14px", fontSize: 12, fontWeight: 700, cursor: "pointer" },
-  addUserCard: { marginBottom: 18, padding: 16, borderRadius: 16, background: "#ffffff", border: "1px solid #e2e8f0", boxShadow: "0 4px 20px rgba(0,0,0,0.03)" },
-  addUserHeader: { display: "flex", justifyContent: "space-between", alignItems: "center" },
-  addUserToggleBtn: { border: "none", background: "#0f172a", color: "#ffffff", borderRadius: 10, padding: "9px 14px", fontSize: 12, fontWeight: 700, cursor: "pointer" },
-  addUserForm: { marginTop: 16, paddingTop: 16, borderTop: "1px solid #e2e8f0", display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 12 },
+  error: { marginBottom: 8, padding: 9, borderRadius: 8, background: "#fee2e2", color: "#991b1b", fontSize: 12, fontWeight: 600 },
+  success: { marginBottom: 8, padding: 9, borderRadius: 8, background: "#dcfce7", color: "#166534", fontSize: 12, fontWeight: 600 },
+  addUserForm: { marginTop: 10, paddingTop: 10, borderTop: "1px solid #f1f5f9", display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 8 },
   formGroup: { minWidth: 0 },
-  formLabel: { display: "block", marginBottom: 5, fontSize: 11.5, fontWeight: 750, color: "#334155" },
-  input: { width: "100%", boxSizing: "border-box", border: "1.5px solid #cbd5e1", borderRadius: 10, padding: "10px 12px", background: "#ffffff", color: "#0f172a", fontSize: 13, outline: "none" },
-  checkboxContainer: { display: "flex", flexWrap: "wrap", gap: 6, maxHeight: 130, overflowY: "auto", border: "1px solid #e2e8f0", padding: 8, borderRadius: 10, background: "#f8fafc" },
-  checkboxLabel: { display: "inline-flex", alignItems: "center", gap: 6, padding: "5px 10px", borderRadius: 8, border: "1px solid #cbd5e1", fontSize: 11.5, cursor: "pointer", fontWeight: 600 },
-  createButton: { gridColumn: "1 / -1", border: "none", background: "#16a34a", color: "#ffffff", borderRadius: 12, padding: "13px", fontSize: 13.5, fontWeight: 800, cursor: "pointer", boxShadow: "0 4px 12px rgba(22,163,74,0.25)" },
-  loading: { padding: 40, textAlign: "center", color: "#64748b", fontSize: 13, fontWeight: 600 },
-  empty: { padding: 40, textAlign: "center", background: "#ffffff", borderRadius: 16, color: "#64748b", fontSize: 13 },
-  userList: { display: "flex", flexDirection: "column", gap: 12 },
-  userCard: { background: "#ffffff", border: "1px solid #e2e8f0", borderRadius: 16, padding: 16, display: "flex", flexDirection: "column", gap: 12, boxShadow: "0 2px 10px rgba(0,0,0,0.02)" },
-  userInfo: { display: "flex", alignItems: "center", gap: 12 },
-  avatar: { width: 44, height: 44, borderRadius: "50%", background: "#0f172a", color: "#ffffff", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 17, fontWeight: 800, flexShrink: 0 },
+  formLabel: { display: "block", marginBottom: 3, fontSize: 11, fontWeight: 700, color: "#475569" },
+  input: { width: "100%", boxSizing: "border-box", border: "1px solid #cbd5e1", borderRadius: 7, padding: "8px 10px", background: "#ffffff", color: "#0f172a", fontSize: 12.5, outline: "none" },
+  checkboxContainer: { display: "flex", flexWrap: "wrap", gap: 5, maxHeight: 110, overflowY: "auto", border: "1px solid #e2e8f0", padding: 6, borderRadius: 7, background: "#f8fafc" },
+  checkboxLabel: { display: "inline-flex", alignItems: "center", gap: 5, padding: "4px 8px", borderRadius: 6, border: "1px solid #cbd5e1", fontSize: 11, cursor: "pointer", fontWeight: 600 },
+  createButton: { gridColumn: "1 / -1", border: "none", background: "#16a34a", color: "#ffffff", borderRadius: 8, padding: "10px", fontSize: 12.5, fontWeight: 800, cursor: "pointer" },
+  loading: { padding: 30, textAlign: "center", color: "#64748b", fontSize: 12.5, fontWeight: 600 },
+  empty: { padding: 30, textAlign: "center", background: "#ffffff", borderRadius: 10, color: "#64748b", fontSize: 12.5, border: "1px solid #e2e8f0" },
+  userList: { display: "flex", flexDirection: "column", gap: 8 },
+  userCard: { background: "#ffffff", border: "1px solid #e2e8f0", borderRadius: 10, padding: 12, display: "flex", flexDirection: "column", gap: 10, boxShadow: "0 1px 2px rgba(0,0,0,0.02)" },
+  userInfo: { display: "flex", alignItems: "center", gap: 10 },
+  avatar: { width: 36, height: 36, borderRadius: "50%", background: "#0f172a", color: "#ffffff", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 14, fontWeight: 800, flexShrink: 0 },
   userDetails: { minWidth: 0 },
-  userName: { fontSize: 14.5, fontWeight: 800, color: "#0f172a" },
-  badge: { padding: "2px 8px", borderRadius: 6, fontSize: 10.5, fontWeight: 700, textTransform: "uppercase" },
-  email: { marginTop: 2, fontSize: 12, color: "#64748b", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" },
-  youBadge: { display: "inline-block", marginTop: 4, padding: "2px 6px", borderRadius: 6, background: "#dbeafe", color: "#1d4ed8", fontSize: 9, fontWeight: 800 },
-  assignedInfoBox: { background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: 10, padding: "10px 12px", marginTop: 8 },
-  actionRow: { display: "flex", alignItems: "center", gap: 8, justifyContent: "flex-end", flexWrap: "wrap", borderTop: "1px solid #f1f5f9", paddingTop: 10 },
-  keyBtn: { border: "1px solid #cbd5e1", background: "#f8fafc", color: "#334155", borderRadius: 9, padding: "8px 12px", fontSize: 12, fontWeight: 700, cursor: "pointer" },
-  editBtn: { border: "none", background: "#e0f2fe", color: "#0369a1", borderRadius: 9, padding: "8px 14px", fontSize: 12, fontWeight: 700, cursor: "pointer" },
-  deleteButton: { width: 38, height: 38, border: "none", borderRadius: 9, background: "#fee2e2", color: "#991b1b", cursor: "pointer", fontSize: 15, display: "flex", alignItems: "center", justifyContent: "center" },
-  overlay: { position: "fixed", inset: 0, background: "rgba(15, 23, 42, 0.45)", backdropFilter: "blur(2px)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000, padding: 16 },
-  modal: { width: "100%", maxWidth: 500, background: "#fff", borderRadius: 20, padding: 20, boxShadow: "0 20px 25px -5px rgba(0,0,0,0.15)", boxSizing: "border-box" },
-  modalCloseBtn: { border: "none", background: "#f1f5f9", width: 28, height: 28, borderRadius: "50%", cursor: "pointer", fontWeight: 700, color: "#475569" },
-  cancelModalBtn: { border: "1px solid #cbd5e1", background: "#fff", color: "#334155", borderRadius: 10, padding: "10px 14px", fontSize: 12.5, fontWeight: 700, cursor: "pointer" },
-  saveModalBtn: { border: "none", background: "#2563eb", color: "#fff", borderRadius: 10, padding: "10px 18px", fontSize: 12.5, fontWeight: 700, cursor: "pointer" },
-  resetEmailBtn: { width: "100%", border: "none", background: "#0f172a", color: "#fff", borderRadius: 8, padding: "10px", fontSize: 12, fontWeight: 700, cursor: "pointer" },
-  accessDenied: { minHeight: "60vh", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", textAlign: "center", padding: 20 },
-  accessIcon: { fontSize: 40, marginBottom: 10 },
-  accessTitle: { fontSize: 20, fontWeight: 800, color: "#111827" },
-  accessText: { marginTop: 5, fontSize: 12, color: "#6b7280" },
+  userName: { fontSize: 13.5, fontWeight: 800, color: "#0f172a" },
+  badge: { padding: "2px 6px", borderRadius: 4, fontSize: 9.5, fontWeight: 750, textTransform: "uppercase" },
+  email: { marginTop: 1, fontSize: 11, color: "#64748b", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" },
+  youBadge: { display: "inline-block", marginTop: 3, padding: "2px 5px", borderRadius: 4, background: "#dbeafe", color: "#1d4ed8", fontSize: 9, fontWeight: 800 },
+  assignedInfoBox: { background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: 8, padding: "8px 10px", marginTop: 6 },
+  actionRow: { display: "flex", alignItems: "center", gap: 6, justifyContent: "flex-end", flexWrap: "wrap", borderTop: "1px solid #f1f5f9", paddingTop: 8 },
+  keyBtn: { border: "1px solid #cbd5e1", background: "#f8fafc", color: "#334155", borderRadius: 7, padding: "6px 10px", fontSize: 11, fontWeight: 700, cursor: "pointer" },
+  editBtn: { border: "none", background: "#e0f2fe", color: "#0369a1", borderRadius: 7, padding: "6px 12px", fontSize: 11, fontWeight: 700, cursor: "pointer" },
+  deleteButton: { width: 32, height: 32, border: "none", borderRadius: 7, background: "#fee2e2", color: "#991b1b", cursor: "pointer", fontSize: 13, display: "flex", alignItems: "center", justifyContent: "center" },
+  overlay: { position: "fixed", inset: 0, background: "rgba(15, 23, 42, 0.45)", backdropFilter: "blur(2px)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000, padding: 12 },
+  modal: { width: "100%", maxWidth: 420, background: "#fff", borderRadius: 14, padding: 16, boxShadow: "0 15px 30px rgba(15, 23, 42, 0.15)", boxSizing: "border-box" },
+  modalCloseBtn: { border: "none", background: "#f1f5f9", width: 26, height: 26, borderRadius: "50%", cursor: "pointer", fontWeight: 700, color: "#475569", fontSize: 11.5 },
+  cancelModalBtn: { border: "1px solid #cbd5e1", background: "#fff", color: "#334155", borderRadius: 7, padding: "8px 12px", fontSize: 11.5, fontWeight: 700, cursor: "pointer" },
+  saveModalBtn: { border: "none", background: "#2563eb", color: "#fff", borderRadius: 7, padding: "8px 14px", fontSize: 11.5, fontWeight: 700, cursor: "pointer" },
+  resetEmailBtn: { width: "100%", border: "none", background: "#0f172a", color: "#fff", borderRadius: 7, padding: "9px", fontSize: 11.5, fontWeight: 700, cursor: "pointer" },
+  accessDenied: { minHeight: "50vh", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", textAlign: "center", padding: 20 },
 };

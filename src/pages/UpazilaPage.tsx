@@ -361,7 +361,7 @@ export default function UpazilaPage() {
       <div style={styles.header}>
         <div>
           <h1 style={styles.title}>Upazila</h1>
-          <p style={styles.subtitle}>Manage district and Upazila list based on assigned districts</p>
+        
         </div>
 
         <div style={styles.headerButtons}>

@@ -686,7 +686,7 @@ export default function PriceListPage() {
       <div style={styles.header}>
         <div>
           <h1 style={styles.title}>{canManage ? "Price List 1" : "Price List"}</h1>
-          <p style={styles.subtitle}>Feed price management</p>
+     
         </div>
 
         <div style={styles.headerButtons}>
@@ -704,7 +704,7 @@ export default function PriceListPage() {
                 style={styles.bulkHeaderButton}
                 onClick={() => setShowBulkModal(true)}
               >
-                ⚡ Bulk Update Price
+                Update Price
               </button>
 
               <button
@@ -964,7 +964,7 @@ export default function PriceListPage() {
           <div style={{ ...styles.modal, maxWidth: 680 }}>
             <div style={styles.modalHeader}>
               <div>
-                <h2 style={{ margin: 0, fontSize: 18, fontWeight: 700 }}>⚡ Bulk Price Adjustment</h2>
+                <h2 style={{ margin: 0, fontSize: 18, fontWeight: 700 }}> Price Adjustment</h2>
                 <p style={{ margin: "2px 0 0", fontSize: 12, color: "#6b7280" }}>
                   Adjust feed prices per KG across multiple categories
                 </p>
