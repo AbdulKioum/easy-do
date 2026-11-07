@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import * as XLSX from "xlsx-js-style";
-import { saveAs } from "file-saver";
 import "jspdf-autotable";
 import { supabase } from "../lib/supabase";
 import { useAuth } from "../context/AuthContext";
