@@ -5,6 +5,7 @@ import "jspdf-autotable";
 import { supabase } from "../lib/supabase";
 import { useAuth } from "../context/AuthContext";
 import PriceListPage2 from "./PriceListPage2";
+import { universalFileDownload } from "../lib/downloadHelper";
 
 type UserRole = "user" | "admin" | "super_admin";
 
@@ -384,8 +385,7 @@ export default function PriceListPage() {
     reader.readAsArrayBuffer(file);
     event.target.value = "";
   }
-
-  async function exportExcel() {
+async function exportExcel() {
     if (!filteredItems.length) {
       alert("No data available to export.");
       return;
@@ -463,7 +463,10 @@ export default function PriceListPage() {
 
     const now = new Date();
     const timestamp = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}_${String(now.getHours()).padStart(2, "0")}-${String(now.getMinutes()).padStart(2, "0")}`;
-    saveAs(blob, `Feed_Price_List_${timestamp}.xlsx`);
+    const fileName = `Feed_Price_List_${timestamp}.xlsx`;
+
+    // ব্রাউজার এবং অ্যাপ উভয় জায়গায় ডাউনলোডের জন্য:
+    await universalFileDownload(blob, fileName, blob.type);
   }
 
   async function exportPDF() {
@@ -541,17 +544,20 @@ export default function PriceListPage() {
 
     const now = new Date();
     const timestamp = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}_${String(now.getHours()).padStart(2, "0")}-${String(now.getMinutes()).padStart(2, "0")}`;
+    const fileName = `Feed_Price_List_${timestamp}.pdf`;
 
     const options = {
       margin: 4,
-      filename: `Feed_Price_List_${timestamp}.pdf`,
+      filename: fileName,
       image: { type: "jpeg", quality: 0.98 },
       html2canvas: { scale: 2, useCORS: true },
       jsPDF: { unit: "mm", format: "a4", orientation: "portrait" },
       pagebreak: { mode: ["css", "legacy"] },
     };
 
-    html2pdf().from(container).set(options).save();
+    // html2pdf থেকে সরাসরি Blob তৈরি করে universalFileDownload-এ পাঠানো হচ্ছে:
+    const pdfBlob: Blob = await html2pdf().from(container).set(options).outputPdf("blob");
+    await universalFileDownload(pdfBlob, fileName, "application/pdf");
   }
 
   const toggleBulkCategory = (cat: string) => {
