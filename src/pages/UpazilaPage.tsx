@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import * as XLSX from "xlsx";
 import { supabase } from "../lib/supabase";
 import { useAuth } from "../context/AuthContext";
+import { universalFileDownload } from "../lib/downloadHelper";
 
 type Upazila = {
   id?: number;
@@ -354,7 +355,7 @@ export default function UpazilaPage() {
     event.target.value = "";
   }
 
-  function exportExcel() {
+  async function exportExcel() {
     if (!filteredItems.length) {
       alert("No Upazila data available to export.");
       return;
@@ -372,7 +373,13 @@ export default function UpazilaPage() {
 
     const workbook = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(workbook, worksheet, "Upazila List");
-    XLSX.writeFile(workbook, "Upazila_List.xlsx");
+
+    const excelBuffer = XLSX.write(workbook, { bookType: "xlsx", type: "array" });
+    const blob = new Blob([excelBuffer], {
+      type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    });
+
+    await universalFileDownload(blob, "Upazila_List.xlsx", blob.type);
   }
 
   const filteredItems = useMemo(() => {

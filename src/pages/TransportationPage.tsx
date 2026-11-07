@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import * as XLSX from "xlsx-js-style";
-import { saveAs } from "file-saver";
 import { supabase } from "../lib/supabase";
 import { useAuth } from "../context/AuthContext";
+import { universalFileDownload } from "../lib/downloadHelper";
 
 type Transportation = {
   id?: number;
@@ -549,8 +549,7 @@ export default function TransportationPage() {
   ];
 
   const DISTRICT_PASTELS = ["F1F5F9", "EFF6FF", "F0FDF4", "FFFBEB", "FAF5FF", "ECFEFF"];
-
-  async function exportExcel() {
+async function exportExcel() {
     if (!filteredItems.length) {
       alert("No transportation data available to export.");
       return;
@@ -723,11 +722,16 @@ export default function TransportationPage() {
     const workbook = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(workbook, worksheet, "Transport Chart");
     const excelBuffer = XLSX.write(workbook, { bookType: "xlsx", type: "array", cellStyles: true });
-    const blob = new Blob([excelBuffer], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+    const blob = new Blob([excelBuffer], {
+      type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    });
 
     const now = new Date();
     const timestamp = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
-    saveAs(blob, `Transportation_Chart_${timestamp}.xlsx`);
+    const fileName = `Transportation_Chart_${timestamp}.xlsx`;
+
+    // ব্রাউজার এবং অ্যাপ উভয় জায়গায় ডাউনলোডের জন্য:
+    await universalFileDownload(blob, fileName, blob.type);
   }
 
   async function exportPDF() {
@@ -864,18 +868,20 @@ export default function TransportationPage() {
 
     const now = new Date();
     const timestamp = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+    const fileName = `Transportation_Chart_${timestamp}.pdf`;
 
     const options = {
       margin: 5,
-      filename: `Transportation_Chart_${timestamp}.pdf`,
+      filename: fileName,
       image: { type: "jpeg", quality: 0.98 },
       html2canvas: { scale: 2, useCORS: true },
       jsPDF: { unit: "mm", format: "a4", orientation: "landscape" },
     };
 
-    html2pdf().from(container).set(options).save();
+    // html2pdf থেকে সরাসরি Blob তৈরি করে universalFileDownload-এ পাঠানো হচ্ছে:
+    const pdfBlob: Blob = await html2pdf().from(container).set(options).outputPdf("blob");
+    await universalFileDownload(pdfBlob, fileName, "application/pdf");
   }
-
   const isPageLoading = loading || upazilaLoading || profileLoading;
 
   return (

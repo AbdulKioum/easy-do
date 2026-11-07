@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import * as XLSX from "xlsx-js-style";
-import { saveAs } from "file-saver";
 import "jspdf-autotable";
 import { supabase } from "../lib/supabase";
 import { useAuth } from "../context/AuthContext";
+import { universalFileDownload } from "../lib/downloadHelper";
 
 type UserRole = "user" | "admin" | "super_admin";
 
@@ -363,7 +363,7 @@ export default function PriceListPage2() {
       await supabase.from("page_visits").insert([
         {
           user_id: user.id,
-          page_name: "Pricelist 2 Download Excel",
+          page_name: "Pricelist Download Excel",
           visit_date: today,
         },
       ]);
@@ -422,7 +422,7 @@ export default function PriceListPage2() {
     }
 
     const workbook = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(workbook, worksheet, "Price List 2");
+    XLSX.utils.book_append_sheet(workbook, worksheet, "Price List");
     const excelBuffer = XLSX.write(workbook, { bookType: "xlsx", type: "array", cellStyles: true });
     const blob = new Blob([excelBuffer], {
       type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -430,7 +430,10 @@ export default function PriceListPage2() {
 
     const now = new Date();
     const timestamp = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}_${String(now.getHours()).padStart(2, "0")}-${String(now.getMinutes()).padStart(2, "0")}`;
-    saveAs(blob, `Feed_Price_List_2_${timestamp}.xlsx`);
+    const fileName = `Feed_Price_List_${timestamp}.xlsx`;
+
+    // ব্রাউজার এবং অ্যাপ উভয় জায়গায় ডাউনলোডের জন্য:
+    await universalFileDownload(blob, fileName, blob.type);
   }
 
   async function exportPDF() {
@@ -444,7 +447,7 @@ export default function PriceListPage2() {
       await supabase.from("page_visits").insert([
         {
           user_id: user.id,
-          page_name: "Pricelist 2 Download PDF",
+          page_name: "Pricelist Download PDF",
           visit_date: today,
         },
       ]);
@@ -484,7 +487,7 @@ export default function PriceListPage2() {
 
     container.innerHTML = `
       <div style="margin-bottom: 8px; border-bottom: 2px solid #111827; padding-bottom: 5px;">
-        <h2 style="margin: 0 0 2px 0; font-size: 18px; color: #111827; font-weight: bold;">Feed Price List 2</h2>
+        <h2 style="margin: 0 0 2px 0; font-size: 18px; color: #111827; font-weight: bold;">Feed Price List</h2>
         <p style="margin: 0; font-size: 11px; color: #4b5563;">Generated on: ${new Date().toLocaleDateString()}</p>
       </div>
       <table style="width: 100%; border-collapse: collapse; font-size: 11.5px;">
@@ -508,17 +511,20 @@ export default function PriceListPage2() {
 
     const now = new Date();
     const timestamp = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}_${String(now.getHours()).padStart(2, "0")}-${String(now.getMinutes()).padStart(2, "0")}`;
+    const fileName = `Feed_Price_List_${timestamp}.pdf`;
 
     const options = {
       margin: 4,
-      filename: `Feed_Price_List_2_${timestamp}.pdf`,
+      filename: fileName,
       image: { type: "jpeg", quality: 0.98 },
       html2canvas: { scale: 2, useCORS: true },
       jsPDF: { unit: "mm", format: "a4", orientation: "portrait" },
       pagebreak: { mode: ["css", "legacy"] },
     };
 
-    html2pdf().from(container).set(options).save();
+    // html2pdf থেকে সরাসরি Blob তৈরি করে universalFileDownload-এ পাঠানো হচ্ছে:
+    const pdfBlob: Blob = await html2pdf().from(container).set(options).outputPdf("blob");
+    await universalFileDownload(pdfBlob, fileName, "application/pdf");
   }
 
   const toggleBulkCategory = (cat: string) => {
