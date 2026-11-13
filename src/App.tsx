@@ -172,8 +172,8 @@ function MainApp() {
   const [replySendingId, setReplySendingId] = useState<number | null>(null);
 
   // ফোনের স্ট্যাটাস বারে নোটিফিকেশন পুশ করা (অ্যাপ খোলা থাকা অবস্থায়)
+  // ফোনের স্ট্যাটাস বারে ও স্ক্রিনের ওপরে Floating নোটিফিকেশন পুশ করা (অ্যাপ খোলা থাকা অবস্থায়)
   async function triggerPhoneStatusNotification(notif: any) {
-    // নিজের পাঠানো মেসেজে নিজের ফোনে অ্যালার্ট বাজবে না
     if (notif.sender_id && notif.sender_id === user?.id) return;
 
     const { title, body } = formatNotificationText(notif);
@@ -191,7 +191,10 @@ function MainApp() {
               id: Number(String(notif.id || Date.now()).slice(-7)),
               title,
               body,
-              schedule: { at: new Date(Date.now() + 200) },
+              channelId: "easydo_high_channel", // High Importance Channel (Floating Banner-এর জন্য)
+              smallIcon: "ic_launcher",         // 'i' আইকনের বদলে অ্যাপের আসল লোগো দেখাবে
+              largeIcon: "ic_launcher",
+              schedule: { at: new Date(Date.now() + 100) },
               extra: {
                 notifId: notif.id,
                 isReply: Boolean(notif.is_reply),
@@ -206,29 +209,15 @@ function MainApp() {
     }
 
     // ২. যদি ওয়েব ব্রাউজারে থাকে
-    if ("Notification" in window) {
-      if (Notification.permission === "granted") {
-        const webNotif = new Notification(title, {
-          body,
-          icon: "/easy_do_logo.png",
-        });
-        webNotif.onclick = () => {
-          window.focus();
-          openNotificationSection(Boolean(notif.is_reply));
-        };
-      } else if (Notification.permission !== "denied") {
-        const permission = await Notification.requestPermission();
-        if (permission === "granted") {
-          const webNotif = new Notification(title, {
-            body,
-            icon: "/easy_do_logo.png",
-          });
-          webNotif.onclick = () => {
-            window.focus();
-            openNotificationSection(Boolean(notif.is_reply));
-          };
-        }
-      }
+    if ("Notification" in window && Notification.permission === "granted") {
+      const webNotif = new Notification(title, {
+        body,
+        icon: "/easy_do_logo.png",
+      });
+      webNotif.onclick = () => {
+        window.focus();
+        openNotificationSection(Boolean(notif.is_reply));
+      };
     }
   }
 
@@ -259,6 +248,29 @@ function MainApp() {
       try {
         await LocalNotifications.requestPermissions();
 
+        // অ্যান্ড্রয়েডে Floating (Heads-up) পপ-আপের জন্য High Importance Channel তৈরি করা
+        await LocalNotifications.createChannel({
+          id: "easydo_high_channel",
+          name: "Easy DO Alerts",
+          description: "High priority notifications for Easy DO",
+          importance: 5, // 5 = Max/High importance (স্ক্রিনের ওপরে ভেসে উঠবে)
+          visibility: 1, // Public
+          sound: "default",
+          vibration: true,
+          lights: true,
+        });
+
+        await PushNotifications.createChannel({
+          id: "easydo_high_channel",
+          name: "Easy DO Alerts",
+          description: "High priority notifications for Easy DO",
+          importance: 5,
+          visibility: 1,
+          sound: "default",
+          vibration: true,
+          lights: true,
+        });
+
         let permStatus = await PushNotifications.checkPermissions();
         if (permStatus.receive === "prompt") {
           permStatus = await PushNotifications.requestPermissions();
@@ -268,7 +280,6 @@ function MainApp() {
           await PushNotifications.register();
         }
 
-        // FCM Token পাওয়ার সাথে সাথে Supabase profiles টেবিলে সেভ করা
         pushRegListener = await PushNotifications.addListener(
           "registration",
           async (token) => {
@@ -280,7 +291,6 @@ function MainApp() {
           }
         );
 
-        // অ্যাপ বন্ধ থাকা অবস্থায় Firebase নোটিফিকেশনে ক্লিক করলে
         pushActionListener = await PushNotifications.addListener(
           "pushNotificationActionPerformed",
           (action) => {
@@ -289,7 +299,6 @@ function MainApp() {
           }
         );
 
-        // অ্যাপ খোলা থাকা অবস্থায় Local স্ট্যাটাস বার নোটিফিকেশনে ক্লিক করলে
         localActionListener = await LocalNotifications.addListener(
           "localNotificationActionPerformed",
           (action) => {
