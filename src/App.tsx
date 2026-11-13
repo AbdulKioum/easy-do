@@ -191,8 +191,9 @@ function MainApp() {
               id: Number(String(notif.id || Date.now()).slice(-7)),
               title,
               body,
-              channelId: "easydo_high_channel", // High Importance Channel (Floating Banner-এর জন্য)
-              smallIcon: "ic_launcher",         // 'i' আইকনের বদলে অ্যাপের আসল লোগো দেখাবে
+              channelId: "easydo_high_channel", // High Importance Channel 
+              smallIcon: "ic_stat_notify", 
+              iconColor: "#2563eb",         
               largeIcon: "ic_launcher",
               schedule: { at: new Date(Date.now() + 100) },
               extra: {
@@ -240,21 +241,82 @@ function MainApp() {
       return;
     }
 
-    let pushRegListener: any;
-    let pushActionListener: any;
-    let localActionListener: any;
+    let isMounted = true;
+
+    // ডাটাবেসে টোকেন সেভ করার ফাংশন (একই ফোনে অন্য আইডিতে ঢুকলে আগের আইডি থেকে টোকেন সরিয়ে নতুন আইডিতে দেবে)
+    const saveTokenToDatabase = async (tokenValue: string) => {
+      if (!tokenValue || !user?.id) return;
+      localStorage.setItem("easydo_fcm_token", tokenValue);
+
+      // ১. একই ফোনে অন্য কোনো আইডিতে এই টোকেন থাকলে তা null করে দেওয়া (যাতে ভুল আইডিতে নোটিফিকেশন না যায়)
+      await supabase
+        .from("profiles")
+        .update({ fcm_token: null })
+        .eq("fcm_token", tokenValue)
+        .neq("id", user.id);
+
+      // ২. বর্তমান লগইন করা আইডিতে টোকেন সেভ করা
+      const { error } = await supabase
+        .from("profiles")
+        .update({ fcm_token: tokenValue })
+        .eq("id", user.id);
+
+      if (error) {
+        console.error("Failed to save FCM token to DB:", error.message);
+      } else {
+        console.log("FCM Token saved successfully for user:", user.id);
+      }
+    };
 
     const setupNativeNotifications = async () => {
       try {
-        await LocalNotifications.requestPermissions();
+        // যদি ফোনের লোকালস্টোরেজে আগে থেকেই টোকেন থাকে, তবে নতুন আইডিতে ঢোকার সাথে সাথে সেভ করে দেবে
+        const cachedToken = localStorage.getItem("easydo_fcm_token");
+        if (cachedToken) {
+          await saveTokenToDatabase(cachedToken);
+        }
 
-        // অ্যান্ড্রয়েডে Floating (Heads-up) পপ-আপের জন্য High Importance Channel তৈরি করা
+        // পুরনো লিসেনার ক্লিয়ার করা
+        await PushNotifications.removeAllListeners();
+        await LocalNotifications.removeAllListeners();
+
+        // ১. আগে সব Listener সেট করা (যাতে register কল হওয়ার সাথে সাথে টোকেন মিস না হয়!)
+        await PushNotifications.addListener("registration", async (token) => {
+          console.log("New FCM Token generated:", token.value);
+          if (isMounted && token?.value) {
+            await saveTokenToDatabase(token.value);
+          }
+        });
+
+        await PushNotifications.addListener("registrationError", (err) => {
+          console.error("FCM Registration Error:", JSON.stringify(err));
+        });
+
+        await PushNotifications.addListener(
+          "pushNotificationActionPerformed",
+          (action) => {
+            const data = action.notification.data;
+            openNotificationSection(
+              data?.is_reply === "true" || data?.is_reply === true
+            );
+          }
+        );
+
+        await LocalNotifications.addListener(
+          "localNotificationActionPerformed",
+          (action) => {
+            const extra = action.notification.extra;
+            openNotificationSection(Boolean(extra?.isReply));
+          }
+        );
+
+        // ২. High Importance Channel তৈরি করা
         await LocalNotifications.createChannel({
           id: "easydo_high_channel",
           name: "Easy DO Alerts",
           description: "High priority notifications for Easy DO",
-          importance: 5, // 5 = Max/High importance (স্ক্রিনের ওপরে ভেসে উঠবে)
-          visibility: 1, // Public
+          importance: 5,
+          visibility: 1,
           sound: "default",
           vibration: true,
           lights: true,
@@ -271,41 +333,18 @@ function MainApp() {
           lights: true,
         });
 
+        // ৩. পারমিশন চেক ও রিকোয়েস্ট করা
+        await LocalNotifications.requestPermissions();
+
         let permStatus = await PushNotifications.checkPermissions();
         if (permStatus.receive === "prompt") {
           permStatus = await PushNotifications.requestPermissions();
         }
 
+        // ৪. সবার শেষে Register কল করা
         if (permStatus.receive === "granted") {
           await PushNotifications.register();
         }
-
-        pushRegListener = await PushNotifications.addListener(
-          "registration",
-          async (token) => {
-            console.log("FCM Token:", token.value);
-            await supabase
-              .from("profiles")
-              .update({ fcm_token: token.value })
-              .eq("id", user.id);
-          }
-        );
-
-        pushActionListener = await PushNotifications.addListener(
-          "pushNotificationActionPerformed",
-          (action) => {
-            const data = action.notification.data;
-            openNotificationSection(data?.is_reply === "true" || data?.is_reply === true);
-          }
-        );
-
-        localActionListener = await LocalNotifications.addListener(
-          "localNotificationActionPerformed",
-          (action) => {
-            const extra = action.notification.extra;
-            openNotificationSection(Boolean(extra?.isReply));
-          }
-        );
       } catch (err) {
         console.warn("Push notification setup error:", err);
       }
@@ -314,9 +353,7 @@ function MainApp() {
     setupNativeNotifications();
 
     return () => {
-      pushRegListener?.remove();
-      pushActionListener?.remove();
-      localActionListener?.remove();
+      isMounted = false;
     };
   }, [user?.id, role]);
 
