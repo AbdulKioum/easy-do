@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "../../lib/supabase";
 import { useAuth } from "../../context/AuthContext";
+import { renderMessageWithLinks } from "../../App";
 
 type ProfileRow = {
   id: string;
@@ -866,7 +867,7 @@ export default function SendNotificationPage() {
                       </div>
                     </div>
                   ) : (
-                    <div className="snp-msg">{base.message}</div>
+                    <div className="snp-msg">{renderMessageWithLinks(base.message)}</div>
                   )}
 
                   {/* READ STATUS PER USER WITH FONT COLOR ONLY (NO BACKGROUND) */}
@@ -947,7 +948,7 @@ export default function SendNotificationPage() {
                     </div>
                   </div>
 
-                  <div className="snp-msg">{item.message}</div>
+                  <div className="snp-msg">{renderMessageWithLinks(item.message)}</div>
 
                   {/* REPLY READ / UNREAD STATUS WITH FONT COLOR ONLY */}
                   <div style={{ fontSize: 11, fontWeight: 700, margin: "4px 0" }}>

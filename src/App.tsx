@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import React, { useEffect, useState } from "react";
 import {
   BrowserRouter,
   Routes,
@@ -6,6 +6,9 @@ import {
   Navigate,
 } from "react-router-dom";
 import { App as CapApp } from "@capacitor/app";
+import { Capacitor } from "@capacitor/core";
+import { PushNotifications } from "@capacitor/push-notifications";
+import { LocalNotifications } from "@capacitor/local-notifications";
 import { supabase } from "./lib/supabase";
 
 import SideMenu from "./components/common/SideMenu";
@@ -29,55 +32,102 @@ import {
   type UserRole,
 } from "./context/AuthContext";
 
+/* =====================================================
+   LINKIFY HELPER (মেসেজের ভেতরের লিংক ক্লিকেবল করার জন্য)
+===================================================== */
+export function renderMessageWithLinks(text: string) {
+  if (!text) return null;
+  const urlRegex = /(https?:\/\/[^\s]+)/g;
+  const parts = text.split(urlRegex);
+
+  return parts.map((part, index) => {
+    if (part.match(urlRegex)) {
+      return (
+        <a
+          key={index}
+          href={part}
+          target="_blank"
+          rel="noopener noreferrer"
+          style={{
+            color: "#2563eb",
+            textDecoration: "underline",
+            fontWeight: 700,
+            wordBreak: "break-all",
+          }}
+          onClick={(e) => e.stopPropagation()}
+        >
+          {part}
+        </a>
+      );
+    }
+    return <React.Fragment key={index}>{part}</React.Fragment>;
+  });
+}
+
+/* =====================================================
+   FORMAT NOTIFICATION PAYLOAD (আপনার দেওয়া ফরম্যাট অনুযায়ী)
+===================================================== */
+function formatNotificationText(notif: any) {
+  const sender = (notif.sender_name || (notif.is_reply ? "User" : "Admin"))
+    .replace(/\s*\(.*?\)/g, "")
+    .trim();
+  const rawTitle = (notif.title || "Notice").trim();
+  const msg = notif.message || "";
+
+  if (!notif.is_reply) {
+    // ১. সাধারণ নোটিশ:
+    // Title: Notice (বা অ্যাডমিনের দেওয়া টাইটেল)
+    // Body: [Admin Name] Send a Notice:\n[Message]
+    return {
+      title: rawTitle,
+      body: `${sender} Send a Notice:\n${msg}`,
+    };
+  } else {
+    const isAdminReply = rawTitle.toLowerCase().includes("admin reply");
+    if (isAdminReply) {
+      // ২. অ্যাডমিন যখন ইউজারের মেসেজের রিপ্লাই দেবে:
+      return {
+        title: rawTitle,
+        body: `${sender} replied your message:\n${msg}`,
+      };
+    } else {
+      // ৩. ইউজার যখন অ্যাডমিনের নোটিশের রিপ্লাই দেবে (অ্যাডমিনের ফোনে):
+      const originalTitle = rawTitle
+        .replace(/^Replied\s*/i, "")
+        .replace(/^User Reply\s*/i, "")
+        .trim() || "Notice";
+      return {
+        title: `${sender} Replied ${originalTitle} :`,
+        body: msg,
+      };
+    }
+  }
+}
 
 export default function App() {
   return (
     <BrowserRouter>
       <Routes>
-
         {/* LOGIN */}
-        <Route
-          path="/login"
-          element={<LoginPage />}
-        />
+        <Route path="/login" element={<LoginPage />} />
 
         {/* PROTECTED APP */}
         <Route element={<ProtectedRoute />}>
-          <Route
-            path="/*"
-            element={<MainApp />}
-          />
+          <Route path="/*" element={<MainApp />} />
         </Route>
 
         {/* FALLBACK */}
-        <Route
-          path="*"
-          element={
-            <Navigate
-              to="/login"
-              replace
-            />
-          }
-        />
-
+        <Route path="*" element={<Navigate to="/login" replace />} />
       </Routes>
     </BrowserRouter>
   );
 }
 
-
 /* =====================================================
    PAGE ACCESS CHECK
 ===================================================== */
-
-function canAccessPage(
-  page: string,
-  role: UserRole | null
-): boolean {
-
-  if (!role) {
-    return false;
-  }
+function canAccessPage(page: string, role: UserRole | null): boolean {
+  if (!role) return false;
 
   if (page === "user-management" || page === "visit-status") {
     return role === "super_admin";
@@ -98,23 +148,16 @@ function canAccessPage(
     page === "transportation" ||
     page === "upazila"
   ) {
-    return (
-      role === "user" ||
-      role === "admin" ||
-      role === "super_admin"
-    );
+    return role === "user" || role === "admin" || role === "super_admin";
   }
 
   return false;
 }
 
-
 /* =====================================================
    MAIN APP
 ===================================================== */
-
 function MainApp() {
-
   const { user, role } = useAuth();
   const [menuOpen, setMenuOpen] = useState(false);
   const [currentPage, setCurrentPage] = useState("easy-do-format-1");
@@ -128,6 +171,146 @@ function MainApp() {
   const [replyTextMap, setReplyTextMap] = useState<Record<number, string>>({});
   const [replySendingId, setReplySendingId] = useState<number | null>(null);
 
+  // ফোনের স্ট্যাটাস বারে নোটিফিকেশন পুশ করা (অ্যাপ খোলা থাকা অবস্থায়)
+  async function triggerPhoneStatusNotification(notif: any) {
+    // নিজের পাঠানো মেসেজে নিজের ফোনে অ্যালার্ট বাজবে না
+    if (notif.sender_id && notif.sender_id === user?.id) return;
+
+    const { title, body } = formatNotificationText(notif);
+
+    // ১. যদি Android/iOS নেটিভ অ্যাপে থাকে
+    if (Capacitor.isNativePlatform()) {
+      try {
+        const perm = await LocalNotifications.checkPermissions();
+        if (perm.display !== "granted") {
+          await LocalNotifications.requestPermissions();
+        }
+        await LocalNotifications.schedule({
+          notifications: [
+            {
+              id: Number(String(notif.id || Date.now()).slice(-7)),
+              title,
+              body,
+              schedule: { at: new Date(Date.now() + 200) },
+              extra: {
+                notifId: notif.id,
+                isReply: Boolean(notif.is_reply),
+              },
+            },
+          ],
+        });
+        return;
+      } catch (e) {
+        console.warn("Local notification failed:", e);
+      }
+    }
+
+    // ২. যদি ওয়েব ব্রাউজারে থাকে
+    if ("Notification" in window) {
+      if (Notification.permission === "granted") {
+        const webNotif = new Notification(title, {
+          body,
+          icon: "/easy_do_logo.png",
+        });
+        webNotif.onclick = () => {
+          window.focus();
+          openNotificationSection(Boolean(notif.is_reply));
+        };
+      } else if (Notification.permission !== "denied") {
+        const permission = await Notification.requestPermission();
+        if (permission === "granted") {
+          const webNotif = new Notification(title, {
+            body,
+            icon: "/easy_do_logo.png",
+          });
+          webNotif.onclick = () => {
+            window.focus();
+            openNotificationSection(Boolean(notif.is_reply));
+          };
+        }
+      }
+    }
+  }
+
+  // নোটিফিকেশনে ক্লিক করলে অ্যাপের ভেতরে নোটিফিকেশন পপআপ বা অ্যাডমিন পেজ ওপেন করা
+  function openNotificationSection(isReply?: boolean) {
+    setShowNotifPopup(true);
+    if ((role === "admin" || role === "super_admin") && isReply) {
+      setCurrentPage("send-notification");
+    }
+  }
+
+  // CAPACITOR PUSH & LOCAL NOTIFICATION SETUP (FCM Token Save & Click Listener)
+  useEffect(() => {
+    if (!user?.id) return;
+
+    if (!Capacitor.isNativePlatform()) {
+      if ("Notification" in window && Notification.permission === "default") {
+        Notification.requestPermission();
+      }
+      return;
+    }
+
+    let pushRegListener: any;
+    let pushActionListener: any;
+    let localActionListener: any;
+
+    const setupNativeNotifications = async () => {
+      try {
+        await LocalNotifications.requestPermissions();
+
+        let permStatus = await PushNotifications.checkPermissions();
+        if (permStatus.receive === "prompt") {
+          permStatus = await PushNotifications.requestPermissions();
+        }
+
+        if (permStatus.receive === "granted") {
+          await PushNotifications.register();
+        }
+
+        // FCM Token পাওয়ার সাথে সাথে Supabase profiles টেবিলে সেভ করা
+        pushRegListener = await PushNotifications.addListener(
+          "registration",
+          async (token) => {
+            console.log("FCM Token:", token.value);
+            await supabase
+              .from("profiles")
+              .update({ fcm_token: token.value })
+              .eq("id", user.id);
+          }
+        );
+
+        // অ্যাপ বন্ধ থাকা অবস্থায় Firebase নোটিফিকেশনে ক্লিক করলে
+        pushActionListener = await PushNotifications.addListener(
+          "pushNotificationActionPerformed",
+          (action) => {
+            const data = action.notification.data;
+            openNotificationSection(data?.is_reply === "true" || data?.is_reply === true);
+          }
+        );
+
+        // অ্যাপ খোলা থাকা অবস্থায় Local স্ট্যাটাস বার নোটিফিকেশনে ক্লিক করলে
+        localActionListener = await LocalNotifications.addListener(
+          "localNotificationActionPerformed",
+          (action) => {
+            const extra = action.notification.extra;
+            openNotificationSection(Boolean(extra?.isReply));
+          }
+        );
+      } catch (err) {
+        console.warn("Push notification setup error:", err);
+      }
+    };
+
+    setupNativeNotifications();
+
+    return () => {
+      pushRegListener?.remove();
+      pushActionListener?.remove();
+      localActionListener?.remove();
+    };
+  }, [user?.id, role]);
+
   // FETCH NOTIFICATIONS & REALTIME
   useEffect(() => {
     if (!user?.id) return;
@@ -138,7 +321,7 @@ function MainApp() {
         .select("*")
         .or(`user_id.eq.${user?.id},user_id.is.null`)
         .order("created_at", { ascending: false });
-      
+
       if (!error && data) {
         setNotifications(data);
       }
@@ -148,7 +331,7 @@ function MainApp() {
 
     const channel = supabase
       .channel("public:notifications")
-      // 1. Notun notification ashle sathe sathe add hobe
+      // 1. নতুন নোটিফিকেশন আসলে সাথে সাথে লিস্টে যোগ হবে এবং ফোনের ওপরে নোটিফিকেশন পুশ হবে
       .on(
         "postgres_changes",
         { event: "INSERT", schema: "public", table: "notifications" },
@@ -156,10 +339,11 @@ function MainApp() {
           const newNotif = payload.new as any;
           if (!newNotif.user_id || newNotif.user_id === user?.id) {
             setNotifications((prev) => [newNotif, ...prev]);
+            triggerPhoneStatusNotification(newNotif);
           }
         }
       )
-      // 2. Admin notification edit korle user-er okhane sathe sathe update hobe
+      // 2. অ্যাডমিন নোটিফিকেশন এডিট করলে সাথে সাথে আপডেট হবে
       .on(
         "postgres_changes",
         { event: "UPDATE", schema: "public", table: "notifications" },
@@ -170,7 +354,7 @@ function MainApp() {
           );
         }
       )
-      // 3. Admin notification delete korle kono reload charai user-er list theke muche jabe
+      // 3. অ্যাডমিন ডিলিট করলে সাথে সাথে মুছে যাবে
       .on(
         "postgres_changes",
         { event: "DELETE", schema: "public", table: "notifications" },
@@ -191,7 +375,7 @@ function MainApp() {
   const unreadCount = notifications.filter((n) => !n.is_read).length;
 
   async function markAsRead(id: number) {
-    const nowTime = new Date().toISOString(); // Current read time
+    const nowTime = new Date().toISOString();
     const { error } = await supabase
       .from("notifications")
       .update({ is_read: true, read_at: nowTime })
@@ -211,27 +395,24 @@ function MainApp() {
 
     setReplySendingId(notif.id);
     try {
-      // 1. Profile table theke full_name ba name khuja
       const { data: profileData } = await supabase
         .from("profiles")
         .select("full_name, name, username")
         .eq("id", user.id)
         .single();
 
-      // 2. Auth user metadata ba email theke fallback ba primary nam ber kora
       const authUserMeta = user.user_metadata;
-      const realName = 
-        profileData?.full_name || 
-        profileData?.name || 
-        profileData?.username || 
-        authUserMeta?.full_name || 
-        authUserMeta?.name || 
-        user.email?.split("@")[0] || 
+      const realName =
+        profileData?.full_name ||
+        profileData?.name ||
+        profileData?.username ||
+        authUserMeta?.full_name ||
+        authUserMeta?.name ||
+        user.email?.split("@")[0] ||
         "User";
 
       const cleanSenderName = String(realName).replace(/\s*\(.*?\)/g, "").trim();
 
-      // 3. Find all admins & super_admins
       const { data: admins } = await supabase
         .from("profiles")
         .select("id")
@@ -249,11 +430,13 @@ function MainApp() {
         return;
       }
 
+      const originalTitle = (notif.title || "Notice").trim();
+
       const payloads = targetAdminIds.map((adminId) => ({
         user_id: adminId,
         sender_id: user.id,
-        sender_name: cleanSenderName, 
-        title: `User Reply`,
+        sender_name: cleanSenderName,
+        title: `Replied ${originalTitle}`, // যাতে অ্যাডমিনের কাছে "[User Name] Replied [Title] :" ফরম্যাটে যায়
         message: text,
         is_read: false,
         is_reply: true,
@@ -280,7 +463,9 @@ function MainApp() {
   useEffect(() => {
     const setupBackButton = async () => {
       const backButtonListener = await CapApp.addListener("backButton", (event: any) => {
-        if (currentPage !== "easy-do-format-1") {
+        if (showNotifPopup) {
+          setShowNotifPopup(false);
+        } else if (currentPage !== "easy-do-format-1") {
           setCurrentPage("easy-do-format-1");
         } else if (!event?.canGoBack || currentPage === "easy-do-format-1") {
           const confirmExit = window.confirm("Do you want to exit the app?");
@@ -299,10 +484,9 @@ function MainApp() {
     return () => {
       listenerPromise.then((listener) => listener.remove());
     };
-  }, [currentPage]);
+  }, [currentPage, showNotifPopup]);
 
   function handleNavigate(page: string) {
-
     if (!canAccessPage(page, role)) {
       console.warn(`Access denied for page "${page}"`, { role, page });
       setCurrentPage("easy-do-format-1");
@@ -315,7 +499,6 @@ function MainApp() {
   }
 
   function renderPage() {
-
     if (!canAccessPage(currentPage, role)) {
       return <EasyDOFormat1 />;
     }
@@ -323,43 +506,27 @@ function MainApp() {
     switch (currentPage) {
       case "easy-do-format-1":
         return <EasyDOFormat1 />;
-
       case "easy-do":
         return <EasyDOPage />;
-
       case "saved-dos":
         return <SavedDOPage />;
-
       case "price-list":
         return <PriceListPage />;
-
       case "price-list-2":
         return <PriceListPage2 />;
-
       case "transportation":
         return <TransportationPage />;
-
       case "upazila":
         return <UpazilaPage />;
-
       case "visit-status":
-        if (role !== "super_admin") {
-          return <EasyDOFormat1 />;
-        }
+        if (role !== "super_admin") return <EasyDOFormat1 />;
         return <VisitStatusPage />;
-
       case "user-management":
-        if (role !== "super_admin") {
-          return <EasyDOFormat1 />;
-        }
+        if (role !== "super_admin") return <EasyDOFormat1 />;
         return <UserManagementPage />;
-
       case "send-notification":
-        if (role !== "super_admin" && role !== "admin") {
-          return <EasyDOFormat1 />;
-        }
+        if (role !== "super_admin" && role !== "admin") return <EasyDOFormat1 />;
         return <SendNotificationPage />;
-
       default:
         return <EasyDOFormat1 />;
     }
@@ -367,10 +534,8 @@ function MainApp() {
 
   return (
     <div style={styles.app}>
-
       {/* TOP BAR */}
       <header style={styles.topBar}>
-
         <button
           onClick={() => setMenuOpen(true)}
           style={styles.menuButton}
@@ -391,9 +556,7 @@ function MainApp() {
               margin: "0 auto",
             }}
           />
-          <h2 style={styles.titlecourtesy}>
-            By Team Mymensingh
-          </h2>
+          <h2 style={styles.titlecourtesy}>By Team Mymensingh</h2>
         </div>
 
         {/* RIGHT SIDE: MODERN NOTIFICATION ICON */}
@@ -413,7 +576,6 @@ function MainApp() {
               }}
               aria-label="Notifications"
             >
-              {/* MODERN SVG BELL ICON */}
               <svg
                 width="19"
                 height="19"
@@ -442,14 +604,33 @@ function MainApp() {
                   <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
                     <span>Notifications</span>
                     {unreadCount > 0 && (
-                      <span style={{ background: "#dbeafe", color: "#1d4ed8", fontSize: 10, padding: "2px 7px", borderRadius: 12, fontWeight: 800 }}>
+                      <span
+                        style={{
+                          background: "#dbeafe",
+                          color: "#1d4ed8",
+                          fontSize: 10,
+                          padding: "2px 7px",
+                          borderRadius: 12,
+                          fontWeight: 800,
+                        }}
+                      >
                         {unreadCount} New
                       </span>
                     )}
                   </div>
                   <button
                     onClick={() => setShowNotifPopup(false)}
-                    style={{ border: "none", background: "#f1f5f9", borderRadius: "50%", width: 24, height: 24, cursor: "pointer", fontWeight: 800, color: "#475569", fontSize: 11 }}
+                    style={{
+                      border: "none",
+                      background: "#f1f5f9",
+                      borderRadius: "50%",
+                      width: 24,
+                      height: 24,
+                      cursor: "pointer",
+                      fontWeight: 800,
+                      color: "#475569",
+                      fontSize: 11,
+                    }}
                   >
                     ✕
                   </button>
@@ -457,15 +638,31 @@ function MainApp() {
 
                 <div style={styles.popupBody}>
                   {notifications.length === 0 ? (
-                    <div style={{ padding: 28, textAlign: "center", color: "#64748b", fontSize: 12 }}>
+                    <div
+                      style={{
+                        padding: 28,
+                        textAlign: "center",
+                        color: "#64748b",
+                        fontSize: 12,
+                      }}
+                    >
                       🔕 No notifications yet.
                     </div>
                   ) : (
                     notifications.map((n) => {
                       const isReplying = replyOpenId === n.id;
-                      const senderText = n.sender_name 
-          ? n.sender_name.replace(/\s*\(.*?\)/g, "").trim() 
-          : (n.is_reply ? "User" : "Admin");
+                      const senderText = n.sender_name
+                        ? n.sender_name.replace(/\s*\(.*?\)/g, "").trim()
+                        : n.is_reply
+                        ? "User"
+                        : "Admin";
+
+                      const isAdminReply = (n.title || "").toLowerCase().includes("admin reply");
+                      const headerLine = !n.is_reply
+                        ? `${senderText} Send a Notice:`
+                        : isAdminReply
+                        ? `${senderText} replied your message:`
+                        : `${senderText} ${n.title || "Replied Notice"} :`;
 
                       return (
                         <div
@@ -482,25 +679,73 @@ function MainApp() {
                         >
                           {/* TITLE */}
                           {n.title && (
-                            <div style={{ fontSize: 11.5, fontWeight: 800, color: n.is_reply ? "#b45309" : "#1d4ed8", marginBottom: 3 }}>
+                            <div
+                              style={{
+                                fontSize: 11.5,
+                                fontWeight: 800,
+                                color: n.is_reply ? "#b45309" : "#1d4ed8",
+                                marginBottom: 2,
+                              }}
+                            >
                               {n.title}
                             </div>
                           )}
 
-                          {/* MESSAGE */}
-                          <div style={{ fontSize: 12.5, fontWeight: n.is_read ? 500 : 750, color: "#0f172a", lineHeight: 1.4, marginBottom: 6, whiteSpace: "pre-wrap" }}>
-                            {n.message}
+                          {/* FORMATTED SUB-HEADER */}
+                          <div
+                            style={{
+                              fontSize: 10.5,
+                              fontWeight: 700,
+                              color: "#475569",
+                              marginBottom: 4,
+                            }}
+                          >
+                            {headerLine}
+                          </div>
+
+                          {/* MESSAGE WITH CLICKABLE LINKS */}
+                          <div
+                            style={{
+                              fontSize: 12.5,
+                              fontWeight: n.is_read ? 500 : 750,
+                              color: "#0f172a",
+                              lineHeight: 1.4,
+                              marginBottom: 6,
+                              whiteSpace: "pre-wrap",
+                            }}
+                          >
+                            {renderMessageWithLinks(n.message)}
                           </div>
 
                           {/* SENDER & TIME META */}
-                          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
-                            <span style={{ fontSize: 10, fontWeight: 700, color: "#475569", background: "#f1f5f9", padding: "2px 6px", borderRadius: 4 }}>
+                          <div
+                            style={{
+                              display: "flex",
+                              justifyContent: "space-between",
+                              alignItems: "center",
+                              marginBottom: 6,
+                            }}
+                          >
+                            <span
+                              style={{
+                                fontSize: 10,
+                                fontWeight: 700,
+                                color: "#475569",
+                                background: "#f1f5f9",
+                                padding: "2px 6px",
+                                borderRadius: 4,
+                              }}
+                            >
                               From: {senderText}
                             </span>
-                            
-                            
-                            
-                            <span style={{ fontSize: 9.5, color: "#94a3b8", fontWeight: 600 }}>
+
+                            <span
+                              style={{
+                                fontSize: 9.5,
+                                color: "#94a3b8",
+                                fontWeight: 600,
+                              }}
+                            >
                               {new Date(n.created_at).toLocaleString("en-BD", {
                                 month: "short",
                                 day: "numeric",
@@ -511,7 +756,16 @@ function MainApp() {
                           </div>
 
                           {/* ACTION BUTTONS: REPLY & MARK READ */}
-                          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 6, borderTop: "1px dashed #e2e8f0", paddingTop: 6 }}>
+                          <div
+                            style={{
+                              display: "flex",
+                              justifyContent: "space-between",
+                              alignItems: "center",
+                              gap: 6,
+                              borderTop: "1px dashed #e2e8f0",
+                              paddingTop: 6,
+                            }}
+                          >
                             {!n.is_reply ? (
                               <button
                                 type="button"
@@ -521,8 +775,7 @@ function MainApp() {
                                 {isReplying ? "✕ Cancel" : "↩ Reply"}
                               </button>
                             ) : (
-                              <span >
-                              </span>
+                              <span />
                             )}
 
                             {!n.is_read && (
@@ -538,7 +791,15 @@ function MainApp() {
 
                           {/* INLINE REPLY INPUT BOX */}
                           {isReplying && (
-                            <div style={{ marginTop: 8, background: "#f8fafc", padding: 6, borderRadius: 6, border: "1px solid #cbd5e1" }}>
+                            <div
+                              style={{
+                                marginTop: 8,
+                                background: "#f8fafc",
+                                padding: 6,
+                                borderRadius: 6,
+                                border: "1px solid #cbd5e1",
+                              }}
+                            >
                               <input
                                 type="text"
                                 value={replyTextMap[n.id] || ""}
@@ -570,13 +831,10 @@ function MainApp() {
             )}
           </div>
         </div>
-
       </header>
 
       {/* PAGE CONTENT */}
-      <main style={styles.content}>
-        {renderPage()}
-      </main>
+      <main style={styles.content}>{renderPage()}</main>
 
       {/* SIDE MENU */}
       <SideMenu
@@ -585,16 +843,13 @@ function MainApp() {
         currentPage={currentPage}
         onNavigate={handleNavigate}
       />
-
     </div>
   );
 }
 
-
 /* =====================================================
    STYLES
 ===================================================== */
-
 const styles: Record<string, React.CSSProperties> = {
   app: {
     minHeight: "100vh",
@@ -602,7 +857,6 @@ const styles: Record<string, React.CSSProperties> = {
     color: "#0f172a",
     fontFamily: "system-ui, -apple-system, sans-serif",
   },
-
   topBar: {
     position: "sticky",
     top: 0,
@@ -615,7 +869,6 @@ const styles: Record<string, React.CSSProperties> = {
     padding: "0 16px",
     boxShadow: "0 1px 2px 0 rgba(0, 0, 0, 0.03)",
   },
-
   menuButton: {
     border: "1px solid #e2e8f0",
     background: "#f1f5f9",
@@ -629,7 +882,6 @@ const styles: Record<string, React.CSSProperties> = {
     alignItems: "center",
     justifyContent: "center",
   },
-
   topTitle: {
     flex: 1,
     textAlign: "center",
@@ -638,7 +890,6 @@ const styles: Record<string, React.CSSProperties> = {
     alignItems: "center",
     justifyContent: "center",
   },
-
   titlecourtesy: {
     margin: "2px 0 0 0",
     textAlign: "center",
@@ -647,14 +898,12 @@ const styles: Record<string, React.CSSProperties> = {
     color: "#64748b",
     letterSpacing: "0.5px",
   },
-
   topRight: {
     width: 38,
     display: "flex",
     justifyContent: "flex-end",
     alignItems: "center",
   },
-
   notifButton: {
     border: "1px solid #e2e8f0",
     width: 40,
@@ -668,7 +917,6 @@ const styles: Record<string, React.CSSProperties> = {
     transition: "all 0.2s ease",
     boxShadow: "0 2px 6px rgba(15, 23, 42, 0.05)",
   },
-
   badge: {
     position: "absolute",
     top: -5,
@@ -682,7 +930,6 @@ const styles: Record<string, React.CSSProperties> = {
     border: "2px solid #ffffff",
     boxShadow: "0 2px 4px rgba(220, 38, 38, 0.4)",
   },
-
   popupDropdown: {
     position: "absolute",
     right: 0,
@@ -692,13 +939,13 @@ const styles: Record<string, React.CSSProperties> = {
     background: "#ffffff",
     border: "1px solid #cbd5e1",
     borderRadius: 14,
-    boxShadow: "0 14px 30px -5px rgba(15, 23, 42, 0.16), 0 8px 12px -6px rgba(15, 23, 42, 0.08)",
+    boxShadow:
+      "0 14px 30px -5px rgba(15, 23, 42, 0.16), 0 8px 12px -6px rgba(15, 23, 42, 0.08)",
     zIndex: 1000,
     display: "flex",
     flexDirection: "column",
     overflow: "hidden",
   },
-
   popupHeader: {
     padding: "12px 14px",
     background: "#f8fafc",
@@ -710,13 +957,11 @@ const styles: Record<string, React.CSSProperties> = {
     alignItems: "center",
     color: "#0f172a",
   },
-
   popupBody: {
     overflowY: "auto",
     maxHeight: 365,
     padding: 10,
   },
-
   notifItem: {
     padding: 10,
     borderRadius: 10,
@@ -724,7 +969,6 @@ const styles: Record<string, React.CSSProperties> = {
     border: "1px solid #e2e8f0",
     textAlign: "left",
   },
-
   markReadBtn: {
     border: "none",
     background: "#2563eb",
@@ -735,7 +979,6 @@ const styles: Record<string, React.CSSProperties> = {
     borderRadius: 6,
     cursor: "pointer",
   },
-
   replyToggleBtn: {
     border: "1px solid #cbd5e1",
     background: "#ffffff",
@@ -746,7 +989,6 @@ const styles: Record<string, React.CSSProperties> = {
     borderRadius: 6,
     cursor: "pointer",
   },
-
   replyInput: {
     width: "100%",
     boxSizing: "border-box",
@@ -759,7 +1001,6 @@ const styles: Record<string, React.CSSProperties> = {
     background: "#ffffff",
     color: "#0f172a",
   },
-
   replySendBtn: {
     width: "100%",
     border: "none",
@@ -771,7 +1012,6 @@ const styles: Record<string, React.CSSProperties> = {
     borderRadius: 5,
     cursor: "pointer",
   },
-
   content: {
     width: "100%",
     minHeight: "calc(100vh - 60px)",

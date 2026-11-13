@@ -23,3 +23,8 @@ dist-ssr
 *.sln
 *.sw?
 *.env
+# Firebase & Google Services Secrets
+google-services.json
+android/app/google-services.json
+*firebase-adminsdk*.json
+service-account*.json
