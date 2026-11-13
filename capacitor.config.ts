@@ -10,9 +10,9 @@ const config: CapacitorConfig = {
       iconColor: "#2563eb", 
     },
     PushNotifications: {
-      presentationOptions: ["badge", "sound", "alert"],
-    },
+      presentationOptions: [],
   },
+},
   server: {
     url: 'https://easy-do-five.vercel.app', 
     cleartext: true
