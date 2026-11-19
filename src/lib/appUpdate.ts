@@ -38,10 +38,12 @@ export type UpdateInfo = {
 };
 
 async function getCurrentVersionCode(): Promise<number | null> {
+  // Browser first: no APK to update, no matter which site it loads from.
+  // (The Vercel check below must come after this — a browser visiting
+  // the Vercel site has the same hostname as the old APK's WebView.)
+  if (!isRunningInsideApp()) return null;
   // Old APK loads the app from Vercel — that is always versionCode 1.
   if (window.location.hostname.includes("vercel.app")) return 1;
-  // Browser: no APK to update.
-  if (!isRunningInsideApp()) return null;
   try {
     const info = await CapApp.getInfo();
     const build = parseInt(String(info?.build ?? ""), 10);
