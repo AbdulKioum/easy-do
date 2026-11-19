@@ -37,24 +37,6 @@ export type UpdateInfo = {
   message?: string;
 };
 
-const DISMISS_KEY_PREFIX = "easydo_update_dismissed_";
-
-function isDismissed(versionCode: number): boolean {
-  try {
-    return localStorage.getItem(`${DISMISS_KEY_PREFIX}${versionCode}`) === "1";
-  } catch {
-    return false;
-  }
-}
-
-export function dismissUpdate(versionCode: number): void {
-  try {
-    localStorage.setItem(`${DISMISS_KEY_PREFIX}${versionCode}`, "1");
-  } catch {
-    /* dismiss is best-effort — the banner just shows again next launch */
-  }
-}
-
 async function getCurrentVersionCode(): Promise<number | null> {
   // Old APK loads the app from Vercel — that is always versionCode 1.
   if (window.location.hostname.includes("vercel.app")) return 1;
@@ -91,7 +73,6 @@ export function checkForUpdate(): Promise<UpdateInfo | null> {
           const data = (await res.json()) as Partial<UpdateInfo>;
           const latest = Number(data.latestVersionCode);
           if (!Number.isFinite(latest) || latest <= current) return null;
-          if (isDismissed(latest)) return null;
           return {
             latestVersionCode: latest,
             latestVersionName: String(data.latestVersionName || `v${latest}`),

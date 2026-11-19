@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from "react";
+import { App as CapApp } from "@capacitor/app";
 import { useAuth } from "../../context/AuthContext";
 import {
   flushOutbox,
@@ -36,6 +37,27 @@ export default function SideMenu({
   const [syncing, setSyncing] = useState(false);
   const [syncNote, setSyncNote] = useState<string | null>(null);
   const [appUpdate, setAppUpdate] = useState<UpdateInfo | null>(null);
+  const [appVersion, setAppVersion] = useState<string | null>(null);
+
+  // Installed APK version, shown next to the logo (APK only — browser
+  // always runs the latest web code, so no version is shown there).
+  useEffect(() => {
+    if (!isRunningInsideApp()) return;
+    let live = true;
+    void (async () => {
+      try {
+        const info = await CapApp.getInfo();
+        const v = String(info?.version || "").trim();
+        if (live && v) setAppVersion(v);
+        else if (live && window.location.hostname.includes("vercel.app")) setAppVersion("1.1");
+      } catch {
+        if (live && window.location.hostname.includes("vercel.app")) setAppVersion("1.1");
+      }
+    })();
+    return () => {
+      live = false;
+    };
+  }, []);
 
   // New APK available? (APK only — checkForUpdate returns null in browser.)
   useEffect(() => {
@@ -154,16 +176,34 @@ export default function SideMenu({
         {/* HEADER */}
         <div style={styles.header}>
           <div style={styles.headerLeft}>
-            <img
-              src="/easy_do_logo.png"
-              alt="Easy D/O"
-              style={{
-                width: "90px",
-                height: "auto",
-                objectFit: "contain",
-                display: "block",
-              }}
-            />
+            <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+              <img
+                src="/easy_do_logo.png"
+                alt="Easy D/O"
+                style={{
+                  width: "90px",
+                  height: "auto",
+                  objectFit: "contain",
+                  display: "block",
+                }}
+              />
+              {isRunningInsideApp() && appVersion && (
+                <span
+                  style={{
+                    fontSize: 11,
+                    fontWeight: 800,
+                    color: "#2563eb",
+                    background: "#eff6ff",
+                    border: "1px solid #bfdbfe",
+                    padding: "2px 7px",
+                    borderRadius: 20,
+                    whiteSpace: "nowrap",
+                  }}
+                >
+                  v{appVersion}
+                </span>
+              )}
+            </div>
             <div style={styles.subtitle}>Make easy your D/O with Easy-DO</div>
           </div>
 

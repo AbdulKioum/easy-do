@@ -19,7 +19,6 @@ import {
 } from "./lib/offlineSync";
 import {
   checkForUpdate,
-  dismissUpdate,
   openApkDownload,
   type UpdateInfo,
 } from "./lib/appUpdate";
@@ -177,7 +176,6 @@ function MainApp() {
 
   // APP UPDATE (APK only — browser users always run the latest web code).
   const [updateInfo, setUpdateInfo] = useState<UpdateInfo | null>(null);
-  const [updateHidden, setUpdateHidden] = useState(false);
 
   // Check once on launch (and again when the network comes back). A
   // failed check is silent — the app must never block on it.
@@ -1051,7 +1049,7 @@ function MainApp() {
       </header>
 
       {/* APP UPDATE BANNER (only when a newer APK exists) */}
-      {updateInfo && !updateHidden && (
+      {updateInfo && (
         <div
           style={{
             background: "#fef3c7",
@@ -1082,25 +1080,6 @@ function MainApp() {
             }}
           >
             Update Now
-          </button>
-          <button
-            type="button"
-            onClick={() => {
-              dismissUpdate(updateInfo.latestVersionCode);
-              setUpdateHidden(true);
-            }}
-            style={{
-              border: "1px solid #d6d3d1",
-              background: "#fff",
-              color: "#57534e",
-              fontSize: 12,
-              fontWeight: 700,
-              padding: "8px 12px",
-              borderRadius: 8,
-              cursor: "pointer",
-            }}
-          >
-            Later
           </button>
         </div>
       )}
