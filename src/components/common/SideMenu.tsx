@@ -9,6 +9,11 @@ import {
   logPageVisit,
   syncAllMasterDataInBackground,
 } from "../../lib/offlineSync";
+import {
+  checkForUpdate,
+  openApkDownload,
+  type UpdateInfo,
+} from "../../lib/appUpdate";
 
 type SideMenuProps = {
   open: boolean;
@@ -30,6 +35,18 @@ export default function SideMenu({
   const [lastSync, setLastSync] = useState<string | null>(null);
   const [syncing, setSyncing] = useState(false);
   const [syncNote, setSyncNote] = useState<string | null>(null);
+  const [appUpdate, setAppUpdate] = useState<UpdateInfo | null>(null);
+
+  // New APK available? (APK only — checkForUpdate returns null in browser.)
+  useEffect(() => {
+    let live = true;
+    void checkForUpdate().then((info) => {
+      if (live && info) setAppUpdate(info);
+    });
+    return () => {
+      live = false;
+    };
+  }, [user?.id]);
 
   // Read the assigned price list from the cached profile instead of
   // refetching profiles on every menu open (works offline too).
@@ -238,7 +255,8 @@ export default function SideMenu({
           )}
         </div>
 
-        {/* UPDATE DATA (VISIBLE TO ALL ROLES) */}
+        {/* UPDATE DATA (APK ONLY — browser is always online, so no need) */}
+        {isInsideApp && (
         <div style={{ padding: "0 16px 10px 16px" }}>
           <style>{`@keyframes easydo-spin { to { transform: rotate(360deg); } }`}</style>
           <button
@@ -266,6 +284,29 @@ export default function SideMenu({
           </button>
           <div style={styles.syncStatus}>{syncStatusText}</div>
         </div>
+        )}
+
+        {/* UPDATE NOW (APK only, only when a newer version exists) */}
+        {isInsideApp && appUpdate && (
+          <div style={{ padding: "0 16px 10px 16px" }}>
+            <button
+              onClick={() => {
+                void handleTrackAppDownload();
+                openApkDownload(appUpdate.apkUrl);
+              }}
+              style={{
+                ...styles.menuItem,
+                border: "1px solid #bbf7d0",
+                background: "#dcfce7",
+              }}
+            >
+              <span style={styles.icon}>⬇</span>
+              <span style={{ ...styles.label, color: "#166534" }}>
+                Update Now ({appUpdate.latestVersionName})
+              </span>
+            </button>
+          </div>
+        )}
 
         {/* DOWNLOAD APP BUTTON (HIDDEN INSIDE APK AND HIDDEN FOR SUPER ADMIN) */}
         {!isInsideApp && role !== "super_admin" && (

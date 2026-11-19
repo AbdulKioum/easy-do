@@ -17,6 +17,12 @@ import {
   isOnline,
   setCache,
 } from "./lib/offlineSync";
+import {
+  checkForUpdate,
+  dismissUpdate,
+  openApkDownload,
+  type UpdateInfo,
+} from "./lib/appUpdate";
 
 import SideMenu from "./components/common/SideMenu";
 
@@ -168,6 +174,27 @@ function MainApp() {
   const { user, role } = useAuth();
   const [menuOpen, setMenuOpen] = useState(false);
   const [currentPage, setCurrentPage] = useState("easy-do-format-1");
+
+  // APP UPDATE (APK only — browser users always run the latest web code).
+  const [updateInfo, setUpdateInfo] = useState<UpdateInfo | null>(null);
+  const [updateHidden, setUpdateHidden] = useState(false);
+
+  // Check once on launch (and again when the network comes back). A
+  // failed check is silent — the app must never block on it.
+  useEffect(() => {
+    let live = true;
+    const runCheck = () => {
+      void checkForUpdate().then((info) => {
+        if (live && info) setUpdateInfo(info);
+      });
+    };
+    runCheck();
+    window.addEventListener("online", runCheck);
+    return () => {
+      live = false;
+      window.removeEventListener("online", runCheck);
+    };
+  }, []);
 
   // NOTIFICATION STATES
   const [notifications, setNotifications] = useState<any[]>([]);
@@ -1022,6 +1049,61 @@ function MainApp() {
           </div>
         </div>
       </header>
+
+      {/* APP UPDATE BANNER (only when a newer APK exists) */}
+      {updateInfo && !updateHidden && (
+        <div
+          style={{
+            background: "#fef3c7",
+            borderBottom: "1px solid #fcd34d",
+            padding: "10px 14px",
+            display: "flex",
+            alignItems: "center",
+            gap: 10,
+            flexWrap: "wrap",
+          }}
+        >
+          <span style={{ fontSize: 13, fontWeight: 700, color: "#92400e", flex: 1, minWidth: 180 }}>
+            ⬇ New update available ({updateInfo.latestVersionName})
+            {updateInfo.message ? ` — ${updateInfo.message}` : ""}
+          </span>
+          <button
+            type="button"
+            onClick={() => openApkDownload(updateInfo.apkUrl)}
+            style={{
+              border: "none",
+              background: "#16a34a",
+              color: "#fff",
+              fontSize: 12,
+              fontWeight: 800,
+              padding: "8px 14px",
+              borderRadius: 8,
+              cursor: "pointer",
+            }}
+          >
+            Update Now
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              dismissUpdate(updateInfo.latestVersionCode);
+              setUpdateHidden(true);
+            }}
+            style={{
+              border: "1px solid #d6d3d1",
+              background: "#fff",
+              color: "#57534e",
+              fontSize: 12,
+              fontWeight: 700,
+              padding: "8px 12px",
+              borderRadius: 8,
+              cursor: "pointer",
+            }}
+          >
+            Later
+          </button>
+        </div>
+      )}
 
       {/* PAGE CONTENT */}
       <main style={styles.content}>{renderPage()}</main>
