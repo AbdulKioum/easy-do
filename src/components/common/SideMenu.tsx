@@ -354,7 +354,13 @@ export default function SideMenu({
             <a
               href={APK_DOWNLOAD_URL}
               download="Easy-DO.apk"
-              onClick={handleTrackAppDownload}
+              onClick={(e) => {
+                // Download via a hidden iframe (see openApkDownload) so the
+                // DO pages' beforeunload guard never shows "Leave this page".
+                e.preventDefault();
+                void handleTrackAppDownload();
+                openApkDownload(APK_DOWNLOAD_URL);
+              }}
               style={styles.downloadAppBtn}
             >
               <span>📲</span>

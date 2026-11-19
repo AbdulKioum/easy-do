@@ -91,17 +91,25 @@ export function checkForUpdate(): Promise<UpdateInfo | null> {
   return cachedCheck;
 }
 
-/** Opens the APK download the same way the sidebar link does. */
+/**
+ * Downloads the APK without navigating the current page.
+ *
+ * The Easy DO pages register a `beforeunload` guard (unsaved DO draft),
+ * so a normal link / window.open to the APK URL makes the browser show
+ * "Leave this page / Stay on this page". Loading the APK URL in a hidden
+ * iframe triggers the system download instead, with no navigation and
+ * therefore no leave-page dialog — and the DO draft is left untouched.
+ */
 export function openApkDownload(apkUrl: string): void {
   try {
-    const a = document.createElement("a");
-    a.href = apkUrl;
-    a.download = "Easy-DO.apk";
-    a.target = "_blank";
-    a.rel = "noopener noreferrer";
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
+    const iframe = document.createElement("iframe");
+    iframe.style.display = "none";
+    iframe.setAttribute("aria-hidden", "true");
+    iframe.src = apkUrl;
+    document.body.appendChild(iframe);
+    // The download is handed to the system download manager; the iframe
+    // itself is just the trigger and can go away shortly after.
+    window.setTimeout(() => iframe.remove(), 30000);
   } catch {
     window.open(apkUrl, "_blank");
   }
