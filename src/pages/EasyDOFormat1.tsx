@@ -290,9 +290,16 @@ export default function EasyDOFormat1() {
       if (hadCache) setLoading(false);
       if (!isOnline()) return;
 
-      // Background refresh, then re-apply the fresh cache.
+      // Background refresh, then re-apply the fresh cache. Capped at 5s:
+      // navigator.onLine lies when Wi-Fi is on but the internet is dead,
+      // and a hanging sync must never hold the page loader hostage.
       try {
-        await syncAllMasterDataInBackground(user?.id, isSuperAdmin);
+        await Promise.race([
+          syncAllMasterDataInBackground(user?.id, isSuperAdmin),
+          new Promise((_, reject) =>
+            setTimeout(() => reject(new Error("Sync timeout")), 5000)
+          ),
+        ]);
       } catch (e) {
         console.warn("Background sync skipped:", e);
       }

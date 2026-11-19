@@ -65,6 +65,44 @@ const AuthContext =
     undefined
   );
 
+// Offline, a Supabase request can hang for a long time instead of failing
+// (e.g. Wi-Fi connected but no internet — navigator.onLine still says
+// online). Never let a network call hold the startup loader hostage:
+// race it against a short timeout and treat a timeout as offline.
+const NETWORK_TIMEOUT_MS = 3000;
+
+function withTimeout<T>(promise: PromiseLike<T>, ms = NETWORK_TIMEOUT_MS): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<T>((_, reject) => {
+    timer = setTimeout(() => reject(new Error("Network timeout — treating as offline")), ms);
+  });
+  return Promise.race([Promise.resolve(promise), timeout]).finally(() => {
+    if (timer) clearTimeout(timer);
+  });
+}
+
+// Supabase stores the session in localStorage under sb-*-auth-token.
+// If getSession() itself hangs (expired token + no network), read the
+// stored session directly so a logged-in user still opens instantly.
+function readStoredSession(): { session: Session; user: User } | null {
+  try {
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      if (!key || !key.startsWith("sb-") || !key.endsWith("-auth-token")) continue;
+      const raw = localStorage.getItem(key);
+      if (!raw) continue;
+      const parsed = JSON.parse(raw);
+      const user = parsed?.user ?? parsed?.session?.user;
+      if (!user) continue;
+      const session = (parsed?.session ?? parsed) as Session;
+      return { session, user: user as User };
+    }
+  } catch {
+    /* ignore — caller falls back to no session */
+  }
+  return null;
+}
+
 
 export function AuthProvider({
   children,
@@ -102,11 +140,11 @@ export function AuthProvider({
       const {
         data,
         error,
-      } = await supabase
+      } = await withTimeout(supabase
         .from("profiles")
         .select("*")
         .eq("id", authUser.id)
-        .maybeSingle();
+        .maybeSingle());
 
 
       if (error) {
@@ -157,58 +195,44 @@ export function AuthProvider({
 
     async function initializeAuth() {
 
+      // 1. Show the cached profile immediately so the app paints at once.
       try {
-
-        // Show the cached profile immediately so the app paints at once;
-        // the network profile load below refreshes it in the background.
-        try {
-          const cached = await getCachedProfile();
-          if (mounted && cached) setProfile(cached as Profile);
-        } catch {
-          /* ignore */
-        }
-
-        const {
-          data: {
-            session: currentSession,
-          },
-        } =
-          await supabase.auth.getSession();
-
-
-        if (!mounted) {
-          return;
-        }
-
-
-        setSession(currentSession);
-
-        setUser(
-          currentSession?.user || null
-        );
-
-
-        if (currentSession?.user) {
-
-          await loadProfile(
-            currentSession.user
-          );
-        }
-
-      } catch (error) {
-
-        console.error(
-          "Auth initialization error:",
-          error
-        );
-
-      } finally {
-
-        if (mounted) {
-          setLoading(false);
-        }
-
+        const cached = await getCachedProfile();
+        if (mounted && cached) setProfile(cached as Profile);
+      } catch {
+        /* ignore */
       }
+
+      // 2. Read the stored session straight from the phone — no network
+      // call at all — and clear the loader right away. Startup must be
+      // under a second, offline or online.
+      const stored = readStoredSession();
+      if (mounted) {
+        setSession(stored?.session ?? null);
+        setUser(stored?.user ?? null);
+        setLoading(false);
+      }
+
+      // 3. Everything network-related runs in the background and can
+      // never hold the screen: verify/refresh the session, then the
+      // profile. If the net is dead, the stored session + cached
+      // profile above are already on screen.
+      if (stored?.user) {
+        void loadProfile(stored.user);
+      }
+      void (async () => {
+        try {
+          const { data: { session } } = await withTimeout(
+            supabase.auth.getSession()
+          );
+          if (!mounted) return;
+          setSession(session);
+          setUser(session?.user ?? null);
+          if (session?.user) void loadProfile(session.user);
+        } catch {
+          /* offline — stored session already shown */
+        }
+      })();
     }
 
 
@@ -247,7 +271,8 @@ export function AuthProvider({
 
           if (authUser) {
 
-            await loadProfile(
+            // Background refresh only — never block on it.
+            void loadProfile(
               authUser
             );
 
