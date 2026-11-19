@@ -196,6 +196,9 @@ export default function EasyDOFormat1() {
 
   useEffect(() => {
     function handleBeforeUnload(event: BeforeUnloadEvent) {
+      // APK download in progress — let it go without the leave warning
+      // (and without clearing the draft). The flag clears itself.
+      if ((window as any).__easydo_skipBeforeUnload) return;
       if (isResettingRef.current) return; // Jodi reset kora hoy, tahote reload warning dekhabe na
       localStorage.removeItem(EASY_DO_STORAGE_KEY);
       event.preventDefault();

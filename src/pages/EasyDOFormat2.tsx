@@ -309,6 +309,8 @@ export default function EasyDOPage() {
 
   useEffect(() => {
     function handleBeforeUnload(event: BeforeUnloadEvent) {
+      // APK download in progress — let it go without the leave warning.
+      if ((window as any).__easydo_skipBeforeUnload) return;
       event.preventDefault();
       event.returnValue = "Do you want to reload this page? Reloading will reset the current calculation.";
       return event.returnValue;

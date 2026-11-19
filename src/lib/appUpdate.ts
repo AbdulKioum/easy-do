@@ -92,25 +92,33 @@ export function checkForUpdate(): Promise<UpdateInfo | null> {
 }
 
 /**
- * Downloads the APK without navigating the current page.
+ * Downloads the APK via a normal link click — the same mechanism the
+ * sidebar Download App link has always used, so the system download
+ * manager picks it up.
  *
- * The Easy DO pages register a `beforeunload` guard (unsaved DO draft),
- * so a normal link / window.open to the APK URL makes the browser show
- * "Leave this page / Stay on this page". Loading the APK URL in a hidden
- * iframe triggers the system download instead, with no navigation and
- * therefore no leave-page dialog — and the DO draft is left untouched.
+ * The hidden-iframe attempt did not trigger a download in the Android
+ * WebView at all. A link click does, but the Easy DO pages register a
+ * `beforeunload` guard (unsaved DO draft) that would show "Leave this
+ * page / Stay on this page". So the download sets a short-lived global
+ * flag first, and both DO pages' guards skip the warning while the flag
+ * is set. The flag clears itself after 5 seconds, so a real reload or
+ * page leave after that still warns as before — and the draft is not
+ * cleared by the download either.
  */
 export function openApkDownload(apkUrl: string): void {
   try {
-    const iframe = document.createElement("iframe");
-    iframe.style.display = "none";
-    iframe.setAttribute("aria-hidden", "true");
-    iframe.src = apkUrl;
-    document.body.appendChild(iframe);
-    // The download is handed to the system download manager; the iframe
-    // itself is just the trigger and can go away shortly after.
-    window.setTimeout(() => iframe.remove(), 30000);
+    (window as any).__easydo_skipBeforeUnload = true;
+    const a = document.createElement("a");
+    a.href = apkUrl;
+    a.download = "Easy-DO.apk";
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    window.setTimeout(() => {
+      (window as any).__easydo_skipBeforeUnload = false;
+    }, 5000);
   } catch {
+    (window as any).__easydo_skipBeforeUnload = false;
     window.open(apkUrl, "_blank");
   }
 }
