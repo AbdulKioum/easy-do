@@ -1,6 +1,14 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import * as XLSX from "xlsx-js-style";
 import { supabase } from "../lib/supabase";
+import {
+  CACHE_KEYS,
+  getCachedList,
+  getCachedProfile,
+  isOnline,
+  logPageVisit,
+  setCache,
+} from "../lib/offlineSync";
 import { useAuth } from "../context/AuthContext";
 import { universalFileDownload } from "../lib/downloadHelper";
 
@@ -29,6 +37,9 @@ type MatrixDistrictGroup = {
     rates: Record<string, { sinking?: number; floating?: number }>;
   }[];
 };
+
+const OFFLINE_MSG =
+  "You are offline. Changes will not be saved until you are back online.";
 
 const emptyForm: Transportation = {
   from_location: "",
@@ -121,14 +132,8 @@ export default function TransportationPage() {
       if (!user?.id || hasTrackedVisit.current) return;
       hasTrackedVisit.current = true;
 
-      const today = new Date().toISOString().split("T")[0];
-      await supabase.from("page_visits").insert([
-        {
-          user_id: user.id,
-          page_name: "Transportation Page",
-          visit_date: today,
-        },
-      ]);
+      // Queued offline via the outbox, flushed when back online.
+      await logPageVisit("Transportation Page", user.id, user.email);
     }
     trackVisit();
   }, [user?.id]);
@@ -145,15 +150,41 @@ export default function TransportationPage() {
 
   async function loadUserProfile() {
     setProfileLoading(true);
-    const { data } = await supabase.from("profiles").select("*").eq("id", user?.id).single();
-    if (data) {
-      setUserProfile(data);
-      const locs = parseList(data.assigned_from_locations);
-      if (locs.length > 0 && !emptyForm.from_location) {
-        setForm((prev) => ({ ...prev, from_location: locs[0] }));
+    // Cache-first: the cached profile renders instantly offline.
+    try {
+      const cached = await getCachedProfile();
+      if (cached) {
+        setUserProfile(cached);
+        const locs = parseList(cached.assigned_from_locations);
+        if (locs.length > 0 && !emptyForm.from_location) {
+          setForm((prev) => ({ ...prev, from_location: locs[0] }));
+        }
+        setProfileLoading(false);
       }
+    } catch (err) {
+      console.error("Profile cache read error:", err);
     }
-    setProfileLoading(false);
+
+    if (!isOnline()) {
+      setProfileLoading(false);
+      return;
+    }
+
+    try {
+      const { data } = await supabase.from("profiles").select("*").eq("id", user?.id).single();
+      if (data) {
+        setUserProfile(data);
+        const locs = parseList(data.assigned_from_locations);
+        if (locs.length > 0 && !emptyForm.from_location) {
+          setForm((prev) => ({ ...prev, from_location: locs[0] }));
+        }
+        await setCache(CACHE_KEYS.PROFILE, data);
+      }
+    } catch (err) {
+      console.error("Profile load error:", err);
+    } finally {
+      setProfileLoading(false);
+    }
   }
 
   const assignedFromLocations: string[] = useMemo(() => {
@@ -170,37 +201,95 @@ export default function TransportationPage() {
   }, [isSuperAdmin, userProfile]);
 
   async function loadTransportation() {
-    setLoading(true);
-    const { data, error } = await supabase
-      .from("transportation")
-      .select("*")
-      .order("from_location", { ascending: true })
-      .order("to_upazila", { ascending: true });
-
-    if (error) {
-      console.error(error);
-      alert("Transportation load failed.");
-    } else {
-      setItems((data || []) as Transportation[]);
+    // Cache-first: paint the cached list immediately, then refresh in
+    // the background when online. Never throws an unhandled rejection.
+    let hadCache = false;
+    try {
+      const cached = await getCachedList<Transportation>(CACHE_KEYS.TRANSPORT);
+      if (cached.length) {
+        hadCache = true;
+        setItems(cached);
+        setLoading(false);
+      }
+    } catch (err) {
+      console.error("Transportation cache read error:", err);
     }
-    setLoading(false);
+
+    if (!isOnline()) {
+      setLoading(false);
+      return;
+    }
+
+    try {
+      const { data, error } = await supabase
+        .from("transportation")
+        .select("*")
+        .order("from_location", { ascending: true })
+        .order("to_upazila", { ascending: true });
+
+      if (error) {
+        console.error(error);
+        if (!hadCache) {
+          alert("Transportation load failed.");
+        }
+      } else {
+        setItems((data || []) as Transportation[]);
+        await setCache(CACHE_KEYS.TRANSPORT, data || []);
+      }
+    } catch (err) {
+      console.error(err);
+      if (!hadCache) {
+        alert("Transportation load failed.");
+      }
+    } finally {
+      setLoading(false);
+    }
   }
 
   async function loadUpazilas() {
-    setUpazilaLoading(true);
-    const { data, error } = await supabase
-      .from("upazilas")
-      .select("*")
-      .order("district", { ascending: true })
-      .order("upazila_name", { ascending: true });
-
-    if (error) {
-      console.error(error);
-      alert("Upazila load failed.");
-    } else {
-      setUpazilas((data || []) as Upazila[]);
+    // Cache-first: paint the cached list immediately, then refresh in
+    // the background when online. Never throws an unhandled rejection.
+    let hadCache = false;
+    try {
+      const cached = await getCachedList<Upazila>(CACHE_KEYS.UPAZILAS);
+      if (cached.length) {
+        hadCache = true;
+        setUpazilas(cached);
+        setUpazilaLoading(false);
+      }
+    } catch (err) {
+      console.error("Upazila cache read error:", err);
     }
-    setUpazilaLoading(false);
+
+    if (!isOnline()) {
+      setUpazilaLoading(false);
+      return;
+    }
+
+    try {
+      const { data, error } = await supabase
+        .from("upazilas")
+        .select("*")
+        .order("district", { ascending: true })
+        .order("upazila_name", { ascending: true });
+
+      if (error) {
+        console.error(error);
+        if (!hadCache) {
+          alert("Upazila load failed.");
+        }
+      } else {
+        setUpazilas((data || []) as Upazila[]);
+        await setCache(CACHE_KEYS.UPAZILAS, data || []);
+      }
+    } catch (err) {
+      console.error(err);
+      if (!hadCache) {
+        alert("Upazila load failed.");
+      }
+    } finally {
+      setUpazilaLoading(false);
+    }
   }
 
   const upazilaDistrictMap = useMemo(() => {
@@ -299,6 +388,12 @@ export default function TransportationPage() {
       return;
     }
 
+    // Master-data edits are online-only (not queued).
+    if (!isOnline()) {
+      alert(OFFLINE_MSG);
+      return;
+    }
+
     const payload = {
       from_location: form.from_location.trim(),
       to_upazila: form.to_upazila.trim(),
@@ -307,32 +402,38 @@ export default function TransportationPage() {
       status: form.status,
     };
 
-    if (editingId) {
-      const { error } = await supabase.from("transportation").update(payload).eq("id", editingId);
-      if (error) {
-        alert("Transportation update failed.");
-        return;
-      }
-    } else {
-      const existing = items.find(
-        (i) =>
-          i.from_location.trim().toLowerCase() === payload.from_location.toLowerCase() &&
-          i.to_upazila.trim().toLowerCase() === payload.to_upazila.toLowerCase()
-      );
-
-      if (existing?.id) {
-        const { error } = await supabase.from("transportation").update(payload).eq("id", existing.id);
+    try {
+      if (editingId) {
+        const { error } = await supabase.from("transportation").update(payload).eq("id", editingId);
         if (error) {
           alert("Transportation update failed.");
           return;
         }
       } else {
-        const { error } = await supabase.from("transportation").insert([payload]);
-        if (error) {
-          alert("Transportation add failed.");
-          return;
+        const existing = items.find(
+          (i) =>
+            i.from_location.trim().toLowerCase() === payload.from_location.toLowerCase() &&
+            i.to_upazila.trim().toLowerCase() === payload.to_upazila.toLowerCase()
+        );
+
+        if (existing?.id) {
+          const { error } = await supabase.from("transportation").update(payload).eq("id", existing.id);
+          if (error) {
+            alert("Transportation update failed.");
+            return;
+          }
+        } else {
+          const { error } = await supabase.from("transportation").insert([payload]);
+          if (error) {
+            alert("Transportation add failed.");
+            return;
+          }
         }
       }
+    } catch (err) {
+      console.error(err);
+      alert("Transportation save failed.");
+      return;
     }
 
     closeForm();
@@ -343,8 +444,20 @@ export default function TransportationPage() {
     if (!canManage || !id) return;
     if (!window.confirm("Delete this transportation rate?")) return;
 
-    const { error } = await supabase.from("transportation").delete().eq("id", id);
-    if (error) {
+    // Master-data edits are online-only (not queued).
+    if (!isOnline()) {
+      alert(OFFLINE_MSG);
+      return;
+    }
+
+    try {
+      const { error } = await supabase.from("transportation").delete().eq("id", id);
+      if (error) {
+        alert("Delete failed.");
+        return;
+      }
+    } catch (err) {
+      console.error(err);
       alert("Delete failed.");
       return;
     }
@@ -360,6 +473,13 @@ export default function TransportationPage() {
 
     const file = event.target.files?.[0];
     if (!file) return;
+
+    // Master-data edits are online-only (not queued).
+    if (!isOnline()) {
+      alert(OFFLINE_MSG);
+      event.target.value = "";
+      return;
+    }
 
     const reader = new FileReader();
     reader.onload = async (e) => {
@@ -556,10 +676,8 @@ async function exportExcel() {
     }
 
     if (user?.id) {
-      const today = new Date().toISOString().split("T")[0];
-      await supabase.from("page_visits").insert([
-        { user_id: user.id, page_name: "Transportation Download Excel", visit_date: today },
-      ]);
+      // Queued offline via the outbox, flushed when back online.
+      await logPageVisit("Transportation Download Excel", user.id, user.email);
     }
 
     const { fromCols, groups } = buildMatrixData();
@@ -741,10 +859,8 @@ async function exportExcel() {
     }
 
     if (user?.id) {
-      const today = new Date().toISOString().split("T")[0];
-      await supabase.from("page_visits").insert([
-        { user_id: user.id, page_name: "Transportation Download PDF", visit_date: today },
-      ]);
+      // Queued offline via the outbox, flushed when back online.
+      await logPageVisit("Transportation Download PDF", user.id, user.email);
     }
 
     const html2pdf: any = (await import("html2pdf.js")).default;

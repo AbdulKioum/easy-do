@@ -4,8 +4,16 @@ import React, {
   useRef,
   useState,
 } from "react";
-import { supabase } from "../lib/supabase";
 import { useAuth } from "../context/AuthContext";
+import {
+  CACHE_KEYS,
+  getCachedList,
+  getCachedProfile,
+  isOnline,
+  logPageVisit,
+  saveDOOfflineFirst,
+  syncAllMasterDataInBackground,
+} from "../lib/offlineSync";
 
 type FeedPrice = {
   id: number;
@@ -77,6 +85,16 @@ function getSavedState() {
   }
 }
 
+// Synchronous read of the mirrored profile (same key the IndexedDB cache uses).
+function readLocalProfile(): any | null {
+  try {
+    const raw = localStorage.getItem("easydo_cache_profile_v1");
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+}
+
 export default function EasyDOPage() {
   const { user, role } = useAuth();
   const initialSaved = useMemo(() => getSavedState(), []);
@@ -99,11 +117,20 @@ export default function EasyDOPage() {
     }
   });
 
-  const [upazilaList, setUpazilaList] = useState<Upazila[]>([]);
-  const [userProfile, setUserProfile] = useState<any>(null);
+  const [upazilaList, setUpazilaList] = useState<Upazila[]>(() => {
+    try {
+      const cached = localStorage.getItem("easydo_cache_upazilas_v1");
+      return cached ? JSON.parse(cached) : [];
+    } catch {
+      return [];
+    }
+  });
+  const [userProfile, setUserProfile] = useState<any>(() => readLocalProfile());
 
   const [loading, setLoading] = useState(() => priceList.length === 0);
   const [saving, setSaving] = useState(false);
+  // True when the last save was stored locally and is waiting to sync.
+  const [savePending, setSavePending] = useState(false);
 
   const [rows, setRows] = useState<OrderRow[]>(initialSaved?.rows || []);
   const [fromLocation, setFromLocation] = useState<string>(initialSaved?.fromLocation || "");
@@ -128,26 +155,20 @@ export default function EasyDOPage() {
 
   const isSuperAdmin = role === "super_admin";
 
+  // PAGE VISIT TRACKING — once per mount, queued offline via the outbox,
+  // never throws.
+  const hasTrackedVisit = useRef(false);
   useEffect(() => {
-    async function trackPageVisit() {
-      if (!user?.id) return;
-      const today = new Date().toISOString().split("T")[0];
-      await supabase.from("page_visits").insert([
-        {
-          user_id: user.id,
-          page_name: "EasyDO Page 2",
-          visit_date: today,
-        },
-      ]);
-    }
-    trackPageVisit();
+    if (!user?.id || hasTrackedVisit.current) return;
+    hasTrackedVisit.current = true;
+    void logPageVisit("EasyDO Page 2", user.id, user.email ?? undefined);
   }, [user?.id]);
 
   useEffect(() => {
-    if (user?.id) {
-      loadUserProfile();
-    }
-    loadData();
+    initPageData();
+    const handleOnline = () => initPageData();
+    window.addEventListener("online", handleOnline);
+    return () => window.removeEventListener("online", handleOnline);
   }, [user?.id]);
 
   // PERSIST STATE TO LOCALSTORAGE ON CHANGE
@@ -186,13 +207,93 @@ export default function EasyDOPage() {
     generatedMessage,
   ]);
 
-  async function loadUserProfile() {
-    const { data } = await supabase.from("profiles").select("*").eq("id", user?.id).single();
-    if (data) {
-      setUserProfile(data);
-      if (data.assigned_from_locations && data.assigned_from_locations.length > 0 && !fromLocation) {
-        setFromLocation(data.assigned_from_locations[0]);
+  // Read master data from the IndexedDB cache and paint it. Returns true
+  // when a price list was found, so the caller knows the table can render.
+  // Also mirrors the cached rows to localStorage, which seeds first paint
+  // synchronously on the next mount.
+  async function applyCachedMasterData(): Promise<boolean> {
+    try {
+      const cachedProfile = await getCachedProfile();
+      const profile = cachedProfile || readLocalProfile();
+      let assignedPriceList = "price_list_1";
+      if (profile) {
+        setUserProfile(profile);
+        try {
+          localStorage.setItem("easydo_cache_profile_v1", JSON.stringify(profile));
+        } catch {
+          /* ignore */
+        }
+        assignedPriceList = profile.assigned_price_list || "price_list_1";
+        if (profile.assigned_from_locations && profile.assigned_from_locations.length > 0) {
+          const firstLocation = profile.assigned_from_locations[0];
+          setFromLocation((prev) => prev || firstLocation);
+        }
       }
+
+      // The user's assigned price list picks feed_price_list vs
+      // feed_price_list_2 (same rule as Format 1).
+      const priceKey =
+        assignedPriceList === "price_list_2" ? CACHE_KEYS.PRICE_LIST_2 : CACHE_KEYS.PRICE_LIST_1;
+
+      const [cachedPrices, cachedTransport, cachedUpazilas] = await Promise.all([
+        getCachedList<FeedPrice>(priceKey),
+        getCachedList<Transport>(CACHE_KEYS.TRANSPORT),
+        getCachedList<Upazila>(CACHE_KEYS.UPAZILAS),
+      ]);
+
+      if (cachedPrices.length > 0) {
+        setPriceList(cachedPrices);
+        try {
+          localStorage.setItem(PRICE_CACHE_KEY, JSON.stringify(cachedPrices));
+        } catch {
+          /* ignore */
+        }
+      }
+
+      if (cachedTransport.length > 0) {
+        setTransportList(cachedTransport);
+        try {
+          localStorage.setItem(TRANSPORT_CACHE_KEY, JSON.stringify(cachedTransport));
+        } catch {
+          /* ignore */
+        }
+      }
+
+      if (cachedUpazilas.length > 0) {
+        setUpazilaList(cachedUpazilas);
+        try {
+          localStorage.setItem("easydo_cache_upazilas_v1", JSON.stringify(cachedUpazilas));
+        } catch {
+          /* ignore */
+        }
+      }
+
+      return cachedPrices.length > 0;
+    } catch (e) {
+      console.warn("Cache read failed:", e);
+      return false;
+    }
+  }
+
+  async function initPageData() {
+    if (priceList.length === 0) setLoading(true);
+    try {
+      // Cache first: paint instantly, no network await before first paint.
+      const hadCache = await applyCachedMasterData();
+      if (hadCache) setLoading(false);
+      if (!isOnline()) return;
+
+      // Background refresh, then re-apply the fresh cache.
+      try {
+        await syncAllMasterDataInBackground(user?.id, isSuperAdmin);
+      } catch (e) {
+        console.warn("Background sync skipped:", e);
+      }
+      await applyCachedMasterData();
+    } catch (e) {
+      console.warn("Using offline cached data:", e);
+    } finally {
+      setLoading(false);
     }
   }
 
@@ -209,7 +310,7 @@ export default function EasyDOPage() {
   useEffect(() => {
     function handleBeforeUnload(event: BeforeUnloadEvent) {
       event.preventDefault();
-      event.returnValue = "Apni ki page-ti reload korte chan? Reload korle current hisab reset hoye jabe.";
+      event.returnValue = "Do you want to reload this page? Reloading will reset the current calculation.";
       return event.returnValue;
     }
     window.addEventListener("beforeunload", handleBeforeUnload);
@@ -226,46 +327,6 @@ export default function EasyDOPage() {
     document.addEventListener("mousedown", handleOutsideClick);
     return () => document.removeEventListener("mousedown", handleOutsideClick);
   }, []);
-
-  async function loadData() {
-    if (priceList.length === 0) setLoading(true);
-    try {
-      const [priceResponse, transportResponse, upazilaResponse] = await Promise.all([
-        supabase
-          .from("feed_price_list")
-          .select("id, category, item_name, short_name, kg_per_bag, tp_per_bag, mrp_per_bag, status")
-          .eq("status", "Active")
-          .order("sort_order", { ascending: true }),
-        supabase
-          .from("transportation")
-          .select("id, from_location, to_upazila, floating_cattle_rate_per_kg, sinking_broiler_layer_sonali_rate_per_kg, status")
-          .eq("status", "Active")
-          .order("to_upazila", { ascending: true }),
-        supabase
-          .from("upazilas")
-          .select("*")
-          .eq("status", "Active"),
-      ]);
-
-      if (!priceResponse.error && priceResponse.data) {
-        setPriceList(priceResponse.data);
-        localStorage.setItem(PRICE_CACHE_KEY, JSON.stringify(priceResponse.data));
-      }
-
-      if (!transportResponse.error && transportResponse.data) {
-        setTransportList(transportResponse.data);
-        localStorage.setItem(TRANSPORT_CACHE_KEY, JSON.stringify(transportResponse.data));
-      }
-
-      if (!upazilaResponse.error && upazilaResponse.data) {
-        setUpazilaList(upazilaResponse.data);
-      }
-    } catch (e) {
-      console.warn("Using offline cached data:", e);
-    } finally {
-      setLoading(false);
-    }
-  }
 
   function addCategory(category: string) {
     const availableItems = priceList.filter(
@@ -531,6 +592,7 @@ export default function EasyDOPage() {
     }
 
     setSaving(true);
+    setSavePending(false);
     try {
       const validBanks = banks.filter((bank) => bank.bankName.trim() || bank.branch.trim() || bank.date.trim() || bank.amount.trim());
       const bankDetails = validBanks
@@ -576,13 +638,20 @@ export default function EasyDOPage() {
         message_text: finalMessage,
       };
 
-      const { error } = await supabase.from("saved_dos").insert([payload]);
-      if (error) {
-        alert(`Save DO failed: ${error.message}`);
+      // Local-first: saved to the device cache immediately, synced to the
+      // server when online (queued in the outbox when offline).
+      const { record } = await saveDOOfflineFirst(payload);
+      if (record?.sync_error) {
+        alert(`Save DO failed: ${record.sync_error}`);
         return;
       }
-
-      alert("DO saved successfully.");
+      const pending = Boolean(record?.is_offline_pending);
+      setSavePending(pending);
+      alert(
+        pending
+          ? "DO saved offline. It will sync when you are back online."
+          : "DO saved successfully."
+      );
       localStorage.removeItem(EASY_DO_STORAGE_KEY);
     } catch (error) {
       console.error(error);
@@ -1041,6 +1110,11 @@ export default function EasyDOPage() {
               <button style={{ ...styles.generateModalButton, marginTop: 12 }} onClick={saveDO} disabled={saving}>
                 {saving ? "Saving..." : "💾 Save this DO"}
               </button>
+              {savePending && (
+                <div style={{ marginTop: 8, textAlign: "center", fontSize: 11, fontWeight: 700, color: "#b45309" }}>
+                  ⏳ Pending — saved offline, will sync when you are back online.
+                </div>
+              )}
             </div>
           )}
         </>

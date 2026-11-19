@@ -1,7 +1,14 @@
 import React, { useEffect, useState } from "react";
 import { useAuth } from "../../context/AuthContext";
-import { supabase } from "../../lib/supabase";
-import { isRunningInsideApp } from "../../lib/offlineSync";
+import {
+  flushOutbox,
+  getCachedProfile,
+  getLastSyncTime,
+  isOnline,
+  isRunningInsideApp,
+  logPageVisit,
+  syncAllMasterDataInBackground,
+} from "../../lib/offlineSync";
 
 type SideMenuProps = {
   open: boolean;
@@ -20,21 +27,29 @@ export default function SideMenu({
   const [assignedPriceList, setAssignedPriceList] = useState<string>(
     (profile as any)?.assigned_price_list || "price_list_1"
   );
+  const [lastSync, setLastSync] = useState<string | null>(null);
+  const [syncing, setSyncing] = useState(false);
+  const [syncNote, setSyncNote] = useState<string | null>(null);
 
+  // Read the assigned price list from the cached profile instead of
+  // refetching profiles on every menu open (works offline too).
   useEffect(() => {
-    async function fetchAssignedPriceList() {
-      if (!user?.id) return;
-      const { data } = await supabase
-        .from("profiles")
-        .select("assigned_price_list")
-        .eq("id", user.id)
-        .single();
-      if (data?.assigned_price_list) {
-        setAssignedPriceList(data.assigned_price_list);
+    async function loadFromCache() {
+      try {
+        const cached = await getCachedProfile();
+        const list =
+          (cached as any)?.assigned_price_list ||
+          (profile as any)?.assigned_price_list;
+        if (list) {
+          setAssignedPriceList(list);
+        }
+        setLastSync(await getLastSyncTime());
+      } catch {
+        /* offline cache read must never break the menu */
       }
     }
     if (open) {
-      fetchAssignedPriceList();
+      loadFromCache();
     }
   }, [user?.id, open]);
 
@@ -52,21 +67,56 @@ export default function SideMenu({
     onClose();
   }
 
-  // Track APK download inside page_visits so it shows on VisitStatusPage
+  function formatSyncTime(iso: string | null): string {
+    if (!iso) return "";
+    const d = new Date(iso);
+    if (isNaN(d.getTime())) return "";
+    const dd = String(d.getDate()).padStart(2, "0");
+    const mm = String(d.getMonth() + 1).padStart(2, "0");
+    const hh = String(d.getHours()).padStart(2, "0");
+    const min = String(d.getMinutes()).padStart(2, "0");
+    return `${dd}/${mm}/${d.getFullYear()} ${hh}:${min}`;
+  }
+
+  // Manual master-data refresh. Offline it never blocks — it just reports
+  // that the saved data is being used.
+  async function handleUpdateData() {
+    if (syncing) return;
+    if (!isOnline()) {
+      setSyncNote("No internet — using saved data");
+      return;
+    }
+    setSyncing(true);
+    setSyncNote(null);
+    try {
+      await syncAllMasterDataInBackground(user?.id, role === "super_admin");
+      await flushOutbox();
+      const ts = await getLastSyncTime();
+      setLastSync(ts);
+      // A fresh sync may carry a changed assigned price list.
+      const cached = await getCachedProfile();
+      if ((cached as any)?.assigned_price_list) {
+        setAssignedPriceList((cached as any).assigned_price_list);
+      }
+    } catch {
+      setSyncNote("Update failed — using saved data");
+    } finally {
+      setSyncing(false);
+    }
+  }
+
+  const syncStatusText = syncing
+    ? "Updating…"
+    : syncNote ||
+      (lastSync
+        ? `Last updated: ${formatSyncTime(lastSync)}`
+        : "Never updated yet");
+
+  // Track APK download inside page_visits so it shows on VisitStatusPage.
+  // Queued offline and sent when back online — never a direct insert.
   async function handleTrackAppDownload() {
     if (!user?.id) return;
-    try {
-      const todayStr = new Date().toISOString().split("T")[0];
-      await supabase.from("page_visits").insert([
-        {
-          user_id: user.id,
-          page_name: "App Download APK",
-          visit_date: todayStr,
-        },
-      ]);
-    } catch (err) {
-      console.error("Failed to track app download:", err);
-    }
+    await logPageVisit("App Download APK", user.id, user.email || undefined);
   }
 
   const isAdminOrSuper = role === "admin" || role === "super_admin";
@@ -186,6 +236,35 @@ export default function SideMenu({
               onClick={() => navigate("send-notification")}
             />
           )}
+        </div>
+
+        {/* UPDATE DATA (VISIBLE TO ALL ROLES) */}
+        <div style={{ padding: "0 16px 10px 16px" }}>
+          <style>{`@keyframes easydo-spin { to { transform: rotate(360deg); } }`}</style>
+          <button
+            onClick={handleUpdateData}
+            disabled={syncing}
+            style={{
+              ...styles.menuItem,
+              border: "1px solid #dbeafe",
+              background: "#eff6ff",
+              opacity: syncing ? 0.7 : 1,
+            }}
+          >
+            <span
+              style={{
+                ...styles.icon,
+                display: "inline-flex",
+                animation: syncing ? "easydo-spin 1s linear infinite" : undefined,
+              }}
+            >
+              🔄
+            </span>
+            <span style={styles.label}>
+              {syncing ? "Updating…" : "Update Data"}
+            </span>
+          </button>
+          <div style={styles.syncStatus}>{syncStatusText}</div>
         </div>
 
         {/* DOWNLOAD APP BUTTON (HIDDEN INSIDE APK AND HIDDEN FOR SUPER ADMIN) */}
@@ -361,6 +440,13 @@ const styles: Record<string, React.CSSProperties> = {
     background: "#2563eb",
     color: "#ffffff",
     fontWeight: 600,
+  },
+  syncStatus: {
+    marginTop: 4,
+    paddingLeft: 12,
+    fontSize: 11,
+    color: "#64748b",
+    fontWeight: 500,
   },
   icon: {
     width: 20,

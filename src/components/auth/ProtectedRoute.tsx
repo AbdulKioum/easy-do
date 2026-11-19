@@ -59,6 +59,8 @@ export default function ProtectedRoute({
 
   // ==========================================
   // USER EXISTS BUT PROFILE IS NOT AVAILABLE
+  // (e.g. first launch with no cached profile yet and no network)
+  // This is now recoverable instead of a dead end: retry, or sign in again.
   // ==========================================
 
   if (!profile) {
@@ -96,8 +98,46 @@ export default function ProtectedRoute({
           }}
         >
           Your account is logged in, but your user
-          profile could not be found.
+          profile could not be loaded. Please check
+          your internet connection and try again.
         </div>
+
+        <button
+          type="button"
+          onClick={() => window.location.reload()}
+          style={{
+            marginTop: 8,
+            padding: "10px 22px",
+            borderRadius: 9,
+            border: "none",
+            background: "#111827",
+            color: "#fff",
+            fontSize: 13,
+            fontWeight: 800,
+            cursor: "pointer",
+          }}
+        >
+          Retry
+        </button>
+
+        <button
+          type="button"
+          onClick={() => {
+            window.location.href = "/login";
+          }}
+          style={{
+            padding: "10px 22px",
+            borderRadius: 9,
+            border: "1px solid #cbd5e1",
+            background: "#ffffff",
+            color: "#374151",
+            fontSize: 13,
+            fontWeight: 700,
+            cursor: "pointer",
+          }}
+        >
+          Go to Login
+        </button>
 
       </div>
     );

@@ -13,10 +13,6 @@ const config: CapacitorConfig = {
       presentationOptions: [],
   },
 },
-  server: {
-    url: 'https://easy-do-five.vercel.app', 
-    cleartext: true
-  }
 };
 
 export default config;

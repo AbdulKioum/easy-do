@@ -9,6 +9,10 @@ import { useNavigate } from "react-router-dom";
 
 import { useAuth } from "../../context/AuthContext";
 
+import { supabase } from "../../lib/supabase";
+
+import { syncAllMasterDataInBackground } from "../../lib/offlineSync";
+
 
 export default function LoginPage() {
 
@@ -123,6 +127,29 @@ export default function LoginPage() {
         );
 
         return;
+      }
+
+
+      // Login is online-only, so seed the offline cache right now:
+      // item prices, transport, upazilas, saved DOs and notifications.
+      // Never let a slow sync block navigation for more than ~15s.
+      try {
+        const { data: { user: signedInUser } } = await supabase.auth.getUser();
+        if (signedInUser) {
+          let isSuperAdmin = false;
+          try {
+            const { data: prof } = await supabase.from("profiles").select("role").eq("id", signedInUser.id).maybeSingle();
+            isSuperAdmin = (prof as any)?.role === "super_admin";
+          } catch {
+            /* fall back to own-DO scope */
+          }
+          await Promise.race([
+            syncAllMasterDataInBackground(signedInUser.id, isSuperAdmin),
+            new Promise((resolve) => setTimeout(resolve, 15000)),
+          ]);
+        }
+      } catch {
+        /* cache seeding is best-effort — login already succeeded */
       }
 
 

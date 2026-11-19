@@ -1,4 +1,18 @@
+import { createStore, get, set, del } from "idb-keyval";
 import { supabase } from "./supabase";
+
+// ============================================================================
+// Easy DO — single offline store (IndexedDB via idb-keyval)
+// ----------------------------------------------------------------------------
+// All pages read master data cache-first from here and refresh in background.
+// All writes go local-first, then into the outbox, then to Supabase when
+// online. Nothing on a page mount awaits the network before first paint.
+// Legacy localStorage helpers (getLocalCache/setLocalCache) are kept only so
+// old draft keys (easydo_format1_persistent_*, easydo_page2_persistent_*)
+// keep working — new code must use getCache/setCache below.
+// ============================================================================
+
+const store = createStore("easydo-db", "easydo-store");
 
 export const CACHE_KEYS = {
   PROFILE: "easydo_cache_profile_v1",
@@ -7,8 +21,82 @@ export const CACHE_KEYS = {
   TRANSPORT: "easydo_cache_transport_v1",
   UPAZILAS: "easydo_cache_upazilas_v1",
   SAVED_DOS: "easydo_cache_saved_dos_v1",
+  NOTIFICATIONS: "easydo_cache_notifications_v1",
+  OUTBOX: "easydo_outbox_v1",
+  DEAD_LETTER: "easydo_dead_letter_v1",
+  LAST_SYNC: "easydo_last_sync_v1",
+  // kept for backward compatibility with the old localStorage queue key
   PENDING_DO_QUEUE: "easydo_pending_do_queue_v1",
 };
+
+export type OutboxKind =
+  | "saved_do_insert"
+  | "saved_do_update"
+  | "saved_do_delete"
+  | "page_visit"
+  | "notification_reply"
+  | "notification_read"
+  | "fcm_token";
+
+export type OutboxEntry = {
+  id: string; // crypto.randomUUID()
+  kind: OutboxKind;
+  payload: any;
+  tempId?: string; // for saved_do_insert: the local temp id of the row
+  created_at: string;
+  attempts: number;
+  last_error?: string;
+};
+
+function newTempId(): string {
+  try {
+    return `local_${crypto.randomUUID()}`;
+  } catch {
+    return `local_${Date.now()}_${Math.random().toString(36).slice(2)}`;
+  }
+}
+
+export function isOnline(): boolean {
+  try {
+    return navigator.onLine;
+  } catch {
+    return true;
+  }
+}
+
+// --- IndexedDB cache ---------------------------------------------------------
+
+export async function getCache<T>(key: string): Promise<T | null> {
+  try {
+    const v = await get<T>(key, store);
+    return v === undefined ? null : v;
+  } catch {
+    return null;
+  }
+}
+
+export async function setCache<T>(key: string, data: T): Promise<void> {
+  try {
+    await set(key, data, store);
+  } catch (e) {
+    console.warn("Cache save error:", e);
+  }
+}
+
+export async function removeCache(key: string): Promise<void> {
+  try {
+    await del(key, store);
+  } catch {
+    /* ignore */
+  }
+}
+
+export async function getCachedList<T>(key: string): Promise<T[]> {
+  const v = await getCache<T[]>(key);
+  return Array.isArray(v) ? v : [];
+}
+
+// --- Legacy localStorage helpers (drafts / tiny flags only) -----------------
 
 export function getLocalCache<T>(key: string, fallback: T): T {
   try {
@@ -36,97 +124,427 @@ export function isRunningInsideApp(): boolean {
   return false;
 }
 
-export async function syncAllMasterDataInBackground(userId?: string) {
-  if (!navigator.onLine) return;
+// --- Profile cache -----------------------------------------------------------
 
+export async function getCachedProfile(): Promise<any | null> {
+  return getCache<any>(CACHE_KEYS.PROFILE);
+}
+
+export async function cacheProfile(profile: any): Promise<void> {
+  if (profile) await setCache(CACHE_KEYS.PROFILE, profile);
+}
+
+// --- Last-sync timestamp -----------------------------------------------------
+
+export async function getLastSyncTime(): Promise<string | null> {
+  const v = await getCache<string>(CACHE_KEYS.LAST_SYNC);
+  if (v) return v;
   try {
-    const promises: Promise<any>[] = [
+    return localStorage.getItem(CACHE_KEYS.LAST_SYNC);
+  } catch {
+    return null;
+  }
+}
+
+export async function setLastSyncTime(ts?: string): Promise<void> {
+  const value = ts || new Date().toISOString();
+  await setCache(CACHE_KEYS.LAST_SYNC, value);
+  try {
+    localStorage.setItem(CACHE_KEYS.LAST_SYNC, value);
+  } catch {
+    /* ignore */
+  }
+}
+
+// --- Outbox ------------------------------------------------------------------
+
+export async function getOutbox(): Promise<OutboxEntry[]> {
+  const v = await getCache<OutboxEntry[]>(CACHE_KEYS.OUTBOX);
+  if (Array.isArray(v)) return v;
+  // one-time migration from the old localStorage DO queue
+  try {
+    const legacy = getLocalCache<{ tempId: string; payload: any }[]>(CACHE_KEYS.PENDING_DO_QUEUE, []);
+    if (legacy.length) {
+      const migrated: OutboxEntry[] = legacy.map((item) => ({
+        id: newTempId(),
+        kind: "saved_do_insert",
+        payload: item.payload,
+        tempId: item.tempId,
+        created_at: new Date().toISOString(),
+        attempts: 0,
+      }));
+      await setCache(CACHE_KEYS.OUTBOX, migrated);
+      try {
+        localStorage.removeItem(CACHE_KEYS.PENDING_DO_QUEUE);
+      } catch {
+        /* ignore */
+      }
+      return migrated;
+    }
+  } catch {
+    /* ignore */
+  }
+  return [];
+}
+
+async function setOutbox(entries: OutboxEntry[]): Promise<void> {
+  await setCache(CACHE_KEYS.OUTBOX, entries);
+}
+
+export async function enqueueOutbox(
+  kind: OutboxKind,
+  payload: any,
+  opts?: { tempId?: string }
+): Promise<OutboxEntry> {
+  const entry: OutboxEntry = {
+    id: newTempId(),
+    kind,
+    payload,
+    tempId: opts?.tempId,
+    created_at: new Date().toISOString(),
+    attempts: 0,
+  };
+  const box = await getOutbox();
+  box.push(entry);
+  await setOutbox(box);
+  return entry;
+}
+
+export async function getDeadLetter(): Promise<OutboxEntry[]> {
+  const v = await getCache<OutboxEntry[]>(CACHE_KEYS.DEAD_LETTER);
+  return Array.isArray(v) ? v : [];
+}
+
+async function moveToDeadLetter(entry: OutboxEntry, error: any): Promise<void> {
+  const dead = await getDeadLetter();
+  dead.push({ ...entry, last_error: String(error?.message || error || "Validation error") });
+  await setCache(CACHE_KEYS.DEAD_LETTER, dead.slice(-100));
+}
+
+function isValidationError(error: any): boolean {
+  if (!error) return false;
+  const status = error.status ?? error.code;
+  if (typeof status === "number") return status >= 400 && status < 500;
+  if (typeof status === "string") {
+    // PostgREST codes: 4xxxx = client/validation errors
+    if (/^4\d{2}/.test(status)) return true;
+    if (/^PGRST/.test(status)) return false;
+  }
+  const msg = String(error.message || "").toLowerCase();
+  return (
+    msg.includes("violates") ||
+    msg.includes("invalid") ||
+    msg.includes("duplicate key") ||
+    msg.includes("not-null") ||
+    msg.includes("check constraint")
+  );
+}
+
+let flushing = false;
+
+export async function flushOutbox(): Promise<void> {
+  if (flushing || !isOnline()) return;
+  flushing = true;
+  try {
+    let box = await getOutbox();
+    if (!box.length) return;
+    const remaining: OutboxEntry[] = [];
+    for (const entry of box) {
+      try {
+        const result = await flushOne(entry);
+        if (result === "ok") continue;
+        if (result === "validation") {
+          await moveToDeadLetter(entry, "Validation error");
+          continue;
+        }
+        // network / server error: keep queued
+        remaining.push({ ...entry, attempts: entry.attempts + 1 });
+      } catch (err: any) {
+        if (isValidationError(err)) {
+          await moveToDeadLetter(entry, err);
+        } else {
+          remaining.push({ ...entry, attempts: entry.attempts + 1, last_error: String(err?.message || err) });
+        }
+      }
+    }
+    await setOutbox(remaining);
+    box = remaining;
+    if (!box.length) {
+      // all flushed — nothing else to do; last-sync is set by the sync call
+    }
+  } finally {
+    flushing = false;
+  }
+}
+
+async function flushOne(entry: OutboxEntry): Promise<"ok" | "validation" | "retry"> {
+  switch (entry.kind) {
+    case "saved_do_insert": {
+      const { data, error } = await supabase.from("saved_dos").insert([entry.payload]).select().single();
+      if (error) return isValidationError(error) ? "validation" : "retry";
+      if (data && entry.tempId) {
+        const dos = await getCachedList<any>(CACHE_KEYS.SAVED_DOS);
+        await setCache(
+          CACHE_KEYS.SAVED_DOS,
+          dos.map((d) => (d.id === entry.tempId ? { ...data, is_offline_pending: false } : d))
+        );
+      }
+      return "ok";
+    }
+    case "saved_do_update": {
+      const { id, patch } = entry.payload;
+      const { error } = await supabase.from("saved_dos").update(patch).eq("id", id);
+      if (error) return isValidationError(error) ? "validation" : "retry";
+      return "ok";
+    }
+    case "saved_do_delete": {
+      const { error } = await supabase.from("saved_dos").delete().eq("id", entry.payload.id);
+      if (error) return isValidationError(error) ? "validation" : "retry";
+      return "ok";
+    }
+    case "page_visit": {
+      const { error } = await supabase.from("page_visits").insert([entry.payload]);
+      if (error) return isValidationError(error) ? "validation" : "retry";
+      return "ok";
+    }
+    case "notification_reply": {
+      const { error } = await supabase.from("notifications").insert([entry.payload]);
+      if (error) return isValidationError(error) ? "validation" : "retry";
+      return "ok";
+    }
+    case "notification_read": {
+      const { error } = await supabase
+        .from("notifications")
+        .update({ is_read: true, read_at: new Date().toISOString() })
+        .eq("id", entry.payload.id);
+      if (error) return isValidationError(error) ? "validation" : "retry";
+      return "ok";
+    }
+    case "fcm_token": {
+      const { userId, token } = entry.payload;
+      // clear the token from any other profile first, then set it on mine
+      try {
+        await supabase.from("profiles").update({ fcm_token: null }).eq("fcm_token", token);
+      } catch {
+        /* best effort */
+      }
+      const { error } = await supabase.from("profiles").update({ fcm_token: token }).eq("id", userId);
+      if (error) return isValidationError(error) ? "validation" : "retry";
+      return "ok";
+    }
+    default:
+      return "validation";
+  }
+}
+
+/** Backwards-compatible name used by older code. */
+export async function flushPendingDOQueue(): Promise<void> {
+  return flushOutbox();
+}
+
+// --- Page-visit log (never blocks, never throws) ------------------------------
+
+export async function logPageVisit(pageName: string, userId?: string, _userEmail?: string): Promise<void> {
+  try {
+    // Payload shape matches the existing page_visits inserts exactly:
+    // { user_id, page_name, visit_date } — created_at is set by the server.
+    // (userEmail is accepted for call-site compatibility but not stored;
+    // the table has no such column.)
+    const payload: any = {
+      page_name: pageName,
+      visit_date: new Date().toISOString().split("T")[0],
+    };
+    if (userId) payload.user_id = userId;
+    await enqueueOutbox("page_visit", payload);
+    if (isOnline()) void flushOutbox();
+  } catch {
+    /* visit logging must never break the page */
+  }
+}
+
+// --- Master-data sync ----------------------------------------------------------
+
+export async function syncAllMasterDataInBackground(
+  userId?: string,
+  isSuperAdmin?: boolean
+): Promise<{ ok: boolean; syncedAt: string | null }> {
+  if (!isOnline()) return { ok: false, syncedAt: await getLastSyncTime() };
+  try {
+    const queries: Promise<any>[] = [
       supabase.from("feed_price_list").select("*").eq("status", "Active").order("sort_order", { ascending: true }) as any,
       supabase.from("feed_price_list_2").select("*").eq("status", "Active").order("sort_order", { ascending: true }) as any,
       supabase.from("transportation").select("*").eq("status", "Active").order("from_location", { ascending: true }).order("to_upazila", { ascending: true }) as any,
       supabase.from("upazilas").select("*").eq("status", "Active").order("district", { ascending: true }).order("upazila_name", { ascending: true }) as any,
     ];
-
     if (userId) {
-      promises.push(supabase.from("profiles").select("*").eq("id", userId).single() as any);
+      queries.push(supabase.from("profiles").select("*").eq("id", userId).single() as any);
+      // Saved DOs: own rows only, super_admin sees all
+      const dosQuery = isSuperAdmin
+        ? supabase.from("saved_dos").select("*").order("id", { ascending: false }).limit(500)
+        : supabase.from("saved_dos").select("*").eq("user_id", userId).order("id", { ascending: false }).limit(500);
+      queries.push(dosQuery as any);
+      // Notifications for the bell (last ~100, own + broadcast)
+      queries.push(
+        supabase
+          .from("notifications")
+          .select("*")
+          .or(`user_id.eq.${userId},user_id.is.null`)
+          .order("created_at", { ascending: false })
+          .limit(100) as any
+      );
     }
 
-    const [p1Res, p2Res, transRes, upzRes, profRes] = await Promise.allSettled(promises);
-
-    if (p1Res.status === "fulfilled" && !p1Res.value.error && p1Res.value.data) {
-      setLocalCache(CACHE_KEYS.PRICE_LIST_1, p1Res.value.data);
+    const results = await Promise.allSettled(queries);
+    const keys = [
+      CACHE_KEYS.PRICE_LIST_1,
+      CACHE_KEYS.PRICE_LIST_2,
+      CACHE_KEYS.TRANSPORT,
+      CACHE_KEYS.UPAZILAS,
+      CACHE_KEYS.PROFILE,
+      CACHE_KEYS.SAVED_DOS,
+      CACHE_KEYS.NOTIFICATIONS,
+    ];
+    let anyOk = false;
+    results.forEach((res, i) => {
+      if (res.status === "fulfilled" && !res.value.error && res.value.data != null) {
+        anyOk = true;
+        // merge pending local DO rows back in: a temp row must survive a refresh
+        if (keys[i] === CACHE_KEYS.SAVED_DOS) {
+          void (async () => {
+            const local = await getCachedList<any>(CACHE_KEYS.SAVED_DOS);
+            const pending = local.filter((d) => String(d.id || "").startsWith("local_"));
+            const serverRows: any[] = res.value.data || [];
+            const merged = [...pending, ...serverRows.filter((s) => !pending.some((p) => p.id === s.id))];
+            await setCache(CACHE_KEYS.SAVED_DOS, merged);
+          })();
+        } else {
+          void setCache(keys[i], res.value.data);
+        }
+      }
+    });
+    if (anyOk) {
+      const ts = new Date().toISOString();
+      await setLastSyncTime(ts);
+      // flush anything queued while offline, in the background
+      void flushOutbox();
+      return { ok: true, syncedAt: ts };
     }
-    if (p2Res.status === "fulfilled" && !p2Res.value.error && p2Res.value.data) {
-      setLocalCache(CACHE_KEYS.PRICE_LIST_2, p2Res.value.data);
-    }
-    if (transRes.status === "fulfilled" && !transRes.value.error && transRes.value.data) {
-      setLocalCache(CACHE_KEYS.TRANSPORT, transRes.value.data);
-    }
-    if (upzRes.status === "fulfilled" && !upzRes.value.error && upzRes.value.data) {
-      setLocalCache(CACHE_KEYS.UPAZILAS, upzRes.value.data);
-    }
-    if (profRes && profRes.status === "fulfilled" && !profRes.value.error && profRes.value.data) {
-      setLocalCache(CACHE_KEYS.PROFILE, profRes.value.data);
-    }
+    return { ok: false, syncedAt: await getLastSyncTime() };
   } catch (err) {
     console.warn("Background sync skipped:", err);
+    return { ok: false, syncedAt: await getLastSyncTime() };
   }
 }
 
+// --- DO save / edit / delete (local-first) -------------------------------------
+
 export async function saveDOOfflineFirst(payload: any): Promise<{ synced: boolean; record: any }> {
-  const tempId = `local_${Date.now()}`;
-  const localRecord = {
-    ...payload,
-    id: tempId,
-    created_at: new Date().toISOString(),
-    is_offline_pending: true,
-  };
+  const tempId = newTempId();
+  const localRecord = { ...payload, id: tempId, created_at: new Date().toISOString(), is_offline_pending: true };
+  const existing = await getCachedList<any>(CACHE_KEYS.SAVED_DOS);
+  await setCache(CACHE_KEYS.SAVED_DOS, [localRecord, ...existing]);
 
-  const existingDOs = getLocalCache<any[]>(CACHE_KEYS.SAVED_DOS, []);
-  setLocalCache(CACHE_KEYS.SAVED_DOS, [localRecord, ...existingDOs]);
-
-  if (navigator.onLine) {
+  if (isOnline()) {
     try {
       const { data, error } = await supabase.from("saved_dos").insert([payload]).select().single();
       if (!error && data) {
-        const updatedDOs = getLocalCache<any[]>(CACHE_KEYS.SAVED_DOS, []).map((item) =>
-          item.id === tempId ? { ...data, is_offline_pending: false } : item
+        const dos = await getCachedList<any>(CACHE_KEYS.SAVED_DOS);
+        await setCache(
+          CACHE_KEYS.SAVED_DOS,
+          dos.map((d) => (d.id === tempId ? { ...data, is_offline_pending: false } : d))
         );
-        setLocalCache(CACHE_KEYS.SAVED_DOS, updatedDOs);
         return { synced: true, record: data };
       }
-    } catch {}
-  }
-
-  const queue = getLocalCache<any[]>(CACHE_KEYS.PENDING_DO_QUEUE, []);
-  setLocalCache(CACHE_KEYS.PENDING_DO_QUEUE, [...queue, { tempId, payload }]);
-
-  return { synced: false, record: localRecord };
-}
-
-export async function flushPendingDOQueue() {
-  if (!navigator.onLine) return;
-  const queue = getLocalCache<{ tempId: string; payload: any }[]>(CACHE_KEYS.PENDING_DO_QUEUE, []);
-  if (!queue.length) return;
-
-  const remainingQueue: { tempId: string; payload: any }[] = [];
-
-  for (const item of queue) {
-    try {
-      const { data, error } = await supabase.from("saved_dos").insert([item.payload]).select().single();
-      if (!error && data) {
-        const currentDOs = getLocalCache<any[]>(CACHE_KEYS.SAVED_DOS, []);
-        setLocalCache(
+      if (error && isValidationError(error)) {
+        // do not queue a payload the server will never accept
+        const dos = await getCachedList<any>(CACHE_KEYS.SAVED_DOS);
+        await setCache(
           CACHE_KEYS.SAVED_DOS,
-          currentDOs.map((d) => (d.id === item.tempId ? { ...data, is_offline_pending: false } : d))
+          dos.map((d) => (d.id === tempId ? { ...d, is_offline_pending: true, sync_error: String(error.message || error) } : d))
         );
-      } else {
-        remainingQueue.push(item);
+        return { synced: false, record: localRecord };
       }
     } catch {
-      remainingQueue.push(item);
+      /* fall through to queue */
     }
   }
 
-  setLocalCache(CACHE_KEYS.PENDING_DO_QUEUE, remainingQueue);
+  await enqueueOutbox("saved_do_insert", payload, { tempId });
+  return { synced: false, record: localRecord };
+}
+
+export async function updateSavedDOOffline(id: string | number, patch: Record<string, any>): Promise<{ synced: boolean }> {
+  // Coalesce: if this DO is still a pending insert, fold the edit into it.
+  const box = await getOutbox();
+  const pendingInsert = box.find((e) => e.kind === "saved_do_insert" && e.tempId === String(id));
+  if (pendingInsert) {
+    pendingInsert.payload = { ...pendingInsert.payload, ...patch };
+    await setOutbox(box);
+    const dos = await getCachedList<any>(CACHE_KEYS.SAVED_DOS);
+    await setCache(CACHE_KEYS.SAVED_DOS, dos.map((d) => (String(d.id) === String(id) ? { ...d, ...patch } : d)));
+    return { synced: false };
+  }
+  const dos = await getCachedList<any>(CACHE_KEYS.SAVED_DOS);
+  await setCache(CACHE_KEYS.SAVED_DOS, dos.map((d) => (String(d.id) === String(id) ? { ...d, ...patch } : d)));
+  if (isOnline()) {
+    try {
+      const { error } = await supabase.from("saved_dos").update(patch).eq("id", id);
+      if (!error) return { synced: true };
+      if (isValidationError(error)) return { synced: false };
+    } catch {
+      /* fall through to queue */
+    }
+  }
+  await enqueueOutbox("saved_do_update", { id, patch });
+  return { synced: false };
+}
+
+export async function deleteSavedDOOffline(id: string | number): Promise<{ synced: boolean }> {
+  const box = await getOutbox();
+  const pendingIdx = box.findIndex((e) => e.kind === "saved_do_insert" && e.tempId === String(id));
+  const dos = await getCachedList<any>(CACHE_KEYS.SAVED_DOS);
+  await setCache(CACHE_KEYS.SAVED_DOS, dos.filter((d) => String(d.id) !== String(id)));
+  if (pendingIdx >= 0) {
+    // never sent to the server — just drop the queued insert
+    box.splice(pendingIdx, 1);
+    await setOutbox(box);
+    return { synced: false };
+  }
+  // drop any queued update for the same row
+  const filtered = box.filter((e) => !(e.kind === "saved_do_update" && String(e.payload?.id) === String(id)));
+  await setOutbox(filtered);
+  if (isOnline()) {
+    try {
+      const { error } = await supabase.from("saved_dos").delete().eq("id", id);
+      if (!error) return { synced: true };
+      if (isValidationError(error)) return { synced: false };
+    } catch {
+      /* fall through to queue */
+    }
+  }
+  await enqueueOutbox("saved_do_delete", { id });
+  return { synced: false };
+}
+
+export async function getCachedSavedDOs(): Promise<any[]> {
+  return getCachedList<any>(CACHE_KEYS.SAVED_DOS);
+}
+
+// --- Global listeners (call once at app start) ---------------------------------
+
+let listenersInstalled = false;
+
+export function setupOfflineListeners(): void {
+  if (listenersInstalled) return;
+  listenersInstalled = true;
+  try {
+    window.addEventListener("online", () => {
+      void flushOutbox();
+    });
+    document.addEventListener("visibilitychange", () => {
+      if (!document.hidden && isOnline()) void flushOutbox();
+    });
+  } catch {
+    /* ignore */
+  }
 }

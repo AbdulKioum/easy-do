@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import {
   BrowserRouter,
   Routes,
@@ -10,6 +10,13 @@ import { Capacitor } from "@capacitor/core";
 import { PushNotifications } from "@capacitor/push-notifications";
 import { LocalNotifications } from "@capacitor/local-notifications";
 import { supabase } from "./lib/supabase";
+import {
+  CACHE_KEYS,
+  enqueueOutbox,
+  getCachedList,
+  isOnline,
+  setCache,
+} from "./lib/offlineSync";
 
 import SideMenu from "./components/common/SideMenu";
 
@@ -165,6 +172,8 @@ function MainApp() {
   // NOTIFICATION STATES
   const [notifications, setNotifications] = useState<any[]>([]);
   const [showNotifPopup, setShowNotifPopup] = useState(false);
+  // Single Realtime channel instance — re-subscribed on 'online' only.
+  const notifChannelRef = useRef<any>(null);
 
   // REPLY STATES
   const [replyOpenId, setReplyOpenId] = useState<number | null>(null);
@@ -244,27 +253,48 @@ function MainApp() {
     let isMounted = true;
 
     // ডাটাবেসে টোকেন সেভ করার ফাংশন (একই ফোনে অন্য আইডিতে ঢুকলে আগের আইডি থেকে টোকেন সরিয়ে নতুন আইডিতে দেবে)
+    // Offline (or on a failed write) the token is queued in the outbox and
+    // sent when back online — it must never throw or block registration.
     const saveTokenToDatabase = async (tokenValue: string) => {
       if (!tokenValue || !user?.id) return;
-      localStorage.setItem("easydo_fcm_token", tokenValue);
+      try {
+        localStorage.setItem("easydo_fcm_token", tokenValue);
+      } catch {
+        /* storage unavailable — continue with the network/queue path */
+      }
 
-      // ১. একই ফোনে অন্য কোনো আইডিতে এই টোকেন থাকলে তা null করে দেওয়া (যাতে ভুল আইডিতে নোটিফিকেশন না যায়)
-      await supabase
-        .from("profiles")
-        .update({ fcm_token: null })
-        .eq("fcm_token", tokenValue)
-        .neq("id", user.id);
+      if (!isOnline()) {
+        await enqueueOutbox("fcm_token", { userId: user.id, token: tokenValue });
+        return;
+      }
 
-      // ২. বর্তমান লগইন করা আইডিতে টোকেন সেভ করা
-      const { error } = await supabase
-        .from("profiles")
-        .update({ fcm_token: tokenValue })
-        .eq("id", user.id);
+      try {
+        // ১. একই ফোনে অন্য কোনো আইডিতে এই টোকেন থাকলে তা null করে দেওয়া (যাতে ভুল আইডিতে নোটিফিকেশন না যায়)
+        await supabase
+          .from("profiles")
+          .update({ fcm_token: null })
+          .eq("fcm_token", tokenValue)
+          .neq("id", user.id);
 
-      if (error) {
-        console.error("Failed to save FCM token to DB:", error.message);
-      } else {
-        console.log("FCM Token saved successfully for user:", user.id);
+        // ২. বর্তমান লগইন করা আইডিতে টোকেন সেভ করা
+        const { error } = await supabase
+          .from("profiles")
+          .update({ fcm_token: tokenValue })
+          .eq("id", user.id);
+
+        if (error) {
+          console.error("Failed to save FCM token to DB:", error.message);
+          await enqueueOutbox("fcm_token", { userId: user.id, token: tokenValue });
+        } else {
+          console.log("FCM Token saved successfully for user:", user.id);
+        }
+      } catch (err) {
+        console.warn("FCM token save failed, queued for later:", err);
+        try {
+          await enqueueOutbox("fcm_token", { userId: user.id, token: tokenValue });
+        } catch {
+          /* queue write itself failed — token stays in localStorage */
+        }
       }
     };
 
@@ -357,64 +387,117 @@ function MainApp() {
     };
   }, [user?.id, role]);
 
-  // FETCH NOTIFICATIONS & REALTIME
+  // FETCH NOTIFICATIONS (CACHE-FIRST) & REALTIME (ONLINE ONLY)
   useEffect(() => {
     if (!user?.id) return;
 
-    async function fetchNotifications() {
-      const { data, error } = await supabase
-        .from("notifications")
-        .select("*")
-        .or(`user_id.eq.${user?.id},user_id.is.null`)
-        .order("created_at", { ascending: false });
+    let cancelled = false;
 
-      if (!error && data) {
-        setNotifications(data);
+    // Keep the cached list in step with the rendered list so an offline
+    // return visit still shows the latest notifications we have seen.
+    const persistNotifications = (next: any[]) => {
+      void setCache(CACHE_KEYS.NOTIFICATIONS, next);
+    };
+
+    async function fetchNotifications() {
+      try {
+        // 1. Render from cache first (instant + works offline).
+        const cached = await getCachedList<any>(CACHE_KEYS.NOTIFICATIONS);
+        if (!cancelled && cached.length) {
+          setNotifications(cached);
+        }
+        // 2. Refresh from the network only when online.
+        if (!isOnline()) return;
+        const { data, error } = await supabase
+          .from("notifications")
+          .select("*")
+          .or(`user_id.eq.${user?.id},user_id.is.null`)
+          .order("created_at", { ascending: false });
+
+        if (!cancelled && !error && data) {
+          setNotifications(data);
+          persistNotifications(data);
+        }
+      } catch (err) {
+        console.warn("Failed to load notifications:", err);
       }
     }
 
-    fetchNotifications();
+    function subscribeRealtime() {
+      // Realtime needs the network — never subscribe while offline, and
+      // never create a second channel while one is already alive.
+      if (!isOnline() || notifChannelRef.current) return;
 
-    const channel = supabase
-      .channel("public:notifications")
-      // 1. নতুন নোটিফিকেশন আসলে সাথে সাথে লিস্টে যোগ হবে এবং ফোনের ওপরে নোটিফিকেশন পুশ হবে
-      .on(
-        "postgres_changes",
-        { event: "INSERT", schema: "public", table: "notifications" },
-        (payload) => {
-          const newNotif = payload.new as any;
-          if (!newNotif.user_id || newNotif.user_id === user?.id) {
-            setNotifications((prev) => [newNotif, ...prev]);
-            triggerPhoneStatusNotification(newNotif);
+      const channel = supabase
+        .channel("public:notifications")
+        // 1. নতুন নোটিফিকেশন আসলে সাথে সাথে লিস্টে যোগ হবে এবং ফোনের ওপরে নোটিফিকেশন পুশ হবে
+        .on(
+          "postgres_changes",
+          { event: "INSERT", schema: "public", table: "notifications" },
+          (payload) => {
+            const newNotif = payload.new as any;
+            if (!newNotif.user_id || newNotif.user_id === user?.id) {
+              setNotifications((prev) => {
+                const next = [newNotif, ...prev];
+                persistNotifications(next);
+                return next;
+              });
+              triggerPhoneStatusNotification(newNotif);
+            }
           }
-        }
-      )
-      // 2. অ্যাডমিন নোটিফিকেশন এডিট করলে সাথে সাথে আপডেট হবে
-      .on(
-        "postgres_changes",
-        { event: "UPDATE", schema: "public", table: "notifications" },
-        (payload) => {
-          const updated = payload.new as any;
-          setNotifications((prev) =>
-            prev.map((n) => (n.id === updated.id ? { ...n, ...updated } : n))
-          );
-        }
-      )
-      // 3. অ্যাডমিন ডিলিট করলে সাথে সাথে মুছে যাবে
-      .on(
-        "postgres_changes",
-        { event: "DELETE", schema: "public", table: "notifications" },
-        (payload) => {
-          const deletedId = (payload.old as any)?.id;
-          if (deletedId) {
-            setNotifications((prev) => prev.filter((n) => n.id !== deletedId));
+        )
+        // 2. অ্যাডমিন নোটিফিকেশন এডিট করলে সাথে সাথে আপডেট হবে
+        .on(
+          "postgres_changes",
+          { event: "UPDATE", schema: "public", table: "notifications" },
+          (payload) => {
+            const updated = payload.new as any;
+            setNotifications((prev) => {
+              const next = prev.map((n) =>
+                n.id === updated.id ? { ...n, ...updated } : n
+              );
+              persistNotifications(next);
+              return next;
+            });
           }
-        }
-      )
-      .subscribe();
+        )
+        // 3. অ্যাডমিন ডিলিট করলে সাথে সাথে মুছে যাবে
+        .on(
+          "postgres_changes",
+          { event: "DELETE", schema: "public", table: "notifications" },
+          (payload) => {
+            const deletedId = (payload.old as any)?.id;
+            if (deletedId) {
+              setNotifications((prev) => {
+                const next = prev.filter((n) => n.id !== deletedId);
+                persistNotifications(next);
+                return next;
+              });
+            }
+          }
+        )
+        .subscribe();
+
+      notifChannelRef.current = channel;
+    }
+
+    fetchNotifications();
+    subscribeRealtime();
+
+    // When the network comes back, refresh the list and (re)subscribe.
+    const handleOnline = () => {
+      void fetchNotifications();
+      subscribeRealtime();
+    };
+    window.addEventListener("online", handleOnline);
 
     return () => {
-      supabase.removeChannel(channel);
+      cancelled = true;
+      window.removeEventListener("online", handleOnline);
+      if (notifChannelRef.current) {
+        supabase.removeChannel(notifChannelRef.current);
+        notifChannelRef.current = null;
+      }
     };
   }, [user?.id]);
 
@@ -422,15 +505,39 @@ function MainApp() {
 
   async function markAsRead(id: number) {
     const nowTime = new Date().toISOString();
-    const { error } = await supabase
-      .from("notifications")
-      .update({ is_read: true, read_at: nowTime })
-      .eq("id", id);
-
-    if (!error) {
-      setNotifications((prev) =>
-        prev.map((n) => (n.id === id ? { ...n, is_read: true, read_at: nowTime } : n))
+    // Update the local list (and its cache) immediately, whatever happens
+    // on the network — the read state must never look stuck.
+    setNotifications((prev) => {
+      const next = prev.map((n) =>
+        n.id === id ? { ...n, is_read: true, read_at: nowTime } : n
       );
+      void setCache(CACHE_KEYS.NOTIFICATIONS, next);
+      return next;
+    });
+
+    if (!isOnline()) {
+      try {
+        await enqueueOutbox("notification_read", { id });
+      } catch {
+        /* read is already shown locally; the queue retry is best-effort */
+      }
+      return;
+    }
+
+    try {
+      const { error } = await supabase
+        .from("notifications")
+        .update({ is_read: true, read_at: nowTime })
+        .eq("id", id);
+      if (error) {
+        await enqueueOutbox("notification_read", { id });
+      }
+    } catch {
+      try {
+        await enqueueOutbox("notification_read", { id });
+      } catch {
+        /* read is already shown locally */
+      }
     }
   }
 
@@ -441,11 +548,19 @@ function MainApp() {
 
     setReplySendingId(notif.id);
     try {
-      const { data: profileData } = await supabase
-        .from("profiles")
-        .select("full_name, name, username")
-        .eq("id", user.id)
-        .single();
+      // These two lookups are best-effort: offline they fail and the reply
+      // still goes out (queued) using the auth metadata name instead.
+      let profileData: any = null;
+      try {
+        const { data } = await supabase
+          .from("profiles")
+          .select("full_name, name, username")
+          .eq("id", user.id)
+          .single();
+        profileData = data;
+      } catch {
+        profileData = null;
+      }
 
       const authUserMeta = user.user_metadata;
       const realName =
@@ -459,10 +574,16 @@ function MainApp() {
 
       const cleanSenderName = String(realName).replace(/\s*\(.*?\)/g, "").trim();
 
-      const { data: admins } = await supabase
-        .from("profiles")
-        .select("id")
-        .in("role", ["admin", "super_admin"]);
+      let admins: any[] | null = null;
+      try {
+        const { data } = await supabase
+          .from("profiles")
+          .select("id")
+          .in("role", ["admin", "super_admin"]);
+        admins = data;
+      } catch {
+        admins = null;
+      }
 
       let targetAdminIds: string[] = [];
       if (admins && admins.length > 0) {
@@ -488,14 +609,37 @@ function MainApp() {
         is_reply: true,
         reply_to_id: notif.id,
       }));
-      const { error } = await supabase.from("notifications").insert(payloads);
-      if (error) throw error;
+
+      // Offline (or on a failed insert) the reply is queued in the outbox
+      // and sent when back online. The original notification is marked
+      // read locally either way.
+      let queued = false;
+      if (!isOnline()) {
+        queued = true;
+      } else {
+        try {
+          const { error } = await supabase.from("notifications").insert(payloads);
+          if (error) throw error;
+        } catch (err) {
+          queued = true;
+        }
+      }
+
+      if (queued) {
+        for (const payload of payloads) {
+          await enqueueOutbox("notification_reply", payload);
+        }
+      }
 
       if (!notif.is_read) {
         await markAsRead(notif.id);
       }
 
-      alert("Reply sent to Admin!");
+      alert(
+        queued
+          ? "Reply saved — will send when online."
+          : "Reply sent to Admin!"
+      );
       setReplyTextMap((prev) => ({ ...prev, [notif.id]: "" }));
       setReplyOpenId(null);
     } catch (err: any) {

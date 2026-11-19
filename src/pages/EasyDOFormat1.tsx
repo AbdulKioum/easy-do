@@ -1,6 +1,14 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { supabase } from "../lib/supabase";
 import { useAuth } from "../context/AuthContext";
+import {
+  CACHE_KEYS,
+  getCachedList,
+  getCachedProfile,
+  isOnline,
+  logPageVisit,
+  saveDOOfflineFirst,
+  syncAllMasterDataInBackground,
+} from "../lib/offlineSync";
 
 type FeedPrice = {
   id: number;
@@ -55,9 +63,10 @@ const COMPACT_CSS = `
   .edo-card { background: #fff; border: 1px solid #e2e8f0; border-radius: 12px; padding: 14px; margin-bottom: 12px; text-align: left; box-shadow: 0 2px 8px rgba(0,0,0,0.04); }
   .edo-filter-btn { padding: 6px 10px; border-radius: 20px; border: 1px solid #cbd5e1; font-size: 11px; font-weight: 600; cursor: pointer; display: flex; align-items: center; gap: 4px; flex-shrink: 0; transition: all 0.15s ease; }
   .edo-table { width: 100%; border-collapse: collapse; min-width: 540px; font-size: 12px; }
-  .edo-th { padding: 10px; text-align: left; font-weight: 700; color: #334155; white-space: nowrap; background: #f1f5f9; border-bottom: 1px solid #cbd5e1; }
-  .edo-td { padding: 10px 8px; vertical-align: middle; text-align: left; border-bottom: 1px solid #e2e8f0; }
-  .edo-sticky { position: sticky; left: 0; width: 42px; min-width: 42px; text-align: center; z-index: 2; box-shadow: 2px 0 5px rgba(0,0,0,0.05); }
+  .edo-th { padding: 10px; text-align: left; font-weight: 700; color: #334155; white-space: nowrap; background: #f1f5f9; border-bottom: 2px solid #94a3b8; }
+  .edo-td { padding: 10px 8px; vertical-align: middle; text-align: left; border-bottom: 1px solid #b6c2d2; }
+  .edo-table tbody tr:hover { background: #f8fafc; }
+  .edo-sticky { position: sticky; left: 0; width: 32px; min-width: 32px; text-align: center; z-index: 2; box-shadow: 2px 0 5px rgba(0,0,0,0.05); }
   .edo-bag-input { width: 65px; padding: 6px 4px; border: 1px solid #cbd5e1; border-radius: 6px; text-align: center; font-size: 13px; font-weight: 700; outline: none; background: #fff; color: #0f172a; }
   .edo-label { display: block; font-size: 11px; font-weight: 650; color: #334155; margin-bottom: 4px; text-align: left; }
   .edo-input { width: 100%; box-sizing: border-box; border: 1px solid #cbd5e1; border-radius: 6px; padding: 8px; font-size: 12px; background: #fff; color: #0f172a; }
@@ -75,6 +84,16 @@ const COMPACT_CSS = `
 function getSavedState() {
   try {
     const raw = localStorage.getItem(EASY_DO_STORAGE_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+}
+
+// Synchronous read of the mirrored profile (same key the IndexedDB cache uses).
+function readLocalProfile(): any | null {
+  try {
+    const raw = localStorage.getItem("easydo_cache_profile_v1");
     return raw ? JSON.parse(raw) : null;
   } catch {
     return null;
@@ -128,6 +147,8 @@ export default function EasyDOFormat1() {
   // If local cache exists, loading is false instantly
   const [loading, setLoading] = useState(() => priceList.length === 0);
   const [saving, setSaving] = useState(false);
+  // True when the last save was stored locally and is waiting to sync.
+  const [savePending, setSavePending] = useState(false);
 
   const [selectedCategory, setSelectedCategory] = useState<string>(initialSaved?.selectedCategory || "All");
   const [showSearchBox, setShowSearchBox] = useState<boolean>(false);
@@ -165,22 +186,12 @@ export default function EasyDOFormat1() {
 
   const isResettingRef = useRef(false);
 
-  // PAGE VISIT TRACKING
+  // PAGE VISIT TRACKING — queued offline via the outbox, never throws.
   const hasTrackedVisit = useRef(false);
   useEffect(() => {
-    async function trackPageVisit() {
-      if (!user?.id || hasTrackedVisit.current || !navigator.onLine) return;
-      hasTrackedVisit.current = true;
-      const today = new Date().toISOString().split("T")[0];
-      await supabase.from("page_visits").insert([
-        {
-          user_id: user.id,
-          page_name: "EasyDO Page 1",
-          visit_date: today,
-        },
-      ]);
-    }
-    trackPageVisit();
+    if (!user?.id || hasTrackedVisit.current) return;
+    hasTrackedVisit.current = true;
+    void logPageVisit("EasyDO Page 1", user.id, user.email ?? undefined);
   }, [user?.id]);
 
   useEffect(() => {
@@ -202,70 +213,87 @@ export default function EasyDOFormat1() {
     return () => window.removeEventListener("online", handleOnline);
   }, [user?.id]);
 
-  async function initPageData() {
-    if (priceList.length === 0) setLoading(true);
-    if (!navigator.onLine) {
-      setLoading(false);
-      return;
-    }
-
-    let assignedPriceList = userProfile?.assigned_price_list || "price_list_1";
-
+  // Read master data from the IndexedDB cache and paint it. Returns true
+  // when a price list was found, so the caller knows the table can render.
+  // Also mirrors the cached rows to localStorage, which seeds first paint
+  // synchronously on the next mount.
+  async function applyCachedMasterData(): Promise<boolean> {
     try {
-      if (user?.id) {
-        const { data } = await supabase
-          .from("profiles")
-          .select("*")
-          .eq("id", user.id)
-          .single();
-        if (data) {
-          setUserProfile(data);
-          localStorage.setItem("easydo_cache_profile_v1", JSON.stringify(data));
-          assignedPriceList = data.assigned_price_list || "price_list_1";
-          if (
-            data.assigned_from_locations &&
-            data.assigned_from_locations.length > 0 &&
-            !fromLocation
-          ) {
-            setFromLocation(data.assigned_from_locations[0]);
-          }
+      const cachedProfile = await getCachedProfile();
+      const profile = cachedProfile || readLocalProfile();
+      let assignedPriceList = "price_list_1";
+      if (profile) {
+        setUserProfile(profile);
+        try {
+          localStorage.setItem("easydo_cache_profile_v1", JSON.stringify(profile));
+        } catch {
+          /* ignore */
+        }
+        assignedPriceList = profile.assigned_price_list || "price_list_1";
+        if (profile.assigned_from_locations && profile.assigned_from_locations.length > 0) {
+          const firstLocation = profile.assigned_from_locations[0];
+          setFromLocation((prev) => prev || firstLocation);
         }
       }
 
-      const priceTable =
-        assignedPriceList === "price_list_2"
-          ? "feed_price_list_2"
-          : "feed_price_list";
-      const cacheKey = `${PRICE_CACHE_KEY_PREFIX}${priceTable}`;
+      const priceTable = assignedPriceList === "price_list_2" ? "feed_price_list_2" : "feed_price_list";
+      const priceKey = assignedPriceList === "price_list_2" ? CACHE_KEYS.PRICE_LIST_2 : CACHE_KEYS.PRICE_LIST_1;
 
-      const [priceRes, transRes, upazilaRes] = await Promise.all([
-        supabase
-          .from(priceTable)
-          .select("id, category, item_name, short_name, kg_per_bag, tp_per_bag, mrp_per_bag, status")
-          .eq("status", "Active")
-          .order("sort_order", { ascending: true }) as any,
-        supabase
-          .from("transportation")
-          .select("id, from_location, to_upazila, floating_cattle_rate_per_kg, sinking_broiler_layer_sonali_rate_per_kg, status")
-          .eq("status", "Active")
-          .order("to_upazila", { ascending: true }) as any,
-        supabase.from("upazilas").select("*").eq("status", "Active") as any,
+      const [cachedPrices, cachedTransport, cachedUpazilas] = await Promise.all([
+        getCachedList<FeedPrice>(priceKey),
+        getCachedList<Transport>(CACHE_KEYS.TRANSPORT),
+        getCachedList<Upazila>(CACHE_KEYS.UPAZILAS),
       ]);
 
-      if (!priceRes.error && priceRes.data) {
-        setPriceList(priceRes.data);
-        localStorage.setItem(cacheKey, JSON.stringify(priceRes.data));
+      if (cachedPrices.length > 0) {
+        setPriceList(cachedPrices);
+        try {
+          localStorage.setItem(`${PRICE_CACHE_KEY_PREFIX}${priceTable}`, JSON.stringify(cachedPrices));
+        } catch {
+          /* ignore */
+        }
       }
 
-      if (!transRes.error && transRes.data) {
-        setTransportList(transRes.data);
-        localStorage.setItem(TRANSPORT_CACHE_KEY, JSON.stringify(transRes.data));
+      if (cachedTransport.length > 0) {
+        setTransportList(cachedTransport);
+        try {
+          localStorage.setItem(TRANSPORT_CACHE_KEY, JSON.stringify(cachedTransport));
+        } catch {
+          /* ignore */
+        }
       }
 
-      if (!upazilaRes.error && upazilaRes.data) {
-        setUpazilaList(upazilaRes.data);
-        localStorage.setItem("easydo_cache_upazilas_v1", JSON.stringify(upazilaRes.data));
+      if (cachedUpazilas.length > 0) {
+        setUpazilaList(cachedUpazilas);
+        try {
+          localStorage.setItem("easydo_cache_upazilas_v1", JSON.stringify(cachedUpazilas));
+        } catch {
+          /* ignore */
+        }
       }
+
+      return cachedPrices.length > 0;
+    } catch (e) {
+      console.warn("Cache read failed:", e);
+      return false;
+    }
+  }
+
+  async function initPageData() {
+    if (priceList.length === 0) setLoading(true);
+    try {
+      // Cache first: paint instantly, no network await before first paint.
+      const hadCache = await applyCachedMasterData();
+      if (hadCache) setLoading(false);
+      if (!isOnline()) return;
+
+      // Background refresh, then re-apply the fresh cache.
+      try {
+        await syncAllMasterDataInBackground(user?.id, isSuperAdmin);
+      } catch (e) {
+        console.warn("Background sync skipped:", e);
+      }
+      await applyCachedMasterData();
     } catch (e) {
       console.warn("Using offline cached data:", e);
     } finally {
@@ -512,6 +540,7 @@ export default function EasyDOFormat1() {
     if (!validRows.length) return alert("Please select feed item and enter bags.");
 
     setSaving(true);
+    setSavePending(false);
     try {
       const validBanks = banks.filter((b) => b.bankName.trim() || b.branch.trim() || b.date.trim() || b.amount.trim());
       const bankDetails = validBanks
@@ -553,9 +582,20 @@ export default function EasyDOFormat1() {
         message_text: generatedMessage || buildDOMessage(),
       };
 
-      const { error } = await supabase.from("saved_dos").insert([payload]);
-      if (error) return alert(`Save DO failed: ${error.message}`);
-      alert("DO saved successfully.");
+      // Local-first: saved to the device cache immediately, synced to the
+      // server when online (queued in the outbox when offline).
+      const { record } = await saveDOOfflineFirst(payload);
+      if (record?.sync_error) {
+        alert(`Save DO failed: ${record.sync_error}`);
+        return;
+      }
+      const pending = Boolean(record?.is_offline_pending);
+      setSavePending(pending);
+      alert(
+        pending
+          ? "DO saved offline. It will sync when you are back online."
+          : "DO saved successfully."
+      );
       localStorage.removeItem(EASY_DO_STORAGE_KEY);
     } catch {
       alert("Something went wrong while saving DO.");
@@ -745,7 +785,7 @@ export default function EasyDOFormat1() {
                           {showHeader && (
                             <tr>
                               <td colSpan={6} style={{ padding: "2px 12px", background: "#e2e8f0", fontWeight: 800, color: "#1e293b", fontSize: 12 }}>
-                                {item.category}
+                                <span style={{ position: "sticky", left: 12, display: "inline-block", background: "#e2e8f0", padding: "0 8px", borderRadius: 6, zIndex: 3 }}>{item.category}</span>
                               </td>
                             </tr>
                           )}
@@ -1012,6 +1052,11 @@ export default function EasyDOFormat1() {
               <button onClick={saveDO} disabled={saving} style={{ width: "100%", marginTop: 12, border: "none", background: "#2563eb", color: "#fff", borderRadius: 8, padding: 12, fontSize: 13, fontWeight: 800, cursor: "pointer" }}>
                 {saving ? "Saving..." : "💾 Save this DO"}
               </button>
+              {savePending && (
+                <div style={{ marginTop: 8, textAlign: "center", fontSize: 11, fontWeight: 700, color: "#b45309" }}>
+                  ⏳ Pending — saved offline, will sync when you are back online.
+                </div>
+              )}
             </div>
           )}
 

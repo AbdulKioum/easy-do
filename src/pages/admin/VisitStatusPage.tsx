@@ -1,5 +1,6 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "../../lib/supabase";
+import { isOnline } from "../../lib/offlineSync";
 import { useAuth } from "../../context/AuthContext";
 
 type VisitRecord = {
@@ -299,6 +300,8 @@ const DEFAULT_PAGES = [
   "Transportation Download PDF",
 ];
 
+const PAGE_SIZE = 500;
+
 export default function VisitStatusPage() {
   const { role } = useAuth();
   const isSuperAdmin = role === "super_admin";
@@ -306,6 +309,12 @@ export default function VisitStatusPage() {
   const [loading, setLoading] = useState(true);
   const [visits, setVisits] = useState<VisitRecord[]>([]);
   const [profiles, setProfiles] = useState<Record<string, UserProfile>>({});
+  const [isOffline, setIsOffline] = useState(() => !isOnline());
+  const [hasMore, setHasMore] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
+  // Rows fetched via pagination (Realtime inserts don't count — they are
+  // prepended separately, so the range offset must ignore them).
+  const loadedCountRef = useRef(0);
 
   const todayStr = new Date().toISOString().split("T")[0];
   const [selectedDate, setSelectedDate] = useState(todayStr);
@@ -318,8 +327,26 @@ export default function VisitStatusPage() {
     times: string[];
   } | null>(null);
 
+  // Track connectivity so the offline empty-state appears/disappears live.
+  useEffect(() => {
+    const goOffline = () => setIsOffline(true);
+    const goOnline = () => setIsOffline(false);
+    window.addEventListener("offline", goOffline);
+    window.addEventListener("online", goOnline);
+    return () => {
+      window.removeEventListener("offline", goOffline);
+      window.removeEventListener("online", goOnline);
+    };
+  }, []);
+
   useEffect(() => {
     if (!isSuperAdmin) {
+      setLoading(false);
+      return;
+    }
+
+    // Online-only page: no data load and no Realtime subscription offline.
+    if (isOffline) {
       setLoading(false);
       return;
     }
@@ -345,18 +372,24 @@ export default function VisitStatusPage() {
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [isSuperAdmin]);
+  }, [isSuperAdmin, isOffline]);
 
   async function loadData() {
     setLoading(true);
     try {
       const [visitRes, profileRes] = await Promise.all([
-        supabase.from("page_visits").select("*").order("created_at", { ascending: false }),
+        supabase
+          .from("page_visits")
+          .select("*")
+          .order("created_at", { ascending: false })
+          .range(0, PAGE_SIZE - 1),
         supabase.from("profiles").select("*"),
       ]);
 
       if (!visitRes.error && visitRes.data) {
         setVisits(visitRes.data);
+        loadedCountRef.current = visitRes.data.length;
+        setHasMore(visitRes.data.length === PAGE_SIZE);
       }
 
       if (!profileRes.error && profileRes.data) {
@@ -370,6 +403,36 @@ export default function VisitStatusPage() {
       console.error("Error loading visit status:", err.message);
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function loadMore() {
+    if (loadingMore || !hasMore) return;
+    setLoadingMore(true);
+    try {
+      const offset = loadedCountRef.current;
+      const { data, error } = await supabase
+        .from("page_visits")
+        .select("*")
+        .order("created_at", { ascending: false })
+        .range(offset, offset + PAGE_SIZE - 1);
+
+      if (!error && data) {
+        loadedCountRef.current = offset + data.length;
+        setHasMore(data.length === PAGE_SIZE);
+        setVisits((prev) => {
+          // Drop any rows Realtime already delivered, keep newest first.
+          const seen = new Set(prev.map((v) => v.id));
+          const fresh = (data as VisitRecord[]).filter((v) => !seen.has(v.id));
+          return [...prev, ...fresh].sort(
+            (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+          );
+        });
+      }
+    } catch (err: any) {
+      console.error("Error loading more visits:", err.message);
+    } finally {
+      setLoadingMore(false);
     }
   }
 
@@ -588,7 +651,17 @@ export default function VisitStatusPage() {
         </div>
 
         {/* MAIN TRACKING TABLE */}
-        {loading ? (
+        {isOffline ? (
+          <div
+            className="vsp-card"
+            style={{ padding: 30, textAlign: "center", color: "#64748b", fontSize: 12.5 }}
+          >
+            <div style={{ fontSize: 15, fontWeight: 700, color: "#0f172a", marginBottom: 4 }}>
+              You are offline
+            </div>
+            <div>Live visit data needs internet.</div>
+          </div>
+        ) : loading ? (
           <div
             className="vsp-card"
             style={{ padding: 30, textAlign: "center", color: "#64748b", fontSize: 12.5 }}
@@ -695,6 +768,19 @@ export default function VisitStatusPage() {
                 No activity found for this date.
               </div>
             )}
+          </div>
+        )}
+
+        {!isOffline && !loading && hasMore && (
+          <div style={{ textAlign: "center", marginTop: 8 }}>
+            <button
+              type="button"
+              className="vsp-day-btn"
+              onClick={loadMore}
+              disabled={loadingMore}
+            >
+              {loadingMore ? "Loading..." : "Load more"}
+            </button>
           </div>
         )}
       </div>

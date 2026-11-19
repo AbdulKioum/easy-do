@@ -1,0 +1,14 @@
+EASY DO - OFFLINE UPDATE v1.2 (19 files)
+==========================================
+1. Tomar computer e project folder e ei zip er file gula bosao (folder structure same rakhte hobe).
+   google-services.json (android/app/) jeno na more - oita zip e nai, thakbei.
+2. Terminal e project folder e:
+   npm install
+   npm run build
+   npx cap sync android
+3. Android Studio te APK build koro - EKI COMPUTER e, jekhane age build korsila
+   (debug keystore - %USERPROFILE%\.android\debug.keystore).
+4. Notun APK ta Supabase Storage er APK/Easy-DO.apk jaygay replace koro (ager file er upor).
+   Sidebar er link eki thakbe.
+5. Test: online e login koro ekbar, tarpor airplane mode e app bondho kore abar kholo -
+   price dekhte hobe, DO save korte hobe (Pending dekhabe). Net on korle sync hobe.

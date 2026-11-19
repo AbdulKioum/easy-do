@@ -2,6 +2,13 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import * as XLSX from "xlsx-js-style";
 import "jspdf-autotable";
 import { supabase } from "../lib/supabase";
+import {
+  CACHE_KEYS,
+  getCachedList,
+  isOnline,
+  logPageVisit,
+  setCache,
+} from "../lib/offlineSync";
 import { useAuth } from "../context/AuthContext";
 import { universalFileDownload } from "../lib/downloadHelper";
 
@@ -27,6 +34,9 @@ type CategoryConfig = {
 };
 
 const TABLE_NAME = "feed_price_list_2";
+
+const OFFLINE_MSG =
+  "You are offline. Changes will not be saved until you are back online.";
 
 const categories = [
   "Broiler",
@@ -137,14 +147,8 @@ export default function PriceListPage2() {
   useEffect(() => {
     async function trackPageVisit() {
       if (!user?.id) return;
-      const today = new Date().toISOString().split("T")[0];
-      await supabase.from("page_visits").insert([
-        {
-          user_id: user.id,
-          page_name: "Pricelist Page 2",
-          visit_date: today,
-        },
-      ]);
+      // Queued offline via the outbox, flushed when back online.
+      await logPageVisit("Pricelist Page 2", user.id, user.email);
     }
     if (canView) {
       trackPageVisit();
@@ -160,21 +164,48 @@ export default function PriceListPage2() {
   }, [canView]);
 
   async function loadPriceList() {
-    setLoading(true);
-
-    const { data, error } = await supabase
-      .from(TABLE_NAME)
-      .select("*")
-      .order("sort_order", { ascending: true });
-
-    if (error) {
-      console.error("Price list 2 load error:", error);
-      alert(`Price list 2 load failed: ${error.message}`);
-    } else {
-      setItems((data || []) as PriceItem[]);
+    // Cache-first: paint the cached list immediately, then refresh in
+    // the background when online. Never throws an unhandled rejection.
+    let hadCache = false;
+    try {
+      const cached = await getCachedList<PriceItem>(CACHE_KEYS.PRICE_LIST_2);
+      if (cached.length) {
+        hadCache = true;
+        setItems(cached);
+        setLoading(false);
+      }
+    } catch (err) {
+      console.error("Price list 2 cache read error:", err);
     }
 
-    setLoading(false);
+    if (!isOnline()) {
+      setLoading(false);
+      return;
+    }
+
+    try {
+      const { data, error } = await supabase
+        .from(TABLE_NAME)
+        .select("*")
+        .order("sort_order", { ascending: true });
+
+      if (error) {
+        console.error("Price list 2 load error:", error);
+        if (!hadCache) {
+          alert(`Price list 2 load failed: ${error.message}`);
+        }
+      } else {
+        setItems((data || []) as PriceItem[]);
+        await setCache(CACHE_KEYS.PRICE_LIST_2, data || []);
+      }
+    } catch (err: any) {
+      console.error("Price list 2 load error:", err);
+      if (!hadCache) {
+        alert(`Price list 2 load failed: ${err?.message || "Network error"}`);
+      }
+    } finally {
+      setLoading(false);
+    }
   }
 
   function openAdd() {
@@ -226,6 +257,11 @@ export default function PriceListPage2() {
       alert("KG/Bag must be greater than 0.");
       return;
     }
+    // Master-data edits are online-only (not queued).
+    if (!isOnline()) {
+      alert(OFFLINE_MSG);
+      return;
+    }
 
     const payload = {
       category: form.category,
@@ -238,27 +274,33 @@ export default function PriceListPage2() {
       status: form.status,
     };
 
-    if (editingId) {
-      const { error } = await supabase
-        .from(TABLE_NAME)
-        .update(payload)
-        .eq("id", editingId);
+    try {
+      if (editingId) {
+        const { error } = await supabase
+          .from(TABLE_NAME)
+          .update(payload)
+          .eq("id", editingId);
 
-      if (error) {
-        console.error("Price update error:", error);
-        alert(`Update failed: ${error.message}`);
-        return;
-      }
-    } else {
-      const { error } = await supabase
-        .from(TABLE_NAME)
-        .upsert([payload], { onConflict: "category,item_name" });
+        if (error) {
+          console.error("Price update error:", error);
+          alert(`Update failed: ${error.message}`);
+          return;
+        }
+      } else {
+        const { error } = await supabase
+          .from(TABLE_NAME)
+          .upsert([payload], { onConflict: "category,item_name" });
 
-      if (error) {
-        console.error("Price insert error:", error);
-        alert(`Add failed: ${error.message}`);
-        return;
+        if (error) {
+          console.error("Price insert error:", error);
+          alert(`Add failed: ${error.message}`);
+          return;
+        }
       }
+    } catch (err: any) {
+      console.error("Price save error:", err);
+      alert(`Save failed: ${err?.message || "Network error"}`);
+      return;
     }
 
     closeForm();
@@ -274,11 +316,23 @@ export default function PriceListPage2() {
 
     if (!window.confirm("Delete this price item?")) return;
 
-    const { error } = await supabase.from(TABLE_NAME).delete().eq("id", id);
+    // Master-data edits are online-only (not queued).
+    if (!isOnline()) {
+      alert(OFFLINE_MSG);
+      return;
+    }
 
-    if (error) {
-      console.error("Price delete error:", error);
-      alert(`Delete failed: ${error.message}`);
+    try {
+      const { error } = await supabase.from(TABLE_NAME).delete().eq("id", id);
+
+      if (error) {
+        console.error("Price delete error:", error);
+        alert(`Delete failed: ${error.message}`);
+        return;
+      }
+    } catch (err: any) {
+      console.error("Price delete error:", err);
+      alert(`Delete failed: ${err?.message || "Network error"}`);
       return;
     }
 
@@ -294,6 +348,13 @@ export default function PriceListPage2() {
 
     const file = event.target.files?.[0];
     if (!file) return;
+
+    // Master-data edits are online-only (not queued).
+    if (!isOnline()) {
+      alert(OFFLINE_MSG);
+      event.target.value = "";
+      return;
+    }
 
     const reader = new FileReader();
     reader.onload = async (e) => {
@@ -359,14 +420,8 @@ export default function PriceListPage2() {
     }
 
     if (user?.id) {
-      const today = new Date().toISOString().split("T")[0];
-      await supabase.from("page_visits").insert([
-        {
-          user_id: user.id,
-          page_name: "Pricelist Download Excel",
-          visit_date: today,
-        },
-      ]);
+      // Queued offline via the outbox, flushed when back online.
+      await logPageVisit("Pricelist Download Excel", user.id, user.email);
     }
 
     const exportData = filteredItems.map((item) => ({
@@ -443,14 +498,8 @@ export default function PriceListPage2() {
     }
 
     if (user?.id) {
-      const today = new Date().toISOString().split("T")[0];
-      await supabase.from("page_visits").insert([
-        {
-          user_id: user.id,
-          page_name: "Pricelist Download PDF",
-          visit_date: today,
-        },
-      ]);
+      // Queued offline via the outbox, flushed when back online.
+      await logPageVisit("Pricelist Download PDF", user.id, user.email);
     }
 
     const html2pdf: any = (await import("html2pdf.js")).default;
@@ -612,6 +661,11 @@ export default function PriceListPage2() {
   };
 
   const executeBulkUpdate = async () => {
+    // Master-data edits are online-only (not queued).
+    if (!isOnline()) {
+      alert(OFFLINE_MSG);
+      return;
+    }
     setIsUpdating(true);
     try {
       const updates = previewItems.map((item) =>

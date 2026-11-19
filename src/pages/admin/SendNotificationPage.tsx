@@ -1,5 +1,11 @@
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "../../lib/supabase";
+import {
+  CACHE_KEYS,
+  getCachedList,
+  getCachedProfile,
+  isOnline,
+} from "../../lib/offlineSync";
 import { useAuth } from "../../context/AuthContext";
 import { renderMessageWithLinks } from "../../App";
 
@@ -305,6 +311,18 @@ const MINIMAL_NOTIF_CSS = `
   }
 `;
 
+const OFFLINE_MSG =
+  "You are offline. Changes will not be saved until you are back online.";
+
+// Cached upazila rows are full records ({ district, upazila_name }); the
+// network select returns { district, upazila, name, district_name }.
+function mapUpazilaRow(r: any): { district: string; upazila: string } {
+  return {
+    district: r.district || r.district_name || "",
+    upazila: r.upazila_name || r.upazila || r.name || "",
+  };
+}
+
 function parseArrayField(val: any): string[] {
   if (!val) return [];
   if (Array.isArray(val)) return val.map(String);
@@ -354,6 +372,9 @@ export default function SendNotificationPage() {
     if (!isAuthorized) return;
     loadInitialData();
 
+    // Live updates only when online.
+    if (!isOnline()) return;
+
     const channel = supabase
       .channel("admin:notifications:live")
       .on(
@@ -375,35 +396,64 @@ export default function SendNotificationPage() {
   }
 
   async function fetchUsersAndLocations() {
-    const [profRes, upzRes] = await Promise.all([
-      supabase.from("profiles").select("*"),
-      supabase.from("upazilas").select("district, upazila, name, district_name"),
-    ]);
-
-    if (!profRes.error && profRes.data) {
-      setUsers(profRes.data as ProfileRow[]);
+    // Cache-first for the form lookups: the cached own profile seeds the
+    // sender label and the cached upazila list renders instantly offline.
+    // The full user list still comes from the network when online
+    // (sending is online-only). The partial upazila select is never
+    // written back to CACHE_KEYS.UPAZILAS — other pages expect full rows.
+    try {
+      const cachedProfile = await getCachedProfile();
+      if (cachedProfile) {
+        setUsers([cachedProfile as ProfileRow]);
+      }
+      const cachedUpazilas = await getCachedList<any>(CACHE_KEYS.UPAZILAS);
+      if (cachedUpazilas.length) {
+        setUpazilaRows(
+          cachedUpazilas.map(mapUpazilaRow).filter((r) => r.district || r.upazila)
+        );
+      }
+    } catch (err) {
+      console.error("Cached lookups read error:", err);
     }
 
-    if (!upzRes.error && upzRes.data) {
-      const mapped = upzRes.data
-        .map((r: any) => ({
-          district: r.district || r.district_name || "",
-          upazila: r.upazila || r.name || "",
-        }))
-        .filter((r: any) => r.district || r.upazila);
-      setUpazilaRows(mapped);
+    if (!isOnline()) return;
+
+    try {
+      const [profRes, upzRes] = await Promise.all([
+        supabase.from("profiles").select("*"),
+        supabase.from("upazilas").select("district, upazila, name, district_name"),
+      ]);
+
+      if (!profRes.error && profRes.data) {
+        setUsers(profRes.data as ProfileRow[]);
+      }
+
+      if (!upzRes.error && upzRes.data) {
+        const mapped = upzRes.data
+          .map(mapUpazilaRow)
+          .filter((r) => r.district || r.upazila);
+        setUpazilaRows(mapped);
+      }
+    } catch (err) {
+      console.error("Users/locations load error:", err);
     }
   }
 
   async function fetchLogs() {
-    const { data, error } = await supabase
-      .from("notifications")
-      .select("*")
-      .order("created_at", { ascending: false })
-      .limit(300);
+    // Notification history is online-only; offline the list stays as-is.
+    if (!isOnline()) return;
+    try {
+      const { data, error } = await supabase
+        .from("notifications")
+        .select("*")
+        .order("created_at", { ascending: false })
+        .limit(300);
 
-    if (!error && data) {
-      setLogs(data as NotificationRow[]);
+      if (!error && data) {
+        setLogs(data as NotificationRow[]);
+      }
+    } catch (err) {
+      console.error("Notification logs load error:", err);
     }
   }
 
@@ -503,6 +553,12 @@ export default function SendNotificationPage() {
       return alert("Select at least one user.");
     }
 
+    // Send is online-only (not queued).
+    if (!isOnline()) {
+      alert(OFFLINE_MSG);
+      return;
+    }
+
     setSending(true);
     try {
       let targetUserIds: string[] = [];
@@ -546,25 +602,43 @@ export default function SendNotificationPage() {
 
   async function handleSaveEdit(id: number) {
     if (!editMessage.trim()) return;
-    const { error } = await supabase
-      .from("notifications")
-      .update({
-        title: editTitle.trim() || "Notice",
-        message: editMessage.trim(),
-      })
-      .eq("id", id);
+    // Edit is online-only (not queued).
+    if (!isOnline()) {
+      alert(OFFLINE_MSG);
+      return;
+    }
+    try {
+      const { error } = await supabase
+        .from("notifications")
+        .update({
+          title: editTitle.trim() || "Notice",
+          message: editMessage.trim(),
+        })
+        .eq("id", id);
 
-    if (!error) {
-      setEditingId(null);
-      fetchLogs();
+      if (!error) {
+        setEditingId(null);
+        fetchLogs();
+      }
+    } catch (err) {
+      console.error("Notification edit error:", err);
     }
   }
 
   async function handleDelete(id: number) {
     if (!window.confirm("Delete this notification?")) return;
-    const { error } = await supabase.from("notifications").delete().eq("id", id);
-    if (!error) {
-      setLogs((prev) => prev.filter((l) => l.id !== id));
+    // Delete is online-only (not queued).
+    if (!isOnline()) {
+      alert(OFFLINE_MSG);
+      return;
+    }
+    try {
+      const { error } = await supabase.from("notifications").delete().eq("id", id);
+      if (!error) {
+        setLogs((prev) => prev.filter((l) => l.id !== id));
+      }
+    } catch (err) {
+      console.error("Notification delete error:", err);
     }
   }
 
@@ -574,29 +648,39 @@ export default function SendNotificationPage() {
     const targetUserId = replyRow.sender_id || replyRow.user_id;
     if (!targetUserId) return alert("User ID not found.");
 
-    const { error } = await supabase.from("notifications").insert([
-      {
-        user_id: targetUserId,
-        sender_id: user?.id || null,
-        sender_name: currentSenderLabel,
-        title: `Admin Reply`,
-        message: text,
-        is_read: false,
-        is_reply: true,
-        reply_to_id: replyRow.id,
-      },
-    ] as any);
+    // Reply is online-only (not queued).
+    if (!isOnline()) {
+      alert(OFFLINE_MSG);
+      return;
+    }
 
-    if (!error) {
-      if (!replyRow.is_read) {
-        await supabase
-          .from("notifications")
-          .update({ is_read: true, read_at: new Date().toISOString() })
-          .eq("id", replyRow.id);
+    try {
+      const { error } = await supabase.from("notifications").insert([
+        {
+          user_id: targetUserId,
+          sender_id: user?.id || null,
+          sender_name: currentSenderLabel,
+          title: `Admin Reply`,
+          message: text,
+          is_read: false,
+          is_reply: true,
+          reply_to_id: replyRow.id,
+        },
+      ] as any);
+
+      if (!error) {
+        if (!replyRow.is_read) {
+          await supabase
+            .from("notifications")
+            .update({ is_read: true, read_at: new Date().toISOString() })
+            .eq("id", replyRow.id);
+        }
+        setAdminReplyText("");
+        setReplyingToId(null);
+        fetchLogs();
       }
-      setAdminReplyText("");
-      setReplyingToId(null);
-      fetchLogs();
+    } catch (err) {
+      console.error("Admin reply error:", err);
     }
   }
 

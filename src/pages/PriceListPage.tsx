@@ -2,6 +2,14 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import * as XLSX from "xlsx-js-style";
 import "jspdf-autotable";
 import { supabase } from "../lib/supabase";
+import {
+  CACHE_KEYS,
+  getCachedList,
+  getCachedProfile,
+  isOnline,
+  logPageVisit,
+  setCache,
+} from "../lib/offlineSync";
 import { useAuth } from "../context/AuthContext";
 import PriceListPage2 from "./PriceListPage2";
 import { universalFileDownload } from "../lib/downloadHelper";
@@ -53,6 +61,9 @@ const EXCEL_CATEGORY_COLORS: Record<string, string> = {
   "Fish Floating": "E0F2FE",
   "Fish Sinking": "F3F4F6",
 };
+
+const OFFLINE_MSG =
+  "You are offline. Changes will not be saved until you are back online.";
 
 const emptyForm: PriceItem = {
   category: "Broiler",
@@ -145,14 +156,36 @@ export default function PriceListPage() {
         setCheckingProfile(false);
         return;
       }
-      const { data } = await supabase
-        .from("profiles")
-        .select("assigned_price_list")
-        .eq("id", user.id)
-        .single();
+      try {
+        // Cached profile first so the assignment is known instantly offline.
+        const cached = await getCachedProfile();
+        if (cached?.assigned_price_list) {
+          setAssignedList(cached.assigned_price_list);
+          setCheckingProfile(false);
+        }
+        if (!isOnline()) {
+          if (!cached?.assigned_price_list) {
+            setAssignedList("price_list_1");
+            setCheckingProfile(false);
+          }
+          return;
+        }
+        const { data } = await supabase
+          .from("profiles")
+          .select("assigned_price_list")
+          .eq("id", user.id)
+          .single();
 
-      setAssignedList(data?.assigned_price_list || "price_list_1");
-      setCheckingProfile(false);
+        if (data?.assigned_price_list) {
+          setAssignedList(data.assigned_price_list);
+          await setCache(CACHE_KEYS.PROFILE, { ...cached, ...data });
+        }
+      } catch (err) {
+        console.error("Assigned price list check failed:", err);
+        setAssignedList((prev) => prev ?? "price_list_1");
+      } finally {
+        setCheckingProfile(false);
+      }
     }
     checkAssignedPriceList();
   }, [user?.id, canManage]);
@@ -161,14 +194,8 @@ export default function PriceListPage() {
     async function trackPageVisit() {
       if (!user?.id || checkingProfile) return;
       if (!canManage && assignedList === "price_list_2") return;
-      const today = new Date().toISOString().split("T")[0];
-      await supabase.from("page_visits").insert([
-        {
-          user_id: user.id,
-          page_name: "Pricelist Page",
-          visit_date: today,
-        },
-      ]);
+      // Queued offline via the outbox, flushed when back online.
+      await logPageVisit("Pricelist Page", user.id, user.email);
     }
     if (canView && !checkingProfile) {
       trackPageVisit();
@@ -187,21 +214,48 @@ export default function PriceListPage() {
   }, [canView, checkingProfile, canManage, assignedList]);
 
   async function loadPriceList() {
-    setLoading(true);
-
-    const { data, error } = await supabase
-      .from("feed_price_list")
-      .select("*")
-      .order("sort_order", { ascending: true });
-
-    if (error) {
-      console.error("Price list load error:", error);
-      alert(`Price list load failed: ${error.message}`);
-    } else {
-      setItems((data || []) as PriceItem[]);
+    // Cache-first: paint the cached list immediately, then refresh in
+    // the background when online. Never throws an unhandled rejection.
+    let hadCache = false;
+    try {
+      const cached = await getCachedList<PriceItem>(CACHE_KEYS.PRICE_LIST_1);
+      if (cached.length) {
+        hadCache = true;
+        setItems(cached);
+        setLoading(false);
+      }
+    } catch (err) {
+      console.error("Price list cache read error:", err);
     }
 
-    setLoading(false);
+    if (!isOnline()) {
+      setLoading(false);
+      return;
+    }
+
+    try {
+      const { data, error } = await supabase
+        .from("feed_price_list")
+        .select("*")
+        .order("sort_order", { ascending: true });
+
+      if (error) {
+        console.error("Price list load error:", error);
+        if (!hadCache) {
+          alert(`Price list load failed: ${error.message}`);
+        }
+      } else {
+        setItems((data || []) as PriceItem[]);
+        await setCache(CACHE_KEYS.PRICE_LIST_1, data || []);
+      }
+    } catch (err: any) {
+      console.error("Price list load error:", err);
+      if (!hadCache) {
+        alert(`Price list load failed: ${err?.message || "Network error"}`);
+      }
+    } finally {
+      setLoading(false);
+    }
   }
 
   function openAdd() {
@@ -253,6 +307,11 @@ export default function PriceListPage() {
       alert("KG/Bag must be greater than 0.");
       return;
     }
+    // Master-data edits are online-only (not queued).
+    if (!isOnline()) {
+      alert(OFFLINE_MSG);
+      return;
+    }
 
     const payload = {
       category: form.category,
@@ -265,27 +324,33 @@ export default function PriceListPage() {
       status: form.status,
     };
 
-    if (editingId) {
-      const { error } = await supabase
-        .from("feed_price_list")
-        .update(payload)
-        .eq("id", editingId);
+    try {
+      if (editingId) {
+        const { error } = await supabase
+          .from("feed_price_list")
+          .update(payload)
+          .eq("id", editingId);
 
-      if (error) {
-        console.error("Price update error:", error);
-        alert(`Update failed: ${error.message}`);
-        return;
-      }
-    } else {
-      const { error } = await supabase
-        .from("feed_price_list")
-        .upsert([payload], { onConflict: "category,item_name" });
+        if (error) {
+          console.error("Price update error:", error);
+          alert(`Update failed: ${error.message}`);
+          return;
+        }
+      } else {
+        const { error } = await supabase
+          .from("feed_price_list")
+          .upsert([payload], { onConflict: "category,item_name" });
 
-      if (error) {
-        console.error("Price insert error:", error);
-        alert(`Add failed: ${error.message}`);
-        return;
+        if (error) {
+          console.error("Price insert error:", error);
+          alert(`Add failed: ${error.message}`);
+          return;
+        }
       }
+    } catch (err: any) {
+      console.error("Price save error:", err);
+      alert(`Save failed: ${err?.message || "Network error"}`);
+      return;
     }
 
     closeForm();
@@ -301,14 +366,26 @@ export default function PriceListPage() {
 
     if (!window.confirm("Delete this price item?")) return;
 
-    const { error } = await supabase
-      .from("feed_price_list")
-      .delete()
-      .eq("id", id);
+    // Master-data edits are online-only (not queued).
+    if (!isOnline()) {
+      alert(OFFLINE_MSG);
+      return;
+    }
 
-    if (error) {
-      console.error("Price delete error:", error);
-      alert(`Delete failed: ${error.message}`);
+    try {
+      const { error } = await supabase
+        .from("feed_price_list")
+        .delete()
+        .eq("id", id);
+
+      if (error) {
+        console.error("Price delete error:", error);
+        alert(`Delete failed: ${error.message}`);
+        return;
+      }
+    } catch (err: any) {
+      console.error("Price delete error:", err);
+      alert(`Delete failed: ${err?.message || "Network error"}`);
       return;
     }
 
@@ -324,6 +401,13 @@ export default function PriceListPage() {
 
     const file = event.target.files?.[0];
     if (!file) return;
+
+    // Master-data edits are online-only (not queued).
+    if (!isOnline()) {
+      alert(OFFLINE_MSG);
+      event.target.value = "";
+      return;
+    }
 
     const reader = new FileReader();
     reader.onload = async (e) => {
@@ -391,14 +475,8 @@ async function exportExcel() {
     }
 
     if (user?.id) {
-      const today = new Date().toISOString().split("T")[0];
-      await supabase.from("page_visits").insert([
-        {
-          user_id: user.id,
-          page_name: "Pricelist Download Excel",
-          visit_date: today,
-        },
-      ]);
+      // Queued offline via the outbox, flushed when back online.
+      await logPageVisit("Pricelist Download Excel", user.id, user.email);
     }
 
     const exportData = filteredItems.map((item) => ({
@@ -475,14 +553,8 @@ async function exportExcel() {
     }
 
     if (user?.id) {
-      const today = new Date().toISOString().split("T")[0];
-      await supabase.from("page_visits").insert([
-        {
-          user_id: user.id,
-          page_name: "Pricelist Download PDF",
-          visit_date: today,
-        },
-      ]);
+      // Queued offline via the outbox, flushed when back online.
+      await logPageVisit("Pricelist Download PDF", user.id, user.email);
     }
 
     const html2pdf: any = (await import("html2pdf.js")).default;
@@ -644,6 +716,11 @@ async function exportExcel() {
   };
 
   const executeBulkUpdate = async () => {
+    // Master-data edits are online-only (not queued).
+    if (!isOnline()) {
+      alert(OFFLINE_MSG);
+      return;
+    }
     setIsUpdating(true);
     try {
       const updates = previewItems.map((item) =>

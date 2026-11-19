@@ -13,6 +13,14 @@ import type {
 
 import { supabase } from "../lib/supabase";
 
+import {
+  CACHE_KEYS,
+  cacheProfile,
+  getCachedProfile,
+  removeCache,
+  setupOfflineListeners,
+} from "../lib/offlineSync";
+
 
 export type UserRole =
   | "user"
@@ -90,32 +98,49 @@ export function AuthProvider({
       return;
     }
 
-    const {
-      data,
-      error,
-    } = await supabase
-      .from("profiles")
-      .select("*")
-      .eq("id", authUser.id)
-      .maybeSingle();
+    try {
+      const {
+        data,
+        error,
+      } = await supabase
+        .from("profiles")
+        .select("*")
+        .eq("id", authUser.id)
+        .maybeSingle();
 
 
-    if (error) {
+      if (error) {
+        throw error;
+      }
 
+      // Cache the profile so a logged-in user can open the app offline.
+      if (data) {
+        await cacheProfile(data);
+      }
+
+      setProfile(
+        data as Profile | null
+      );
+    } catch (err) {
       console.error(
         "Profile load error:",
-        error
+        err
       );
 
+      // Offline fallback: a session exists but the network failed — use the
+      // last cached profile instead of locking the user out.
+      try {
+        const cached = await getCachedProfile();
+        if (cached && cached.id === authUser.id) {
+          setProfile(cached as Profile);
+          return;
+        }
+      } catch {
+        /* ignore */
+      }
+
       setProfile(null);
-
-      return;
     }
-
-
-    setProfile(
-      data as Profile | null
-    );
   }
 
 
@@ -127,10 +152,21 @@ export function AuthProvider({
 
     let mounted = true;
 
+    // Offline flush triggers (online event + app foreground), once only.
+    setupOfflineListeners();
 
     async function initializeAuth() {
 
       try {
+
+        // Show the cached profile immediately so the app paints at once;
+        // the network profile load below refreshes it in the background.
+        try {
+          const cached = await getCachedProfile();
+          if (mounted && cached) setProfile(cached as Profile);
+        } catch {
+          /* ignore */
+        }
 
         const {
           data: {
@@ -282,18 +318,30 @@ export function AuthProvider({
 
   async function signOut() {
 
-    const {
-      error,
-    } =
-      await supabase.auth.signOut();
+    try {
+      const {
+        error,
+      } =
+        await supabase.auth.signOut();
 
 
-    if (error) {
+      if (error) {
 
-      console.error(
-        "Logout error:",
-        error
-      );
+        console.error(
+          "Logout error:",
+          error
+        );
+      }
+    } catch (err) {
+      // Offline sign-out: the server call fails, but the local session
+      // must still be cleared so the user is not stuck logged in.
+      console.error("Logout error:", err);
+    }
+
+    try {
+      await removeCache(CACHE_KEYS.PROFILE);
+    } catch {
+      /* ignore */
     }
 
 

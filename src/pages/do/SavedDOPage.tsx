@@ -1,5 +1,16 @@
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "../../lib/supabase";
+import { useAuth } from "../../context/AuthContext";
+import {
+  CACHE_KEYS,
+  deleteSavedDOOffline,
+  getCachedList,
+  getCachedSavedDOs,
+  isOnline,
+  setCache,
+  syncAllMasterDataInBackground,
+  updateSavedDOOffline,
+} from "../../lib/offlineSync";
 
 type FeedPrice = {
   id: number;
@@ -31,7 +42,9 @@ type BankInfo = {
 };
 
 type SavedDO = {
-  id: number;
+  // string when the row is still a local-only temp row ("local_<uuid>")
+  // waiting to sync; number once the server has given it a real id.
+  id: number | string;
   user_id: string | null;
   do_date: string | null;
   agent_code: string | null;
@@ -50,6 +63,9 @@ type SavedDO = {
   banks: any;
   message_text: string | null;
   created_at: string | null;
+  // Set on rows saved offline that have not synced to the server yet.
+  is_offline_pending?: boolean;
+  sync_error?: string | null;
 };
 
 type EditRow = {
@@ -69,6 +85,9 @@ const categories = [
 ];
 
 export default function SavedDOPage() {
+  const { user, role } = useAuth();
+  const isSuperAdmin = role === "super_admin";
+
   const [dos, setDos] = useState<SavedDO[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -173,30 +192,62 @@ export default function SavedDOPage() {
     useState(false);
 
   // =========================
+  // SCOPE: own DOs only, except super_admin who sees all.
+  // Enforced both when loading into state and again when rendering
+  // (filteredDOs below), so a stale or shared-device cache can never
+  // leak another user's rows. Fails closed while auth is still loading.
+  // =========================
+
+  function scopeDOs(list: SavedDO[]): SavedDO[] {
+    if (isSuperAdmin) return list;
+    if (!user?.id) return [];
+    return list.filter((d) => d.user_id === user.id);
+  }
+
+  async function refreshDosFromCache(): Promise<number> {
+    try {
+      const cached = await getCachedSavedDOs();
+      setDos(scopeDOs(cached as SavedDO[]));
+      return cached.length;
+    } catch (e) {
+      console.error("Saved DO cache read failed:", e);
+      return 0;
+    }
+  }
+
+  // =========================
   // LOAD SAVED DOS
   // =========================
 
   async function loadDOs() {
-    setLoading(true);
-
-    const { data, error } = await supabase
-      .from("saved_dos")
-      .select("*")
-      .order("id", {
-        ascending: false,
-      });
-
-    if (error) {
-      console.error(error);
-
-      alert(
-        `Saved DO load failed: ${error.message}`
-      );
-    } else {
-      setDos(data || []);
-    }
-
+    // Cache-first: paint cached DOs immediately, no network await
+    // before first paint.
+    const cachedCount = await refreshDosFromCache();
     setLoading(false);
+
+    if (!user?.id || !isOnline()) return;
+
+    // Background refresh, then re-apply the fresh cache (the sync layer
+    // merges still-pending local rows back in, so they are never lost).
+    try {
+      const { ok } = await syncAllMasterDataInBackground(
+        user.id,
+        isSuperAdmin
+      );
+      await refreshDosFromCache();
+      if (!ok && cachedCount === 0) {
+        alert(
+          "Saved DO load failed. Please check your connection and try again."
+        );
+      }
+    } catch (e) {
+      console.warn("Saved DO background sync skipped:", e);
+      if (cachedCount === 0) {
+        alert(
+          "Saved DO load failed. Please check your connection and try again."
+        );
+      }
+    }
   }
 
   // =========================
@@ -204,23 +255,27 @@ export default function SavedDOPage() {
   // =========================
 
   async function loadUsers() {
-    const { data, error } = await supabase
-      .from("profiles")
-      .select("id, email, full_name")
-      .order("full_name", {
-        ascending: true,
-      });
+    try {
+      const { data, error } = await supabase
+        .from("profiles")
+        .select("id, email, full_name")
+        .order("full_name", {
+          ascending: true,
+        });
 
-    if (error) {
-      console.error(
-        "Users load failed:",
-        error
-      );
+      if (error) {
+        console.error(
+          "Users load failed:",
+          error
+        );
 
-      return;
+        return;
+      }
+
+      setUsers(data || []);
+    } catch (e) {
+      console.error("Users load failed:", e);
     }
-
-    setUsers(data || []);
   }
 
   // =========================
@@ -228,50 +283,85 @@ export default function SavedDOPage() {
   // =========================
 
   async function loadEditData() {
-    const [priceResponse, transportResponse] =
-      await Promise.all([
-        supabase
-          .from("feed_price_list")
-          .select(
-            "id, category, item_name, short_name, kg_per_bag, tp_per_bag, mrp_per_bag, status, sort_order"
-          )
-          .eq("status", "Active")
-          .order("sort_order", {
-            ascending: true,
-          }),
-
-        supabase
-          .from("transportation")
-          .select(
-            "id, from_location, to_upazila, floating_cattle_rate_per_kg, sinking_broiler_layer_sonali_rate_per_kg, status"
-          )
-          .eq("status", "Active")
-          .order("to_upazila", {
-            ascending: true,
-          }),
+    // Cache-first: the edit form can open with cached prices even offline.
+    let hadCache = false;
+    try {
+      const [cachedPrices, cachedTransport] = await Promise.all([
+        getCachedList<FeedPrice>(CACHE_KEYS.PRICE_LIST_1),
+        getCachedList<Transport>(CACHE_KEYS.TRANSPORT),
       ]);
-
-    if (priceResponse.error) {
-      console.error(priceResponse.error);
-      alert("Price list load failed.");
-    } else {
-      setPriceList(
-        priceResponse.data || []
-      );
+      if (cachedPrices.length > 0) {
+        hadCache = true;
+        setPriceList(cachedPrices);
+      }
+      if (cachedTransport.length > 0) {
+        setTransportList(cachedTransport);
+      }
+    } catch (e) {
+      console.error("Edit data cache read failed:", e);
     }
 
-    if (transportResponse.error) {
-      console.error(
-        transportResponse.error
-      );
+    if (!isOnline()) return;
 
-      alert(
-        "Transportation load failed."
-      );
-    } else {
-      setTransportList(
-        transportResponse.data || []
-      );
+    try {
+      const [priceResponse, transportResponse] =
+        await Promise.all([
+          supabase
+            .from("feed_price_list")
+            .select(
+              "id, category, item_name, short_name, kg_per_bag, tp_per_bag, mrp_per_bag, status, sort_order"
+            )
+            .eq("status", "Active")
+            .order("sort_order", {
+              ascending: true,
+            }),
+
+          supabase
+            .from("transportation")
+            .select(
+              "id, from_location, to_upazila, floating_cattle_rate_per_kg, sinking_broiler_layer_sonali_rate_per_kg, status"
+            )
+            .eq("status", "Active")
+            .order("to_upazila", {
+              ascending: true,
+            }),
+        ]);
+
+      if (priceResponse.error) {
+        console.error(priceResponse.error);
+        if (!hadCache) alert("Price list load failed.");
+      } else {
+        setPriceList(
+          priceResponse.data || []
+        );
+        await setCache(
+          CACHE_KEYS.PRICE_LIST_1,
+          priceResponse.data || []
+        );
+      }
+
+      if (transportResponse.error) {
+        console.error(
+          transportResponse.error
+        );
+
+        if (!hadCache) {
+          alert(
+            "Transportation load failed."
+          );
+        }
+      } else {
+        setTransportList(
+          transportResponse.data || []
+        );
+        await setCache(
+          CACHE_KEYS.TRANSPORT,
+          transportResponse.data || []
+        );
+      }
+    } catch (e) {
+      console.error("Edit data load failed:", e);
+      if (!hadCache) alert("Price list load failed.");
     }
   }
 
@@ -279,13 +369,15 @@ export default function SavedDOPage() {
     loadDOs();
     loadEditData();
     loadUsers();
-  }, []);
+    // Re-run once the user/role is known: scoping needs the user id,
+    // and the background DO sync needs it too.
+  }, [user?.id, isSuperAdmin]);
 
   // =========================
   // DELETE
   // =========================
 
-  async function deleteDO(id: number) {
+  async function deleteDO(id: number | string) {
     const confirmDelete =
       window.confirm(
         "Are you sure you want to delete this DO?"
@@ -295,27 +387,18 @@ export default function SavedDOPage() {
       return;
     }
 
-    const { error } =
-      await supabase
-        .from("saved_dos")
-        .delete()
-        .eq("id", id);
-
-    if (error) {
-      console.error(error);
+    // Local-first: a still-pending temp row just drops its queued insert;
+    // a synced row is deleted on the server when online, queued when offline.
+    try {
+      await deleteSavedDOOffline(id);
+      await refreshDosFromCache();
+    } catch (e) {
+      console.error(e);
 
       alert(
-        `Delete failed: ${error.message}`
+        "Delete failed. Please try again."
       );
-
-      return;
     }
-
-    setDos((prev) =>
-      prev.filter(
-        (item) => item.id !== id
-      )
-    );
   }
 
   // =========================
@@ -339,11 +422,25 @@ export default function SavedDOPage() {
       selectedUser === "all" ||
       item.user_id === selectedUser;
 
+    // Scope enforced again at render time (see scopeDOs above).
+    const matchesScope =
+      isSuperAdmin ||
+      (user?.id
+        ? item.user_id === user.id
+        : false);
+
     return (
       matchesSearch &&
-      matchesUser
+      matchesUser &&
+      matchesScope
     );
   });
+
+  // Temp rows have a "local_<uuid>" id until they sync; show a dash
+  // instead of the raw temp id, with a Pending badge next to it.
+  function getDODisplayId(id: number | string) {
+    return typeof id === "number" ? id : "—";
+  }
 
   function getSavedByName(
     userId: string | null
@@ -1489,36 +1586,24 @@ From: ${finalFrom}`;
         payload
       );
 
-      const { error } =
-        await supabase
-          .from("saved_dos")
-          .update(payload)
-          .eq(
-            "id",
-            editingDO.id
-          );
-
-      if (error) {
-        console.error(
-          "Update DO error:",
-          error
-        );
-
-        alert(
-          `Update DO failed: ${error.message}`
-        );
-
-        return;
-      }
+      // Local-first: edits to a still-pending temp row fold into its
+      // queued insert; synced rows update on the server when online,
+      // or queue when offline.
+      const { synced } = await updateSavedDOOffline(
+        editingDO.id,
+        payload
+      );
 
       alert(
-        "DO updated successfully."
+        synced
+          ? "DO updated successfully."
+          : "DO updated offline. It will sync when you are back online."
       );
 
       setShowEdit(false);
       setEditingDO(null);
 
-      await loadDOs();
+      await refreshDosFromCache();
     } catch (error) {
       console.error(error);
 
@@ -1660,7 +1745,7 @@ From: ${finalFrom}`;
                         styles.doNumber
                       }
                     >
-                      DO #{item.id}
+                      DO #{getDODisplayId(item.id)}
                     </div>
 
                     <div
@@ -1671,6 +1756,12 @@ From: ${finalFrom}`;
                       {item.do_date ||
                         "No date"}
                     </div>
+
+                    {item.is_offline_pending && (
+                      <span style={styles.pendingBadge}>
+                        Pending
+                      </span>
+                    )}
                   </div>
 
                   <div
@@ -1889,7 +1980,7 @@ From: ${finalFrom}`;
                   >
                     DO #
                     {
-                      selectedDO.id
+                      getDODisplayId(selectedDO.id)
                     }
                   </h2>
 
@@ -1901,6 +1992,12 @@ From: ${finalFrom}`;
                     {selectedDO.do_date ||
                       "No date"}
                   </div>
+
+                  {selectedDO.is_offline_pending && (
+                    <span style={styles.pendingBadge}>
+                      Pending
+                    </span>
+                  )}
                 </div>
 
                 <button
@@ -2292,7 +2389,7 @@ From: ${finalFrom}`;
                   >
                     ✏ Edit DO #
                     {
-                      editingDO.id
+                      getDODisplayId(editingDO.id)
                     }
                   </h2>
 
@@ -3493,6 +3590,18 @@ const styles: Record<
 
   doNumber: {
     fontSize: 13,
+    fontWeight: 800,
+  },
+
+  pendingBadge: {
+    display: "inline-block",
+    marginTop: 4,
+    background: "#fef3c7",
+    color: "#92400e",
+    border: "1px solid #fcd34d",
+    borderRadius: 999,
+    padding: "2px 8px",
+    fontSize: 10,
     fontWeight: 800,
   },
 

@@ -1,6 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import * as XLSX from "xlsx";
 import { supabase } from "../lib/supabase";
+import {
+  CACHE_KEYS,
+  getCachedList,
+  getCachedProfile,
+  isOnline,
+  setCache,
+} from "../lib/offlineSync";
 import { useAuth } from "../context/AuthContext";
 import { universalFileDownload } from "../lib/downloadHelper";
 
@@ -10,6 +17,9 @@ type Upazila = {
   upazila_name: string;
   status: string;
 };
+
+const OFFLINE_MSG =
+  "You are offline. Changes will not be saved until you are back online.";
 
 const emptyForm: Upazila = {
   district: "",
@@ -100,11 +110,33 @@ export default function UpazilaPage() {
 
   async function loadUserProfile() {
     setProfileLoading(true);
-    const { data } = await supabase.from("profiles").select("*").eq("id", user?.id).single();
-    if (data) {
-      setUserProfile(data);
+    // Cache-first: the cached profile renders instantly offline.
+    try {
+      const cached = await getCachedProfile();
+      if (cached) {
+        setUserProfile(cached);
+        setProfileLoading(false);
+      }
+    } catch (err) {
+      console.error("Profile cache read error:", err);
     }
-    setProfileLoading(false);
+
+    if (!isOnline()) {
+      setProfileLoading(false);
+      return;
+    }
+
+    try {
+      const { data } = await supabase.from("profiles").select("*").eq("id", user?.id).single();
+      if (data) {
+        setUserProfile(data);
+        await setCache(CACHE_KEYS.PROFILE, data);
+      }
+    } catch (err) {
+      console.error("Profile load error:", err);
+    } finally {
+      setProfileLoading(false);
+    }
   }
 
   const assignedDistricts: string[] = useMemo(() => {
@@ -113,22 +145,49 @@ export default function UpazilaPage() {
   }, [isSuperAdmin, userProfile]);
 
   async function loadUpazilas() {
-    setLoading(true);
-
-    const { data, error } = await supabase
-      .from("upazilas")
-      .select("*")
-      .order("district", { ascending: true })
-      .order("upazila_name", { ascending: true });
-
-    if (error) {
-      console.error(error);
-      alert("Upazila load failed.");
-    } else {
-      setItems(data || []);
+    // Cache-first: paint the cached list immediately, then refresh in
+    // the background when online. Never throws an unhandled rejection.
+    let hadCache = false;
+    try {
+      const cached = await getCachedList<Upazila>(CACHE_KEYS.UPAZILAS);
+      if (cached.length) {
+        hadCache = true;
+        setItems(cached);
+        setLoading(false);
+      }
+    } catch (err) {
+      console.error("Upazila cache read error:", err);
     }
 
-    setLoading(false);
+    if (!isOnline()) {
+      setLoading(false);
+      return;
+    }
+
+    try {
+      const { data, error } = await supabase
+        .from("upazilas")
+        .select("*")
+        .order("district", { ascending: true })
+        .order("upazila_name", { ascending: true });
+
+      if (error) {
+        console.error(error);
+        if (!hadCache) {
+          alert("Upazila load failed.");
+        }
+      } else {
+        setItems(data || []);
+        await setCache(CACHE_KEYS.UPAZILAS, data || []);
+      }
+    } catch (err) {
+      console.error(err);
+      if (!hadCache) {
+        alert("Upazila load failed.");
+      }
+    } finally {
+      setLoading(false);
+    }
   }
 
   const visibleItems = useMemo(() => {
@@ -194,40 +253,52 @@ export default function UpazilaPage() {
       return;
     }
 
+    // Master-data edits are online-only (not queued).
+    if (!isOnline()) {
+      alert(OFFLINE_MSG);
+      return;
+    }
+
     const payload = {
       district: form.district.trim(),
       upazila_name: form.upazila_name.trim(),
       status: form.status,
     };
 
-    if (editingId) {
-      const { error } = await supabase.from("upazilas").update(payload).eq("id", editingId);
-      if (error) {
-        console.error(error);
-        alert("Update failed.");
-        return;
-      }
-    } else {
-      const existing = items.find(
-        (i) =>
-          i.district.trim().toLowerCase() === payload.district.toLowerCase() &&
-          i.upazila_name.trim().toLowerCase() === payload.upazila_name.toLowerCase()
-      );
-
-      if (existing?.id) {
-        const { error } = await supabase.from("upazilas").update(payload).eq("id", existing.id);
+    try {
+      if (editingId) {
+        const { error } = await supabase.from("upazilas").update(payload).eq("id", editingId);
         if (error) {
+          console.error(error);
           alert("Update failed.");
           return;
         }
       } else {
-        const { error } = await supabase.from("upazilas").insert([payload]);
-        if (error) {
-          console.error(error);
-          alert("Add failed.");
-          return;
+        const existing = items.find(
+          (i) =>
+            i.district.trim().toLowerCase() === payload.district.toLowerCase() &&
+            i.upazila_name.trim().toLowerCase() === payload.upazila_name.toLowerCase()
+        );
+
+        if (existing?.id) {
+          const { error } = await supabase.from("upazilas").update(payload).eq("id", existing.id);
+          if (error) {
+            alert("Update failed.");
+            return;
+          }
+        } else {
+          const { error } = await supabase.from("upazilas").insert([payload]);
+          if (error) {
+            console.error(error);
+            alert("Add failed.");
+            return;
+          }
         }
       }
+    } catch (err) {
+      console.error(err);
+      alert("Save failed.");
+      return;
     }
 
     closeForm();
@@ -244,9 +315,21 @@ export default function UpazilaPage() {
     const confirmed = window.confirm("Delete this Upazila?");
     if (!confirmed) return;
 
-    const { error } = await supabase.from("upazilas").delete().eq("id", id);
-    if (error) {
-      console.error(error);
+    // Master-data edits are online-only (not queued).
+    if (!isOnline()) {
+      alert(OFFLINE_MSG);
+      return;
+    }
+
+    try {
+      const { error } = await supabase.from("upazilas").delete().eq("id", id);
+      if (error) {
+        console.error(error);
+        alert("Delete failed.");
+        return;
+      }
+    } catch (err) {
+      console.error(err);
       alert("Delete failed.");
       return;
     }
@@ -263,6 +346,13 @@ export default function UpazilaPage() {
 
     const file = event.target.files?.[0];
     if (!file) return;
+
+    // Master-data edits are online-only (not queued).
+    if (!isOnline()) {
+      alert(OFFLINE_MSG);
+      event.target.value = "";
+      return;
+    }
 
     const reader = new FileReader();
     reader.onload = async (e) => {
