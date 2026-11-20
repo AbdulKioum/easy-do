@@ -2,6 +2,7 @@ import {
   createContext,
   useContext,
   useEffect,
+  useRef,
   useState,
   type ReactNode,
 } from "react";
@@ -17,6 +18,7 @@ import {
   CACHE_KEYS,
   cacheProfile,
   getCachedProfile,
+  isOnline,
   removeCache,
   setupOfflineListeners,
 } from "../lib/offlineSync";
@@ -46,6 +48,12 @@ type AuthContextType = {
   role: UserRole | null;
 
   loading: boolean;
+
+  // True while the profile is still unknown (cached read / first network
+  // attempt pending). While true, ProtectedRoute keeps the splash loader
+  // instead of flashing "Profile not found" for a profile that is about
+  // to arrive. Only false once the profile is known or definitively absent.
+  profileLoading: boolean;
 
   signIn: (
     email: string,
@@ -122,6 +130,18 @@ export function AuthProvider({
   const [loading, setLoading] =
     useState(true);
 
+  const [profileLoading, setProfileLoadingState] =
+    useState(true);
+
+  // Mirror of profileLoading for use inside callbacks with stale closures.
+  const profileLoadingRef =
+    useRef(true);
+
+  function setProfileLoading(value: boolean) {
+    profileLoadingRef.current = value;
+    setProfileLoadingState(value);
+  }
+
 
   // ==========================================
   // LOAD PROFILE
@@ -166,7 +186,8 @@ export function AuthProvider({
       );
 
       // Offline fallback: a session exists but the network failed — use the
-      // last cached profile instead of locking the user out.
+      // last cached profile instead of locking the user out. A failed
+      // refresh must NEVER erase a profile that is already on screen.
       try {
         const cached = await getCachedProfile();
         if (cached && cached.id === authUser.id) {
@@ -176,8 +197,6 @@ export function AuthProvider({
       } catch {
         /* ignore */
       }
-
-      setProfile(null);
     }
   }
 
@@ -196,9 +215,14 @@ export function AuthProvider({
     async function initializeAuth() {
 
       // 1. Show the cached profile immediately so the app paints at once.
+      let hadCachedProfile = false;
       try {
         const cached = await getCachedProfile();
-        if (mounted && cached) setProfile(cached as Profile);
+        if (mounted && cached) {
+          setProfile(cached as Profile);
+          hadCachedProfile = true;
+          setProfileLoading(false);
+        }
       } catch {
         /* ignore */
       }
@@ -213,12 +237,24 @@ export function AuthProvider({
         setLoading(false);
       }
 
+      if (!stored?.user) {
+        // Nobody logged in — the profile is definitively absent.
+        if (mounted) setProfileLoading(false);
+        return;
+      }
+
       // 3. Everything network-related runs in the background and can
       // never hold the screen: verify/refresh the session, then the
       // profile. If the net is dead, the stored session + cached
       // profile above are already on screen.
-      if (stored?.user) {
+      if (hadCachedProfile) {
         void loadProfile(stored.user);
+      } else {
+        // No cached profile yet — the profile is still unknown, so keep
+        // the splash loader (not "Profile not found") until this settles.
+        void loadProfile(stored.user).finally(() => {
+          if (mounted) setProfileLoading(false);
+        });
       }
       void (async () => {
         try {
@@ -226,9 +262,19 @@ export function AuthProvider({
             supabase.auth.getSession()
           );
           if (!mounted) return;
-          setSession(session);
-          setUser(session?.user ?? null);
-          if (session?.user) void loadProfile(session.user);
+          if (session) {
+            setSession(session);
+            setUser(session?.user ?? null);
+            if (session?.user) void loadProfile(session.user);
+          } else if (isOnline()) {
+            // Online and genuinely no session — a real sign-out.
+            setSession(null);
+            setUser(null);
+            setProfile(null);
+            setProfileLoading(false);
+          }
+          // Offline + no session: the token simply could not be
+          // verified — keep the stored session, do NOT log the user out.
         } catch {
           /* offline — stored session already shown */
         }
@@ -258,6 +304,13 @@ export function AuthProvider({
             return;
           }
 
+          // Offline + no session + a stored session still on the phone:
+          // the token could not be verified (e.g. it expired while the
+          // net was off) — that is NOT a sign-out. Ignore it, or the
+          // user gets thrown to the login page for no reason.
+          if (!newSession && !isOnline() && readStoredSession()) {
+            return;
+          }
 
           setSession(newSession);
 
@@ -271,14 +324,21 @@ export function AuthProvider({
 
           if (authUser) {
 
-            // Background refresh only — never block on it.
-            void loadProfile(
-              authUser
-            );
+            // Background refresh only — never block on it. If the
+            // profile is still unknown, wait for this attempt before
+            // letting ProtectedRoute decide about "Profile not found".
+            if (profileLoadingRef.current) {
+              void loadProfile(authUser).finally(() => {
+                if (mounted) setProfileLoading(false);
+              });
+            } else {
+              void loadProfile(authUser);
+            }
 
           } else {
 
             setProfile(null);
+            setProfileLoading(false);
 
           }
 
@@ -308,11 +368,22 @@ export function AuthProvider({
     password: string
   ) {
 
-    const result =
-      await supabase.auth.signInWithPassword({
-        email: email.trim(),
-        password,
-      });
+    // Weak net must not spin the login button forever — cap it at 10s
+    // so the user gets a clear error and can retry.
+    let result;
+    try {
+      result = await withTimeout(
+        supabase.auth.signInWithPassword({
+          email: email.trim(),
+          password,
+        }),
+        10000
+      );
+    } catch {
+      return {
+        error: { message: "Connection is too slow — please check your internet and try again." },
+      };
+    }
 
 
     if (result.error) {
@@ -400,6 +471,7 @@ export function AuthProvider({
         role:
           profile?.role || null,
         loading,
+        profileLoading,
         signIn,
         signOut,
         refreshProfile,

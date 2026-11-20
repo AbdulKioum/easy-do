@@ -64,6 +64,93 @@ export function isOnline(): boolean {
   }
 }
 
+// --- Weak-network handling ----------------------------------------------------
+// navigator.onLine only says "some connection exists" — on a weak/slow
+// connection it still says online, and then every network call crawls or
+// hangs, so the app works neither online nor offline. Fix: probe whether
+// the internet is actually usable, in the background, and treat an
+// unusable connection exactly like offline (serve cache, queue writes).
+// The probe runs on a timer, never inline before an action, so it can
+// never slow anything down itself.
+
+function withTimeout<T>(promise: PromiseLike<T>, ms: number): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<T>((_, reject) => {
+    timer = setTimeout(() => reject(new Error("Network timeout")), ms);
+  });
+  return Promise.race([Promise.resolve(promise), timeout]).finally(() => {
+    if (timer) clearTimeout(timer);
+  });
+}
+
+// Last known verdict: true = net usable, false = treat as offline.
+let usableOnline: boolean = (() => {
+  try {
+    return navigator.onLine;
+  } catch {
+    return true;
+  }
+})();
+
+let probeInFlight: Promise<boolean> | null = null;
+let lastProbeAt = 0;
+const PROBE_INTERVAL_MS = 20000;
+const PROBE_TIMEOUT_MS = 2500;
+
+/** One real round-trip to Supabase: true only if it answers quickly. */
+export async function probeOnline(): Promise<boolean> {
+  const now = Date.now();
+  if (probeInFlight) return probeInFlight;
+  if (now - lastProbeAt < 5000) return usableOnline;
+  probeInFlight = (async () => {
+    lastProbeAt = Date.now();
+    try {
+      const base =
+        (supabase as any)?.supabaseUrl ||
+        import.meta.env.VITE_SUPABASE_URL ||
+        "";
+      if (!base || !isOnline()) return false;
+      const ctrl = new AbortController();
+      const timer = setTimeout(() => ctrl.abort(), PROBE_TIMEOUT_MS);
+      try {
+        const res = await fetch(`${base}/auth/v1/health`, {
+          method: "GET",
+          cache: "no-store",
+          signal: ctrl.signal,
+        });
+        return res.ok;
+      } finally {
+        clearTimeout(timer);
+      }
+    } catch {
+      return false;
+    }
+  })();
+  try {
+    usableOnline = await probeInFlight;
+  } finally {
+    probeInFlight = null;
+  }
+  return usableOnline;
+}
+
+/** Synchronous read of the last probe verdict (defaults to navigator.onLine). */
+export function isUsableOnline(): boolean {
+  return usableOnline;
+}
+
+let probeTimer: ReturnType<typeof setInterval> | null = null;
+
+function startConnectivityProbe(): void {
+  if (probeTimer) return;
+  void probeOnline();
+  probeTimer = setInterval(() => {
+    void probeOnline().then((ok) => {
+      if (ok) void flushOutbox();
+    });
+  }, PROBE_INTERVAL_MS);
+}
+
 // --- IndexedDB cache ---------------------------------------------------------
 
 export async function getCache<T>(key: string): Promise<T | null> {
@@ -243,7 +330,7 @@ function isValidationError(error: any): boolean {
 let flushing = false;
 
 export async function flushOutbox(): Promise<void> {
-  if (flushing || !isOnline()) return;
+  if (flushing || !isUsableOnline()) return;
   flushing = true;
   try {
     let box = await getOutbox();
@@ -251,7 +338,8 @@ export async function flushOutbox(): Promise<void> {
     const remaining: OutboxEntry[] = [];
     for (const entry of box) {
       try {
-        const result = await flushOne(entry);
+        // One crawling entry must not stall the whole queue on weak net.
+        const result = await withTimeout(flushOne(entry), 5000);
         if (result === "ok") continue;
         if (result === "validation") {
           await moveToDeadLetter(entry, "Validation error");
@@ -368,7 +456,9 @@ export async function syncAllMasterDataInBackground(
   userId?: string,
   isSuperAdmin?: boolean
 ): Promise<{ ok: boolean; syncedAt: string | null }> {
-  if (!isOnline()) return { ok: false, syncedAt: await getLastSyncTime() };
+  // Weak net counts as offline: skip the sync entirely instead of
+  // letting 7 crawling queries hold the app up.
+  if (!isUsableOnline()) return { ok: false, syncedAt: await getLastSyncTime() };
   try {
     const queries: Promise<any>[] = [
       supabase.from("feed_price_list").select("*").eq("status", "Active").order("sort_order", { ascending: true }) as any,
@@ -394,7 +484,7 @@ export async function syncAllMasterDataInBackground(
       );
     }
 
-    const results = await Promise.allSettled(queries);
+    const results = await withTimeout(Promise.allSettled(queries), 5000);
     const keys = [
       CACHE_KEYS.PRICE_LIST_1,
       CACHE_KEYS.PRICE_LIST_2,
@@ -444,9 +534,12 @@ export async function saveDOOfflineFirst(payload: any): Promise<{ synced: boolea
   const existing = await getCachedList<any>(CACHE_KEYS.SAVED_DOS);
   await setCache(CACHE_KEYS.SAVED_DOS, [localRecord, ...existing]);
 
-  if (isOnline()) {
+  if (isUsableOnline()) {
     try {
-      const { data, error } = await supabase.from("saved_dos").insert([payload]).select().single();
+      const { data, error } = await withTimeout(
+        supabase.from("saved_dos").insert([payload]).select().single(),
+        3000
+      );
       if (!error && data) {
         const dos = await getCachedList<any>(CACHE_KEYS.SAVED_DOS);
         await setCache(
@@ -486,9 +579,12 @@ export async function updateSavedDOOffline(id: string | number, patch: Record<st
   }
   const dos = await getCachedList<any>(CACHE_KEYS.SAVED_DOS);
   await setCache(CACHE_KEYS.SAVED_DOS, dos.map((d) => (String(d.id) === String(id) ? { ...d, ...patch } : d)));
-  if (isOnline()) {
+  if (isUsableOnline()) {
     try {
-      const { error } = await supabase.from("saved_dos").update(patch).eq("id", id);
+      const { error } = await withTimeout(
+        supabase.from("saved_dos").update(patch).eq("id", id),
+        3000
+      );
       if (!error) return { synced: true };
       if (isValidationError(error)) return { synced: false };
     } catch {
@@ -513,9 +609,12 @@ export async function deleteSavedDOOffline(id: string | number): Promise<{ synce
   // drop any queued update for the same row
   const filtered = box.filter((e) => !(e.kind === "saved_do_update" && String(e.payload?.id) === String(id)));
   await setOutbox(filtered);
-  if (isOnline()) {
+  if (isUsableOnline()) {
     try {
-      const { error } = await supabase.from("saved_dos").delete().eq("id", id);
+      const { error } = await withTimeout(
+        supabase.from("saved_dos").delete().eq("id", id),
+        3000
+      );
       if (!error) return { synced: true };
       if (isValidationError(error)) return { synced: false };
     } catch {
@@ -537,12 +636,19 @@ let listenersInstalled = false;
 export function setupOfflineListeners(): void {
   if (listenersInstalled) return;
   listenersInstalled = true;
+  startConnectivityProbe();
   try {
     window.addEventListener("online", () => {
-      void flushOutbox();
+      void probeOnline().then((ok) => {
+        if (ok) void flushOutbox();
+      });
     });
     document.addEventListener("visibilitychange", () => {
-      if (!document.hidden && isOnline()) void flushOutbox();
+      if (!document.hidden && isOnline()) {
+        void probeOnline().then((ok) => {
+          if (ok) void flushOutbox();
+        });
+      }
     });
   } catch {
     /* ignore */

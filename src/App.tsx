@@ -431,13 +431,19 @@ function MainApp() {
         if (!cancelled && cached.length) {
           setNotifications(cached);
         }
-        // 2. Refresh from the network only when online.
+        // 2. Refresh from the network only when online — capped at 5s,
+        // so a weak connection never holds the bell or the page up.
         if (!isOnline()) return;
-        const { data, error } = await supabase
-          .from("notifications")
-          .select("*")
-          .or(`user_id.eq.${user?.id},user_id.is.null`)
-          .order("created_at", { ascending: false });
+        const { data, error } = await Promise.race([
+          supabase
+            .from("notifications")
+            .select("*")
+            .or(`user_id.eq.${user?.id},user_id.is.null`)
+            .order("created_at", { ascending: false }),
+          new Promise((_resolve, reject) =>
+            setTimeout(() => reject(new Error("Notifications timeout")), 5000)
+          ),
+        ] as any);
 
         if (!cancelled && !error && data) {
           setNotifications(data);

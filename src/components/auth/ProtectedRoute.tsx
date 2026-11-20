@@ -25,6 +25,7 @@ export default function ProtectedRoute({
     profile,
     role,
     loading,
+    profileLoading,
   } = useAuth();
 
   const location = useLocation();
@@ -32,9 +33,12 @@ export default function ProtectedRoute({
 
   // ==========================================
   // AUTH / PROFILE LOADING
+  // "Profile not found" is only shown once the profile is definitively
+  // absent — while it is still loading, the splash stays, so the
+  // not-found screen never flashes for a profile that is about to arrive.
   // ==========================================
 
-  if (loading) {
+  if (loading || profileLoading) {
     return <AppSplashLoader />;
   }
 
