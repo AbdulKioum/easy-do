@@ -290,6 +290,7 @@ function MainApp() {
 
     // Handles so logout (MainApp unmount) removes exactly these listeners.
     const handles: Array<{ remove: () => Promise<void> }> = [];
+
     const setupTapListeners = async () => {
       try {
         // 1. FCM notification e tap (tray theke)
