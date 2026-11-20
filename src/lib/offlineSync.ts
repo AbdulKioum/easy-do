@@ -444,15 +444,56 @@ export async function flushPendingDOQueue(): Promise<void> {
 
 // --- Page-visit log (never blocks, never throws) ------------------------------
 
+// Phone / device model from the user-agent — no new plugin needed:
+// Android (app WebView + mobile browser both): "Linux; Android 13; SM-A546E
+// Build/..." -> "SM-A546E". iPhone/iPad: "iPhone"/"iPad" (UA has no model
+// number). Desktop browser: "Windows • Chrome" etc.
+function getDeviceModel(): string {
+  try {
+    const ua = navigator.userAgent || "";
+    const android = ua.match(/Android [\d.]+;\s*([^;)]+)/);
+    if (android) return android[1].split(" Build")[0].trim() || "Android";
+    if (/iPhone/.test(ua)) return "iPhone";
+    if (/iPad/.test(ua)) return "iPad";
+    const browser = /Edg\//.test(ua)
+      ? "Edge"
+      : /Chrome\//.test(ua)
+        ? "Chrome"
+        : /Firefox\//.test(ua)
+          ? "Firefox"
+          : /Safari\//.test(ua)
+            ? "Safari"
+            : "";
+    const os = /Windows/.test(ua)
+      ? "Windows"
+      : /Macintosh/.test(ua)
+        ? "Mac"
+        : /Linux/.test(ua)
+          ? "Linux"
+          : "";
+    return [os, browser].filter(Boolean).join(" • ") || "Unknown";
+  } catch {
+    return "Unknown";
+  }
+}
+
 export async function logPageVisit(pageName: string, userId?: string, _userEmail?: string): Promise<void> {
   try {
-    // Payload shape matches the existing page_visits inserts exactly:
-    // { user_id, page_name, visit_date } — created_at is set by the server.
-    // (userEmail is accepted for call-site compatibility but not stored;
-    // the table has no such column.)
+    // Payload shape matches the existing page_visits inserts:
+    // { user_id, page_name, visit_date, platform, device_model } — created_at
+    // is set by the server. (userEmail is accepted for call-site
+    // compatibility but not stored; the table has no such column.)
+    // platform: "app" = installed APK (native shell), "browser" = Chrome etc.
+    // device_model: phone model (e.g. "SM-A546E") or desktop "Windows • Chrome".
+    // Needs the page_visits.platform + device_model columns — run
+    // page-visits-platform.sql in Supabase BEFORE this build ships,
+    // otherwise the insert fails (unknown column) and the visit goes to
+    // the dead-letter queue.
     const payload: any = {
       page_name: pageName,
       visit_date: new Date().toISOString().split("T")[0],
+      platform: isRunningInsideApp() ? "app" : "browser",
+      device_model: getDeviceModel(),
     };
     if (userId) payload.user_id = userId;
     await enqueueOutbox("page_visit", payload);

@@ -9,6 +9,8 @@ type VisitRecord = {
   page_name: string;
   visit_date: string;
   created_at: string;
+  platform?: string | null;
+  device_model?: string | null;
 };
 
 type UserProfile = {
@@ -24,6 +26,10 @@ type SummaryItem = {
   userName: string;
   email: string;
   page_name: string;
+  // Distinct sources this user+page was visited from, e.g.
+  // [{ platform: "app", device: "SM-A546E" }, { platform: "browser", device: "Windows • Chrome" }]
+  // Old rows (before the platform/device columns) have platform "unknown".
+  sources: { platform: string; device: string }[];
   total_visits: number;
   last_visited_at: string;
   all_times: string[];
@@ -39,8 +45,9 @@ const COMPACT_CSS = `
     color: #1e293b;
   }
   .vsp-box {
-    max-width: 920px;
-    margin: 0 auto;
+    max-width: none;
+    width: 100%;
+    margin: 0;
   }
 
   /* Compact Top Bar: Title + Mini Stat Pills */
@@ -119,7 +126,7 @@ const COMPACT_CSS = `
     padding: 8px;
     margin-bottom: 8px;
     display: grid;
-    grid-template-columns: auto 1fr 1fr;
+    grid-template-columns: auto 1fr 1fr auto;
     gap: 6px;
     align-items: center;
   }
@@ -319,6 +326,7 @@ export default function VisitStatusPage() {
   const todayStr = new Date().toISOString().split("T")[0];
   const [selectedDate, setSelectedDate] = useState(todayStr);
   const [filterPage, setFilterPage] = useState("All");
+  const [filterSource, setFilterSource] = useState("All");
   const [searchQuery, setSearchQuery] = useState("");
 
   const [selectedDetails, setSelectedDetails] = useState<{
@@ -466,6 +474,9 @@ export default function VisitStatusPage() {
       const email = userProfile?.email || "";
 
       const key = `${item.user_id}_${item.page_name}`;
+      const platform =
+        item.platform === "app" || item.platform === "browser" ? item.platform : "unknown";
+      const device = item.device_model || "";
 
       if (!summaryMap[key]) {
         summaryMap[key] = {
@@ -473,10 +484,17 @@ export default function VisitStatusPage() {
           userName,
           email,
           page_name: item.page_name,
+          sources: [],
           total_visits: 0,
           last_visited_at: item.created_at,
           all_times: [],
         };
+      }
+      // One line per distinct app/browser + device combo.
+      if (
+        !summaryMap[key].sources.some((s) => s.platform === platform && s.device === device)
+      ) {
+        summaryMap[key].sources.push({ platform, device });
       }
       summaryMap[key].total_visits += 1;
       summaryMap[key].all_times.push(item.created_at);
@@ -492,15 +510,19 @@ export default function VisitStatusPage() {
   const filteredSummary = useMemo(() => {
     return summaryList.filter((item) => {
       const matchesPage = filterPage === "All" || item.page_name === filterPage;
+      const matchesSource =
+        filterSource === "All" ||
+        item.sources.some((s) => s.platform === filterSource);
       const q = searchQuery.toLowerCase().trim();
       const matchesSearch =
         !q ||
         item.userName.toLowerCase().includes(q) ||
         item.email.toLowerCase().includes(q) ||
-        item.page_name.toLowerCase().includes(q);
-      return matchesPage && matchesSearch;
+        item.page_name.toLowerCase().includes(q) ||
+        item.sources.some((s) => s.device.toLowerCase().includes(q));
+      return matchesPage && matchesSource && matchesSearch;
     });
-  }, [summaryList, filterPage, searchQuery]);
+  }, [summaryList, filterPage, filterSource, searchQuery]);
 
   const stats = useMemo(() => {
     const uniqueUsers = new Set(dateFilteredVisits.map((v) => v.user_id)).size;
@@ -513,8 +535,15 @@ export default function VisitStatusPage() {
         v.page_name.toLowerCase().includes("download") &&
         !v.page_name.toLowerCase().includes("app download")
     ).length;
+    // Who uses the app vs the browser today (unique users per source).
+    const appUsers = new Set(
+      dateFilteredVisits.filter((v) => v.platform === "app").map((v) => v.user_id)
+    ).size;
+    const browserUsers = new Set(
+      dateFilteredVisits.filter((v) => v.platform === "browser").map((v) => v.user_id)
+    ).size;
 
-    return { uniqueUsers, totalActions, appDownloads, fileDownloads };
+    return { uniqueUsers, totalActions, appDownloads, fileDownloads, appUsers, browserUsers };
   }, [dateFilteredVisits]);
 
   function getTagStyle(pageName: string) {
@@ -526,6 +555,23 @@ export default function VisitStatusPage() {
       return { background: "#ecfdf5", color: "#047857", border: "1px solid #a7f3d0" };
     }
     return { background: "#f1f5f9", color: "#334155", border: "1px solid #e2e8f0" };
+  }
+
+  // Source badge: App = blue, Browser = green, old rows (no platform) = grey.
+  function getSourceStyle(platform: string) {
+    if (platform === "app") {
+      return { background: "#eff6ff", color: "#1d4ed8", border: "1px solid #bfdbfe" };
+    }
+    if (platform === "browser") {
+      return { background: "#ecfdf5", color: "#047857", border: "1px solid #a7f3d0" };
+    }
+    return { background: "#f1f5f9", color: "#64748b", border: "1px solid #e2e8f0" };
+  }
+
+  function getSourceLabel(platform: string) {
+    if (platform === "app") return "App";
+    if (platform === "browser") return "Browser";
+    return "—";
   }
 
   if (!isSuperAdmin) {
@@ -560,6 +606,20 @@ export default function VisitStatusPage() {
             </span>
             <span className="vsp-pill">
               Files: <b>{stats.fileDownloads}</b>
+            </span>
+            <span
+              className="vsp-pill"
+              style={{ background: "#eff6ff", borderColor: "#bfdbfe", color: "#1d4ed8" }}
+              title="Users on the installed app today"
+            >
+              App: <b style={{ color: "#1e40af" }}>{stats.appUsers}</b>
+            </span>
+            <span
+              className="vsp-pill"
+              style={{ background: "#ecfdf5", borderColor: "#a7f3d0", color: "#047857" }}
+              title="Users on a browser today"
+            >
+              Browser: <b style={{ color: "#065f46" }}>{stats.browserUsers}</b>
             </span>
             <span
               className="vsp-pill vsp-pill-apk"
@@ -611,6 +671,21 @@ export default function VisitStatusPage() {
                   {page === "All" ? "All Pages & Actions" : page}
                 </option>
               ))}
+            </select>
+          </div>
+
+          {/* SOURCE FILTER: APP / BROWSER */}
+          <div>
+            <select
+              value={filterSource}
+              onChange={(e) => setFilterSource(e.target.value)}
+              className="vsp-select"
+              style={{ width: 110 }}
+            >
+              <option value="All">All Sources</option>
+              <option value="app">App</option>
+              <option value="browser">Browser</option>
+              <option value="unknown">Unknown</option>
             </select>
           </div>
 
@@ -683,6 +758,7 @@ export default function VisitStatusPage() {
                     <th className="vsp-th" style={{ textAlign: "right" }}>
                       History
                     </th>
+                    <th className="vsp-th">Source</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -748,6 +824,45 @@ export default function VisitStatusPage() {
                           >
                             Times
                           </button>
+                        </td>
+
+                        {/* SOURCE: APP/BROWSER + DEVICE, ONE LINE PER DEVICE */}
+                        <td className="vsp-td">
+                          <div
+                            style={{
+                              display: "flex",
+                              flexDirection: "column",
+                              gap: 3,
+                              alignItems: "flex-start",
+                            }}
+                          >
+                            {row.sources.map((s, i) => (
+                              <span
+                                key={`${s.platform}_${s.device}_${i}`}
+                                style={{
+                                  display: "inline-flex",
+                                  alignItems: "center",
+                                  gap: 4,
+                                  whiteSpace: "nowrap",
+                                }}
+                              >
+                                <span className="vsp-tag" style={getSourceStyle(s.platform)}>
+                                  {getSourceLabel(s.platform)}
+                                </span>
+                                {s.device && (
+                                  <span
+                                    style={{
+                                      fontSize: 11,
+                                      color: "#475569",
+                                      fontWeight: 600,
+                                    }}
+                                  >
+                                    {s.device}
+                                  </span>
+                                )}
+                              </span>
+                            ))}
+                          </div>
                         </td>
                       </tr>
                     );
