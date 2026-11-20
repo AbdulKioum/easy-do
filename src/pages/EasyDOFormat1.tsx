@@ -293,9 +293,16 @@ export default function EasyDOFormat1() {
       // Background refresh, then re-apply the fresh cache. Capped at 5s:
       // navigator.onLine lies when Wi-Fi is on but the internet is dead,
       // and a hanging sync must never hold the page loader hostage.
+      // The sync keeps running after the cap, so re-apply the cache when
+      // it eventually finishes — otherwise a slow first sync would leave
+      // an empty page until a manual reload.
+      const syncPromise = syncAllMasterDataInBackground(user?.id, isSuperAdmin);
+      void syncPromise.then(() => {
+        void applyCachedMasterData();
+      });
       try {
         await Promise.race([
-          syncAllMasterDataInBackground(user?.id, isSuperAdmin),
+          syncPromise,
           new Promise((_, reject) =>
             setTimeout(() => reject(new Error("Sync timeout")), 5000)
           ),

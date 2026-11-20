@@ -90,6 +90,9 @@ export default function SavedDOPage() {
 
   const [dos, setDos] = useState<SavedDO[]>([]);
   const [loading, setLoading] = useState(true);
+  // True while the first background sync is still running and the cache
+  // is empty — the empty state shows "syncing" instead of "not found".
+  const [syncing, setSyncing] = useState(false);
 
   const [search, setSearch] = useState("");
 
@@ -222,32 +225,22 @@ export default function SavedDOPage() {
   async function loadDOs() {
     // Cache-first: paint cached DOs immediately, no network await
     // before first paint.
-    const cachedCount = await refreshDosFromCache();
+    await refreshDosFromCache();
     setLoading(false);
 
     if (!user?.id || !isOnline()) return;
 
-    // Background refresh, then re-apply the fresh cache (the sync layer
-    // merges still-pending local rows back in, so they are never lost).
-    try {
-      const { ok } = await syncAllMasterDataInBackground(
-        user.id,
-        isSuperAdmin
-      );
-      await refreshDosFromCache();
-      if (!ok && cachedCount === 0) {
-        alert(
-          "Saved DO load failed. Please check your connection and try again."
-        );
-      }
-    } catch (e) {
-      console.warn("Saved DO background sync skipped:", e);
-      if (cachedCount === 0) {
-        alert(
-          "Saved DO load failed. Please check your connection and try again."
-        );
-      }
-    }
+    // Background refresh: never block the list and never pop an alert.
+    // The cached list is already on screen; fresh rows appear when the
+    // sync finishes — on a slow/weak connection that just takes longer,
+    // and a failed sync simply leaves the cached rows in place.
+    setSyncing(true);
+    void syncAllMasterDataInBackground(user.id, isSuperAdmin)
+      .then(() => refreshDosFromCache())
+      .catch((e) =>
+        console.warn("Saved DO background sync skipped:", e)
+      )
+      .finally(() => setSyncing(false));
   }
 
   // =========================
@@ -1715,13 +1708,24 @@ From: ${finalFrom}`;
       ) : filteredDOs.length ===
         0 ? (
         <div style={styles.empty}>
-          <strong>
-            No Saved DO Found
-          </strong>
+          {syncing ? (
+            <>
+              <strong>Loading your saved DOs…</strong>
+              <span>
+                Your connection is slow — this may take a moment.
+              </span>
+            </>
+          ) : (
+            <>
+              <strong>
+                No Saved DO Found
+              </strong>
 
-          <span>
-            Saved DOs will appear here.
-          </span>
+              <span>
+                Saved DOs will appear here.
+              </span>
+            </>
+          )}
         </div>
       ) : (
         <div style={styles.list}>

@@ -95,7 +95,7 @@ let usableOnline: boolean = (() => {
 let probeInFlight: Promise<boolean> | null = null;
 let lastProbeAt = 0;
 const PROBE_INTERVAL_MS = 20000;
-const PROBE_TIMEOUT_MS = 2500;
+const PROBE_TIMEOUT_MS = 4000;
 
 /** One real round-trip to Supabase: true only if it answers quickly. */
 export async function probeOnline(): Promise<boolean> {
@@ -456,9 +456,13 @@ export async function syncAllMasterDataInBackground(
   userId?: string,
   isSuperAdmin?: boolean
 ): Promise<{ ok: boolean; syncedAt: string | null }> {
-  // Weak net counts as offline: skip the sync entirely instead of
-  // letting 7 crawling queries hold the app up.
-  if (!isUsableOnline()) return { ok: false, syncedAt: await getLastSyncTime() };
+  // No usable-net gate here: this sync runs in the background and its
+  // callers already cap how long THEY wait (Format pages 5s, login 5s).
+  // Skipping it on a weak connection would mean the data never arrives
+  // at all — and capping the queries themselves would throw away
+  // results that were about to complete. Let it finish at its own pace;
+  // whatever completes gets cached.
+  if (!isOnline()) return { ok: false, syncedAt: await getLastSyncTime() };
   try {
     const queries: Promise<any>[] = [
       supabase.from("feed_price_list").select("*").eq("status", "Active").order("sort_order", { ascending: true }) as any,
@@ -484,7 +488,7 @@ export async function syncAllMasterDataInBackground(
       );
     }
 
-    const results = await withTimeout(Promise.allSettled(queries), 5000);
+    const results = await Promise.allSettled(queries);
     const keys = [
       CACHE_KEYS.PRICE_LIST_1,
       CACHE_KEYS.PRICE_LIST_2,
@@ -495,23 +499,31 @@ export async function syncAllMasterDataInBackground(
       CACHE_KEYS.NOTIFICATIONS,
     ];
     let anyOk = false;
+    // Cache writes MUST be awaited before returning: callers read the
+    // cache right after this resolves (first login, page open). A
+    // fire-and-forget write let the page read before the data landed,
+    // so the user saw an empty page until a manual reload.
+    const writeJobs: Promise<unknown>[] = [];
     results.forEach((res, i) => {
       if (res.status === "fulfilled" && !res.value.error && res.value.data != null) {
         anyOk = true;
         // merge pending local DO rows back in: a temp row must survive a refresh
         if (keys[i] === CACHE_KEYS.SAVED_DOS) {
-          void (async () => {
-            const local = await getCachedList<any>(CACHE_KEYS.SAVED_DOS);
-            const pending = local.filter((d) => String(d.id || "").startsWith("local_"));
-            const serverRows: any[] = res.value.data || [];
-            const merged = [...pending, ...serverRows.filter((s) => !pending.some((p) => p.id === s.id))];
-            await setCache(CACHE_KEYS.SAVED_DOS, merged);
-          })();
+          writeJobs.push(
+            (async () => {
+              const local = await getCachedList<any>(CACHE_KEYS.SAVED_DOS);
+              const pending = local.filter((d) => String(d.id || "").startsWith("local_"));
+              const serverRows: any[] = res.value.data || [];
+              const merged = [...pending, ...serverRows.filter((s) => !pending.some((p) => p.id === s.id))];
+              await setCache(CACHE_KEYS.SAVED_DOS, merged);
+            })()
+          );
         } else {
-          void setCache(keys[i], res.value.data);
+          writeJobs.push(setCache(keys[i], res.value.data));
         }
       }
     });
+    await Promise.all(writeJobs);
     if (anyOk) {
       const ts = new Date().toISOString();
       await setLastSyncTime(ts);

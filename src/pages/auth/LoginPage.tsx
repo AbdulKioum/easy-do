@@ -132,25 +132,26 @@ export default function LoginPage() {
 
       // Login is online-only, so seed the offline cache right now:
       // item prices, transport, upazilas, saved DOs and notifications.
-      // Never let a slow sync block navigation for more than ~5s.
-      try {
-        const { data: { user: signedInUser } } = await supabase.auth.getUser();
-        if (signedInUser) {
-          let isSuperAdmin = false;
-          try {
-            const { data: prof } = await supabase.from("profiles").select("role").eq("id", signedInUser.id).maybeSingle();
-            isSuperAdmin = (prof as any)?.role === "super_admin";
-          } catch {
-            /* fall back to own-DO scope */
+      // Fire-and-forget: navigation must NOT wait for it — the home
+      // page re-applies the cache when the sync finishes, so the data
+      // appears on its own. Waiting here was the post-login lag.
+      void (async () => {
+        try {
+          const { data: { user: signedInUser } } = await supabase.auth.getUser();
+          if (signedInUser) {
+            let isSuperAdmin = false;
+            try {
+              const { data: prof } = await supabase.from("profiles").select("role").eq("id", signedInUser.id).maybeSingle();
+              isSuperAdmin = (prof as any)?.role === "super_admin";
+            } catch {
+              /* fall back to own-DO scope */
+            }
+            await syncAllMasterDataInBackground(signedInUser.id, isSuperAdmin);
           }
-          await Promise.race([
-            syncAllMasterDataInBackground(signedInUser.id, isSuperAdmin),
-            new Promise((resolve) => setTimeout(resolve, 5000)),
-          ]);
+        } catch {
+          /* cache seeding is best-effort — login already succeeded */
         }
-      } catch {
-        /* cache seeding is best-effort — login already succeeded */
-      }
+      })();
 
 
       navigate("/", {
@@ -264,7 +265,6 @@ export default function LoginPage() {
 
           {/* TITLE */}
           <h2 style={styles.title}>Welcome</h2>
-          <p style={styles.subtitle}>Log In to continue</p>
 
           {/* FORM */}
           <form onSubmit={handleSubmit}>
@@ -449,22 +449,6 @@ export default function LoginPage() {
               )}
             </button>
           </form>
-
-          {/* MINI FEATURES */}
-          <div style={styles.pills}>
-            <span style={{ ...styles.pill, background: "#eff6ff", color: "#1d4ed8" }}>
-              <span style={{ ...styles.pillDot, background: "#2563eb" }} />
-              Offline Ready
-            </span>
-            <span style={{ ...styles.pill, background: "#fff7ed", color: "#c2410c" }}>
-              <span style={{ ...styles.pillDot, background: "#f59e0b" }} />
-              Fast
-            </span>
-            <span style={{ ...styles.pill, background: "#f0fdf4", color: "#15803d" }}>
-              <span style={{ ...styles.pillDot, background: "#22c55e" }} />
-              Secure
-            </span>
-          </div>
         </div>
 
         <div style={styles.footer}>
@@ -600,19 +584,12 @@ const styles: Record<
   },
 
   title: {
-    margin: 0,
+    margin: "0 0 24px",
     textAlign: "center",
     fontSize: 22,
     fontWeight: 800,
     color: "#0f172a",
     letterSpacing: -0.3,
-  },
-
-  subtitle: {
-    margin: "6px 0 24px",
-    textAlign: "center",
-    fontSize: 12,
-    color: "#64748b",
   },
 
   field: {
@@ -722,31 +699,6 @@ const styles: Record<
   buttonDisabled: {
     opacity: 0.75,
     cursor: "not-allowed",
-  },
-
-  pills: {
-    marginTop: 18,
-    display: "flex",
-    justifyContent: "center",
-    gap: 8,
-    flexWrap: "wrap",
-  },
-
-  pill: {
-    display: "inline-flex",
-    alignItems: "center",
-    gap: 6,
-    padding: "5px 10px",
-    borderRadius: 99,
-    fontSize: 11,
-    fontWeight: 700,
-  },
-
-  pillDot: {
-    width: 7,
-    height: 7,
-    borderRadius: "50%",
-    display: "inline-block",
   },
 
   footer: {
