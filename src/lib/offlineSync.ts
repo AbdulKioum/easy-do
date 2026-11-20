@@ -109,6 +109,15 @@ export async function probeOnline(): Promise<boolean> {
         (supabase as any)?.supabaseUrl ||
         import.meta.env.VITE_SUPABASE_URL ||
         "";
+      // Supabase gateway /auth/v1/health keo apikey chara 401 dey
+      // (UNAUTHORIZED_MISSING_API_KEY) — key na pathale probe konodin
+      // success hoto na, tai usableOnline=false hoye outbox flush
+      // bondho hoye jeto (page visit, DO sync — sob atke jeto).
+      // Anon key public (app er bundle ei thake), tai probe e pathano safe.
+      const key =
+        (supabase as any)?.supabaseKey ||
+        import.meta.env.VITE_SUPABASE_ANON_KEY ||
+        "";
       if (!base || !isOnline()) return false;
       const ctrl = new AbortController();
       const timer = setTimeout(() => ctrl.abort(), PROBE_TIMEOUT_MS);
@@ -117,6 +126,9 @@ export async function probeOnline(): Promise<boolean> {
           method: "GET",
           cache: "no-store",
           signal: ctrl.signal,
+          headers: key
+            ? { apikey: key, Authorization: `Bearer ${key}` }
+            : {},
         });
         return res.ok;
       } finally {
