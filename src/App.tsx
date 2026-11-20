@@ -199,6 +199,13 @@ function MainApp() {
   const [showNotifPopup, setShowNotifPopup] = useState(false);
   // Single Realtime channel instance — re-subscribed on 'online' only.
   const notifChannelRef = useRef<any>(null);
+  // Refs for the mount-once tap listeners (below): they must always see the
+  // latest role / opener without re-registering, because re-registering
+  // (removeAllListeners + addListener) can lose the tap event Android
+  // delivers when the app is cold-started from a notification.
+  const roleRef = useRef(role);
+  const openNotifSectionRef = useRef<(isReply?: boolean) => void>(() => {});
+  const refreshNotificationsRef = useRef<(() => void) | null>(null);
 
   // REPLY STATES
   const [replyOpenId, setReplyOpenId] = useState<number | null>(null);
@@ -257,16 +264,92 @@ function MainApp() {
   }
 
   // নোটিফিকেশনে ক্লিক করলে অ্যাপের ভেতরে নোটিফিকেশন পপআপ বা অ্যাডমিন পেজ ওপেন করা
+  // Tap korle list-tao fresh kore newa hoy — FCM push ta Realtime er age
+  // pouchale panel khali dekhabe na, notun notice-ta sathe sathe asbe.
   function openNotificationSection(isReply?: boolean) {
+    refreshNotificationsRef.current?.();
     setShowNotifPopup(true);
-    if ((role === "admin" || role === "super_admin") && isReply) {
+    if ((roleRef.current === "admin" || roleRef.current === "super_admin") && isReply) {
       setCurrentPage("send-notification");
     }
   }
+  // Keep the ref pointing at the latest opener (role changes over time).
+  openNotifSectionRef.current = openNotificationSection;
 
-  // CAPACITOR PUSH & LOCAL NOTIFICATION SETUP (FCM Token Save & Click Listener)
+  useEffect(() => {
+    roleRef.current = role;
+  }, [role]);
+
+  // NOTIFICATION TAP LISTENERS — registered ONCE when MainApp mounts.
+  // Login/role er upor nirbhor kore na, tai app cold start holeo
+  // (notification tap kore app khulle) Android er pathano tap event-ta
+  // miss hoy na. removeAllListeners() ekhane kokhono call kora hoy na —
+  // logout e sudhu ei 3 ta listener-i remove hoy.
+  useEffect(() => {
+    if (!Capacitor.isNativePlatform()) return;
+
+    // Handles so logout (MainApp unmount) removes exactly these listeners.
+    const handles: Array<{ remove: () => Promise<void> }> = [];
+    const setupTapListeners = async () => {
+      try {
+        // 1. FCM notification e tap (tray theke)
+        handles.push(
+          await PushNotifications.addListener(
+            "pushNotificationActionPerformed",
+            (action) => {
+              const data = action?.notification?.data;
+              openNotifSectionRef.current(
+                data?.is_reply === "true" || data?.is_reply === true
+              );
+            }
+          )
+        );
+
+        // 2. Local notification e tap (Realtime theke app khola thakle
+        // schedule kora phone notification)
+        handles.push(
+          await LocalNotifications.addListener(
+            "localNotificationActionPerformed",
+            (action) => {
+              const extra = action?.notification?.extra;
+              openNotifSectionRef.current(Boolean(extra?.isReply));
+            }
+          )
+        );
+
+        // 3. Data message app khola thakle ashle: er jonno kono tray
+        // notification dekhano hoy na, tai ontoto list-ta refresh kore
+        // bell er badge update kora hoy.
+        handles.push(
+          await PushNotifications.addListener(
+            "pushNotificationReceived",
+            () => {
+              refreshNotificationsRef.current?.();
+            }
+          )
+        );
+      } catch (err) {
+        console.warn("Notification tap listener setup failed:", err);
+      }
+    };
+
+    setupTapListeners();
+    return () => {
+      handles.forEach((h) => void h.remove());
+    };
+  }, []);
+
+  // CAPACITOR PUSH & LOCAL NOTIFICATION SETUP (FCM Token Save & Channel)
+  // NOTE: tap listeners are NOT here anymore — they live in the mount-once
+  // effect above. This effect only handles token save / channel / permission
+  // / register, once per logged-in user.
+  const pushSetupDoneForRef = useRef<string | null>(null);
   useEffect(() => {
     if (!user?.id) return;
+    // Role bodle gele effect abar cholleo token/channel setup abar korar
+    // dorkar nai.
+    if (pushSetupDoneForRef.current === user.id) return;
+    pushSetupDoneForRef.current = user.id;
 
     if (!Capacitor.isNativePlatform()) {
       if ("Notification" in window && Notification.permission === "default") {
@@ -331,11 +414,7 @@ function MainApp() {
           await saveTokenToDatabase(cachedToken);
         }
 
-        // পুরনো লিসেনার ক্লিয়ার করা
-        await PushNotifications.removeAllListeners();
-        await LocalNotifications.removeAllListeners();
-
-        // ১. আগে সব Listener সেট করা (যাতে register কল হওয়ার সাথে সাথে টোকেন মিস না হয়!)
+        // Token listener (tap listeners live in the mount-once effect above)
         await PushNotifications.addListener("registration", async (token) => {
           console.log("New FCM Token generated:", token.value);
           if (isMounted && token?.value) {
@@ -346,24 +425,6 @@ function MainApp() {
         await PushNotifications.addListener("registrationError", (err) => {
           console.error("FCM Registration Error:", JSON.stringify(err));
         });
-
-        await PushNotifications.addListener(
-          "pushNotificationActionPerformed",
-          (action) => {
-            const data = action.notification.data;
-            openNotificationSection(
-              data?.is_reply === "true" || data?.is_reply === true
-            );
-          }
-        );
-
-        await LocalNotifications.addListener(
-          "localNotificationActionPerformed",
-          (action) => {
-            const extra = action.notification.extra;
-            openNotificationSection(Boolean(extra?.isReply));
-          }
-        );
 
         // ২. High Importance Channel তৈরি করা
         await LocalNotifications.createChannel({
@@ -453,6 +514,10 @@ function MainApp() {
         console.warn("Failed to load notifications:", err);
       }
     }
+
+    // Tap handler (mount-once effect) can refresh the list on demand, so a
+    // notification tap never opens an empty panel.
+    refreshNotificationsRef.current = fetchNotifications;
 
     function subscribeRealtime() {
       // Realtime needs the network — never subscribe while offline, and
